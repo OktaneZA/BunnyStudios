@@ -1,0 +1,55 @@
+# Runs on every pull request and on main: the same tests the release runs, against a real
+# Postgres, plus a build of the image. A red check here means `npm run release` would refuse
+# to ship the branch. Nothing is deployed from CI; releases are pushed from the maintainer's
+# machine so the NAS is never reachable from the internet.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: storyboard
+          POSTGRES_PASSWORD: localdev
+          POSTGRES_DB: storyboard
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U storyboard -d storyboard"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://storyboard:localdev@localhost:5433/storyboard
+      JWT_SECRET: ci-only-secret-that-is-at-least-32-characters
+      AUTH_ADULT_EMAIL: adult@example.com
+      AUTH_ADULT_PASSWORD_HASH: scrypt$00$00
+      AUTH_TEEN_EMAIL: teen@example.com
+      AUTH_TEEN_PASSWORD_HASH: scrypt$00$00
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test -w @storyboard/vocabularies
+      - run: npm run build -w @storyboard/vocabularies
+      - run: npm run build -w @storyboard/api
+      - run: npm run build -w @storyboard/web
+      - run: npm run migrate -w @storyboard/api
+      - run: node --test test/*.test.ts
+        working-directory: apps/api
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg BUILD_TAG=ci --build-arg APP_VERSION=ci --build-arg GIT_COMMIT=${GITHUB_SHA::7} -t storyboard-studio:ci .
+      - name: Image contains the web build and the migrations
+        run: docker run --rm --entrypoint sh storyboard-studio:ci -c 'test -f apps/web/dist/index.html && ls apps/api/drizzle/*.sql && node --version'

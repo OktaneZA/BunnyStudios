@@ -99,6 +99,15 @@ no SFTP unless enabled, so `scp` fails; `deploy/release.mjs` uploads through pla
   so the client can diff per field without a second round trip (NF-10, NF-10b).
 - Migrations: edit `src/db/schema.ts`, then `npx drizzle-kit generate --name <what-changed>`.
   Never hand-edit a generated migration. The container applies pending migrations on start.
+  **Migrations are additive**: add nullable columns, enum values or tables; never rename, drop
+  or change the meaning of something an older version reads. That is what makes
+  `--rollback` safe without touching the database.
+- Versions: one semantic version in the root `package.json`. `npm version <patch|minor|major>`
+  bumps, commits and tags; `git push --follow-tags`; `npm run release`. Add a line to
+  `CHANGELOG.md` under the version heading in the same change.
+- Changes go through a pull request into `main`. Branch from `main`, keep the branch to one
+  concern, use a Conventional Commits title (`feat(scenes): …`, `fix(release): …`), wait for
+  the CI check, squash-merge. Release only from `main`.
 - Secrets never enter the repository: `.env` files, `release.env`, dumps and image tarballs are
   all ignored. Rotate anything that is ever pasted into a chat or a ticket.
 

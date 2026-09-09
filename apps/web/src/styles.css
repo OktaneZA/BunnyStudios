@@ -397,6 +397,8 @@ textarea { line-height: 1.75; }
   .picker { gap: 12px; }
 }
 
+.version-tag { text-align: center; opacity: .7; margin: 4px 0 0; }
+
 /* The bin: deleted cartoons that can be put back. Kept quiet so it never competes with the board. */
 .bin { margin-top: 28px; }
 .bin-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }

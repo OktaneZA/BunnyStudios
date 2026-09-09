@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api, auth, type Account } from '../api';
 import { ProblemBox } from '../components/ProblemBox';
 import { BunnyLogo } from '../components/BunnyLogo';
@@ -8,6 +8,16 @@ export function Login({ onSignedIn }: { onSignedIn: (a: Account) => void }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [version, setVersion] = useState<string | null>(null);
+
+  // The running version, so a screenshot of a problem says which build it came from.
+  useEffect(() => {
+    let alive = true;
+    fetch('/health').then((r) => r.json()).then((h: { version?: string }) => {
+      if (alive && h.version) setVersion(h.version);
+    }).catch(() => { /* purely informational */ });
+    return () => { alive = false; };
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -61,6 +71,7 @@ export function Login({ onSignedIn }: { onSignedIn: (a: Account) => void }) {
         <button type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        {version && <p className="hint version-tag">v{version}</p>}
       </form>
     </div>
   );

@@ -293,3 +293,6 @@ deployment; delete the empty `packages/schema`; keep `packages/compiler` only wi
 | D21 | Logical delete for projects and scenes, with restore | A teenager's work must survive a mis-tap. Storage cost is negligible. |
 | D22 | Release by push over SSH from the developer PC, verified by build tag | The NAS never builds or tests; a release is proven live or fails loudly. |
 | D23 | Backups are `pg_dump` custom format, one before every release, nightly on the NAS | Restore table-by-table if needed; the release can always be undone with data. |
+| D24 | One semantic version in the root `package.json`, stamped as `v<version>-<commit>` on the image and reported by `/health` | A human version for people, a commit for exactness, one source for both. |
+| D25 | Migrations are additive only | Rolling the app back never requires rolling the database back, so `--rollback` is a re-tag and a restart. |
+| D26 | Changes reach `main` by pull request with a CI check; releases are pushed from the maintainer's machine, never from CI | The NAS is never exposed to the internet, and a red check blocks a release before it starts. |
