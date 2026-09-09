@@ -7,6 +7,16 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+## v0.3.0 — 2026-09-09
+
+- Fire HD 10 tablet app (`apps/android`): a landscape WebView around the studio with an
+  icon, splash, native confirm dialogs, back navigation, an offline screen and an in-app
+  server address. Built and signed by the release and served at `/downloads/bunny-studios.apk`;
+  the sign-in page links to it.
+- Browser test suite (`apps/web/e2e`, Playwright) run by the release against the built image on
+  the PC's LAN address before anything ships. `--dry-run` builds and tests without shipping.
+- `/downloads/*` returns a real 404 instead of the app shell when a file is missing.
+
 ## v0.2.0 — 2026-09-09
 
 - Versioning: one semantic version stamped into the image and reported by `/health` and the

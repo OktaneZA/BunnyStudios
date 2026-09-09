@@ -85,7 +85,8 @@ export function registerErrorHandler(
   app.setNotFoundHandler((request, reply) => {
     // Client-side routes (/projects/123) must load the app shell; only the API and
     // non-GET requests get a problem+json 404.
-    const isApi = request.url === '/api' || request.url.startsWith('/api/');
+    // /downloads holds real files (the tablet APK); a missing one must be a 404, not the app shell.
+    const isApi = request.url === '/api' || request.url.startsWith('/api/') || request.url.startsWith('/downloads/');
     if (options.spaFallback && !isApi && (request.method === 'GET' || request.method === 'HEAD')) {
       return reply.header('Cache-Control', 'no-cache').sendFile('index.html');
     }

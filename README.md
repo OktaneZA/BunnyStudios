@@ -31,8 +31,10 @@ container on a Synology NAS against an existing Postgres server.
   SVG sketch. Both go through a proposal the user accepts or cancels, with per-day limits and an
   independent content review.
 - Copy a scene, or the whole cartoon, as text.
-- One-command release to the NAS with tests, a pre-release database backup, and live
-  verification. Nightly backups on the NAS.
+- One-command release to the NAS with unit and browser tests, a pre-release database backup,
+  and live verification. Nightly backups on the NAS.
+- An Android app for the Amazon Fire HD 10 (`apps/android`): the same studio in a landscape
+  WebView with an icon, splash and offline screen, downloadable from the sign-in page.
 
 Not yet built: the prompt compiler (Phase 2, waiting on the spike), the series bible and cast
 screens, shots, exports and continuity checks. See the build plan.
@@ -82,6 +84,7 @@ daily limit counts attempts, including failed or cancelled ones, and resets at m
 ```bash
 npm test -w @storyboard/vocabularies   # vocabulary file is the single authority (CV-1)
 npm test -w @storyboard/api            # 52 tests against the local Postgres
+npm run release -- --dry-run           # plus the browser suite against the built image
 ```
 
 The API tests hit a real database on purpose: row-level isolation, the 1:1 series-bible
@@ -94,7 +97,8 @@ provider; they never spend model credits.
 ```
 packages/vocabularies/   vocabularies.json, the single authority for prompt phrases
 apps/api/                Fastify + Drizzle + Postgres; serves the built web app in production
-apps/web/                React + Vite; relative /api/v1 URLs
+apps/web/                React + Vite; relative /api/v1 URLs; e2e/ holds the Playwright suite
+apps/android/            Fire HD 10 app: a WebView shell around the web app
 deploy/                  Dockerfile entrypoint, release script, Synology compose, backup and restore
 infra/main.bicep         Azure shape from Phase 0; a design record, not a deployment
 docs/                    plan, requirements, architecture, screenshots, spike pack

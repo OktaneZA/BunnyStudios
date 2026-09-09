@@ -1,5 +1,8 @@
 node_modules
 **/node_modules
+apps/android
+apps/web/e2e
+.playwright-results
 **/dist
 **/*.tsbuildinfo
 .git

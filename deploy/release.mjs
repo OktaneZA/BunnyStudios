@@ -5,6 +5,9 @@
  *   npm version minor && git push --follow-tags     bump: 0.1.0 -> 0.2.0, commit, tag v0.2.0
  *   npm run release                 test, build, ship, restart, verify (image v<version>-<commit>)
  *   npm run release -- --skip-tests
+ *   npm run release -- --skip-e2e   skip the browser tests against the built image
+ *   npm run release -- --skip-apk   do not build the Fire tablet app
+ *   npm run release -- --dry-run    test and build everything, ship nothing
  *   npm run release -- --no-backup  skip the pre-release database dump
  *   npm run release -- --allow-dirty  ship uncommitted work, tagged -dirty
  *   npm run release -- --setup      one-time: install an SSH key on the NAS
@@ -26,7 +29,8 @@
  * Needs: docker, ssh, scp on this PC (Windows ships OpenSSH); SSH enabled on the NAS.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -192,6 +196,105 @@ async function rollback(want) {
   await verify(tag);
 }
 
+// ---------- Android app ----------
+const apkOut = join(root, 'apps/web/public/downloads/bunny-studios.apk');
+/**
+ * Builds the Fire tablet app (apps/android) and places the APK where the web build will serve
+ * it at /downloads/bunny-studios.apk. Needs JAVA_HOME and ANDROID_HOME (release.env). The
+ * APK's version comes from package.json, so it always matches the server it ships with.
+ * Without a toolchain the step is skipped and any stale APK is removed, never shipped.
+ */
+function buildApk(version) {
+  if (flag('--skip-apk') || !cfg.JAVA_HOME || !cfg.ANDROID_HOME) {
+    if (existsSync(apkOut)) rmSync(apkOut);
+    log(flag('--skip-apk') ? 'Skipping the tablet app (--skip-apk)' : 'No JAVA_HOME/ANDROID_HOME in release.env; tablet app not built');
+    return null;
+  }
+  log(`Building the tablet app v${version}`);
+  const android = join(root, 'apps/android');
+  const gradlew = join(android, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
+  const serverUrl = cfg.APK_SERVER_URL || APP_URL;
+  run(gradlew, ['assembleRelease', '-q', '--warning-mode', 'none', `-PserverUrl=${serverUrl}`], {
+    cwd: android, shell: process.platform === 'win32',
+    env: { ...process.env, JAVA_HOME: cfg.JAVA_HOME, ANDROID_HOME: cfg.ANDROID_HOME,
+      ...(cfg.ANDROID_KEYSTORE_PATH ? { ANDROID_KEYSTORE_PATH: cfg.ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD: cfg.ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS: cfg.ANDROID_KEY_ALIAS || 'bunny' } : {}) },
+  });
+  const built = join(android, 'app/build/outputs/apk/release/app-release.apk');
+  if (!existsSync(built)) fail('gradle finished but no APK was produced');
+  if (!cfg.ANDROID_KEYSTORE_PATH) console.warn('\x1b[33mrelease !\x1b[0m APK is debug-signed (no ANDROID_KEYSTORE_PATH); a later signed build cannot update it in place.');
+  mkdirSync(dirname(apkOut), { recursive: true });
+  copyFileSync(built, apkOut);
+  log(`Tablet app ready (${(readFileSync(apkOut).length / 1024 / 1024).toFixed(1)} MB), server ${serverUrl}`);
+  return apkOut;
+}
+
+// ---------- browser tests against the built image ----------
+function lanAddress() {
+  if (cfg.E2E_HOST) return cfg.E2E_HOST;
+  // Prefer a physical adapter on a home subnet over Hyper-V / WSL / Docker virtual ones. Any
+  // non-loopback address is an insecure origin, which is the point, but the real LAN address
+  // is what the tablet uses and what a person will paste into a browser to look.
+  const candidates = [];
+  for (const [name, list] of Object.entries(networkInterfaces())) {
+    for (const i of list ?? []) {
+      if (i.family !== 'IPv4' || i.internal || i.address.startsWith('169.254')) continue;
+      const virtual = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|docker|Loopback/i.test(name);
+      const home = /^(192\.168\.|10\.)/.test(i.address);
+      candidates.push({ address: i.address, score: (home ? 2 : 0) + (virtual ? 0 : 1) });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.address ?? '127.0.0.1';
+}
+/**
+ * Starts the freshly built image on this PC against a scratch database, reached through the
+ * PC's LAN IP so the browser treats the origin as insecure exactly like the NAS, and runs
+ * the Playwright suite in apps/web/e2e. Any failure stops the release before anything ships.
+ */
+async function e2e(tag) {
+  if (flag('--skip-e2e')) { log('Skipping browser tests (--skip-e2e)'); return; }
+  const dbContainer = cfg.E2E_DB_CONTAINER || 'storyboard-db';
+  const dbName = 'storyboard_e2e';
+  const port = cfg.E2E_PORT || '3999';
+  const host = lanAddress();
+  const base = `http://${host}:${port}`;
+  const name = 'storyboard-e2e';
+  const psql = (sql) => run('docker', ['exec', dbContainer, 'psql', '-U', 'storyboard', '-d', 'storyboard', '-q', '-c', sql], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const hash = (pw) => out('node', ['--experimental-strip-types', 'apps/api/src/db/hash-password.ts', pw]);
+  const adult = { email: 'adult@example.com', password: 'e2e-adult-password' };
+  const teen = { email: 'teen@example.com', password: 'e2e-teen-password' };
+
+  log(`Browser tests: ${IMAGE}:${tag} at ${base} (scratch database ${dbName} on ${dbContainer})`);
+  spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+  psql(`DROP DATABASE IF EXISTS ${dbName}`);
+  psql(`CREATE DATABASE ${dbName} OWNER storyboard`);
+  try {
+    run('docker', ['run', '-d', '--name', name, '-p', `${port}:3001`,
+      '-e', `DATABASE_URL=postgres://storyboard:localdev@host.docker.internal:5433/${dbName}`,
+      '-e', `MIGRATION_DATABASE_URL=postgres://storyboard:localdev@host.docker.internal:5433/${dbName}`,
+      '-e', 'JWT_SECRET=e2e-only-secret-that-is-at-least-32-characters-long',
+      '-e', `AUTH_ADULT_EMAIL=${adult.email}`, '-e', `AUTH_ADULT_PASSWORD_HASH=${hash(adult.password)}`, '-e', 'AUTH_ADULT_DISPLAY_NAME=Test adult',
+      '-e', `AUTH_TEEN_EMAIL=${teen.email}`, '-e', `AUTH_TEEN_PASSWORD_HASH=${hash(teen.password)}`, '-e', 'AUTH_TEEN_DISPLAY_NAME=Test teen',
+      '-e', 'ANTHROPIC_API_KEY=',
+      `${IMAGE}:${tag}`], { stdio: ['ignore', 'ignore', 'inherit'] });
+    const deadline = Date.now() + 60_000;
+    let up = false;
+    while (Date.now() < deadline && !up) {
+      try { up = (await fetchJson(`${base}/health`)).status === 'ok'; } catch { await sleep(1000); }
+    }
+    if (!up) { spawnSync('docker', ['logs', '--tail', '30', name], { stdio: 'inherit' }); fail(`${base}/health never answered`); }
+    const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    run(npx, ['playwright', 'test', '-c', 'apps/web/e2e'], {
+      shell: process.platform === 'win32',
+      env: { ...process.env, E2E_BASE_URL: base, E2E_ADULT_EMAIL: adult.email, E2E_ADULT_PASSWORD: adult.password, E2E_TEEN_EMAIL: teen.email, E2E_TEEN_PASSWORD: teen.password },
+    });
+    log('Browser tests passed');
+  } finally {
+    spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    try { psql(`DROP DATABASE IF EXISTS ${dbName}`); } catch { /* best effort */ }
+  }
+}
+
 // ---------- verification ----------
 async function verify(expectedTag) {
   log(`Waiting for ${APP_URL}/health to report build ${expectedTag}`);
@@ -227,6 +330,8 @@ async function release() {
     run(npm, ['test', '-w', '@storyboard/api'], { shell: process.platform === 'win32', stdio: ['inherit', 'ignore', 'inherit'] });
   }
 
+  buildApk(version);
+
   log('Building the image');
   run('docker', ['build',
     '--build-arg', `BUILD_TAG=${tag}`, '--build-arg', `APP_VERSION=${version}`, '--build-arg', `GIT_COMMIT=${sha}`,
@@ -234,6 +339,9 @@ async function release() {
   // The verification step compares the served bundle to this local build output.
   run('docker', ['run', '--rm', '--entrypoint', 'sh', `${IMAGE}:${tag}`, '-c', 'cat /app/apps/web/dist/index.html'],
     { stdio: ['ignore', 'pipe', 'inherit'] });
+
+  await e2e(tag);
+  if (flag('--dry-run')) { log(`Dry run: ${IMAGE}:${tag} built and tested; nothing shipped.`); return; }
 
   log('Checking SSH access');
   ssh('true');

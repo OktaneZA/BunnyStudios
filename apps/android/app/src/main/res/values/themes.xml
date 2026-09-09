@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash: the bunny on navy until the first page paints, then the WebView takes over. -->
+    <style name="Theme.BunnyStudios" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:statusBarColor">@color/brand_navy</item>
+        <item name="android:navigationBarColor">@color/brand_navy</item>
+        <item name="colorPrimary">@color/brand_purple</item>
+        <item name="colorPrimaryVariant">@color/brand_navy</item>
+        <item name="colorOnPrimary">@color/ink</item>
+        <item name="colorSecondary">@color/brand_lilac</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

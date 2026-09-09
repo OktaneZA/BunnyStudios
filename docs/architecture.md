@@ -165,7 +165,7 @@ double-spend.
 | R7 | **The web client has no state layer.** Each screen fetches on mount and holds local state; there is no cache, so navigating back refetches, and a save on the scene page does not update the board until it reloads. | Fine at this size. Will hurt when the guided-path rail (D15) needs cross-screen state. | Low |
 | R8 | **Migrations run on every container start with the owner credential in the environment.** The entrypoint unsets it before starting the API, so the running process never holds it, but the container's `docker inspect` output still shows it. | Anyone who can read container config on the NAS can read the owner password. On DSM that is any administrator, who could read `.env` anyway. | Low |
 | R9 | **`infra/main.bicep` describes a deployment that does not exist**, and the README still leads with it. | Misleads the next reader about where the app runs. | Low (documentation) |
-| R10 | **No automated browser tests.** Drag-and-drop, the insecure-origin behaviour and the bin flows were all verified by hand in a browser; nothing re-runs them. | The `randomUUID` bug shipped because tests ran on `localhost`. | Medium |
+| R10 | **No automated browser tests** at the time of review. Drag-and-drop, the insecure-origin behaviour and the bin flows were verified by hand. | The `randomUUID` bug shipped because tests ran on `localhost`. Addressed in v0.3.0 by the Playwright suite the release runs on the LAN address (change B). | Medium, closed |
 | R11 | **`packages/compiler` and `packages/schema` are empty directories** with no `package.json`. The workspace glob ignores them, but they suggest structure that is not there. | Confusing, harmless. | Low |
 | R12 | **Scene deletion cancels pending AI proposals but restoring does not recreate anything**, and a restored scene's `thumbnail_source_fingerprint` may no longer match if siblings changed. | Correct (the thumbnail shows as stale), but worth a test. | Low |
 
@@ -225,11 +225,21 @@ becomes two thin route files, one per proposal kind, both calling the same servi
 `ai_proposals.id = Idempotency-Key` for now but add a `request_key` column in the same
 migration so a later change is data-only.
 
-**B. Playwright smoke suite on the LAN address (addresses R10).**
-Five scripted flows against a container started from the freshly built image, reached via
-the PC's LAN IP so the origin is insecure like the NAS: login, create cartoon and scene, drag
-reorder with real pointer events, delete and put back, improve with a stubbed provider.
-`release.mjs` runs it after the unit tests and refuses to ship on failure.
+**B. Playwright suite on the LAN address (addresses R10). Done in v0.3.0.**
+`apps/web/e2e`: ten flows against a container started from the freshly built image, reached
+via the PC's LAN IP so the origin is insecure like the NAS: sign-in for both accounts, create
+cartoon and scenes, arrow and real-pointer drag reorder, edit and save with the version,
+both bins, account privacy, the AI-disabled message, and the tablet-app download link.
+`release.mjs` runs it after the unit tests and refuses to ship on failure. Still open: an
+"Improve" flow with a stubbed provider, which needs a test-only provider switch in the API.
+
+**B2. Fire HD 10 app. Done in v0.3.0.**
+`apps/android` is a landscape WebView shell around the served web app: icon, splash, native
+`confirm()` dialogs, back navigation, offline screen, in-app server address. It is built and
+signed by the release and served at `/downloads/bunny-studios.apk`. Chosen over a Trusted
+Web Activity (needs Chrome and Play services, absent on Fire OS) and over Capacitor (would
+bundle the web assets and need CORS plus an APK per web change). The wrapper only changes
+when the wrapper itself changes; every server release updates the tablet.
 
 **C. HTTPS at the NAS (addresses R4).**
 DSM's reverse proxy with a Let's Encrypt certificate on a real host name, or DSM's own

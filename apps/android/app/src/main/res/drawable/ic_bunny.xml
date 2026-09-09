@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The web app's BunnyLogo (apps/web/src/components/BunnyLogo.tsx), as a vector drawable.
+     Ellipses are written as two arcs; the rotated ears use groups with a pivot. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="52dp"
+    android:viewportWidth="48"
+    android:viewportHeight="52">
+
+    <!-- left ear -->
+    <group android:rotation="-12" android:pivotX="16" android:pivotY="15">
+        <path android:fillColor="#B597EE" android:pathData="M9,15 a7,14 0 1,0 14,0 a7,14 0 1,0 -14,0 z" />
+        <path android:fillColor="#E5C6FF" android:pathData="M13,14 a3,9 0 1,0 6,0 a3,9 0 1,0 -6,0 z" />
+    </group>
+    <!-- right ear -->
+    <group android:rotation="12" android:pivotX="32" android:pivotY="15">
+        <path android:fillColor="#B597EE" android:pathData="M25,15 a7,14 0 1,0 14,0 a7,14 0 1,0 -14,0 z" />
+        <path android:fillColor="#E5C6FF" android:pathData="M29,14 a3,9 0 1,0 6,0 a3,9 0 1,0 -6,0 z" />
+    </group>
+    <!-- head -->
+    <path android:fillColor="#B597EE" android:pathData="M3,34 a21,17 0 1,0 42,0 a21,17 0 1,0 -42,0 z" />
+    <!-- muzzle -->
+    <path android:fillColor="#D8C5F6" android:pathData="M13,41 a11,8 0 1,0 22,0 a11,8 0 1,0 -22,0 z" />
+    <!-- eyes -->
+    <path android:fillColor="#261737" android:pathData="M13.5,32 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0 z" />
+    <path android:fillColor="#261737" android:pathData="M29.5,32 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M14.5,31 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M30.5,31 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0 z" />
+    <!-- nose and mouth -->
+    <path android:fillColor="#70448C" android:pathData="M21,37 Q24,35 27,37 L24,40 Z" />
+    <path android:strokeColor="#70448C" android:strokeWidth="1.5" android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M24,40 v2 m0,0 q-3,4 -5,0 m5,0 q3,4 5,0" />
+</vector>
