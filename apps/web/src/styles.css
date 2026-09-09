@@ -397,7 +397,7 @@ textarea { line-height: 1.75; }
   .picker { gap: 12px; }
 }
 
-.version-tag { text-align: center; opacity: .7; margin: 4px 0 0; }
+.version-tag, .apk-link { text-align: center; opacity: .7; margin: 4px 0 0; }
 
 /* The bin: deleted cartoons that can be put back. Kept quiet so it never competes with the board. */
 .bin { margin-top: 28px; }

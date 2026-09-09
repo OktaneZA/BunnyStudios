@@ -7,6 +7,10 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+## v0.3.1 — 2026-09-09
+
+- Sign-in page: the tablet-app link has its own style class so it never collides with the version tag.
+
 ## v0.3.0 — 2026-09-09
 
 - Fire HD 10 tablet app (`apps/android`): a landscape WebView around the studio with an

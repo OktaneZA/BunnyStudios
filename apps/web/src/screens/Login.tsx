@@ -81,7 +81,7 @@ export function Login({ onSignedIn }: { onSignedIn: (a: Account) => void }) {
         </button>
         {version && <p className="hint version-tag">v{version}</p>}
         {apkAvailable && (
-          <p className="hint version-tag">
+          <p className="hint apk-link">
             <a href={APK_PATH} download="bunny-studios.apk">Get the tablet app</a>
           </p>
         )}
