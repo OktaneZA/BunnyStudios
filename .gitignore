@@ -1,0 +1,32 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Secrets — never committed (NF-20). Azure supplies these via Key Vault.
+.env
+.env.*
+!.env.example
+
+# Spike outputs are large binaries; findings.md is committed, images are not.
+docs/spike/results/variant-a/*
+docs/spike/results/variant-b/*
+docs/spike/results/art-styles/*
+!docs/spike/results/**/.gitkeep
+
+.DS_Store
+Thumbs.db
+
+# Browser automation debug artifacts
+.playwright-mcp/
+
+# Exported container images (deploy/synology/README.md)
+*.tar
+*.tar.gz
+*.local.md
+
+# Database dumps
+deploy/synology/backups/
+
+# Release settings for this PC (NAS user etc.)
+deploy/release.env

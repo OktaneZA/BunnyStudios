@@ -1,0 +1,42 @@
+# Storyboard Studio on Synology Container Manager.
+#
+# Container Manager > Project > Create > "Create docker-compose.yml" and paste this file,
+# or point it at this folder. Fill in deploy/synology/.env first (copy .env.example).
+#
+# Postgres is NOT part of this project: it runs on the existing server at homenas.lan:5400.
+# Provision the two roles and the database once with deploy/synology/provision.sql; the
+# container applies the table migrations itself on first start (RUN_MIGRATIONS=true) using
+# MIGRATION_DATABASE_URL, and then runs the API as the data-only DATABASE_URL role.
+
+services:
+  storyboard:
+    # Default: an image built on a PC and imported into Container Manager (Image > Add > From file),
+    # or pulled from a registry. See README.md "2. Build the image".
+    image: storyboard-studio:latest
+    # To build on the NAS instead, copy the whole repo there and uncomment:
+    # build:
+    #   context: ../..
+    #   dockerfile: Dockerfile
+    container_name: storyboard-studio
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      WEB_ROOT: /app/apps/web/dist
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+    ports:
+      - '${STORYBOARD_PORT:-3001}:3001'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/health || exit 1']
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

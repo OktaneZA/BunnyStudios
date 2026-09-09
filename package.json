@@ -1,0 +1,27 @@
+{
+  "name": "storyboard-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run migrate -w @storyboard/api",
+    "dev:api": "npm run dev -w @storyboard/api",
+    "dev:web": "npm run dev -w @storyboard/web",
+    "release": "node deploy/release.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
