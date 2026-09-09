@@ -296,6 +296,8 @@ async function e2e(tag) {
 }
 
 // ---------- verification ----------
+/** Bundle filename inside the image just built; null for a rollback, where only the tag is checked. */
+let expectedBundle = null;
 async function verify(expectedTag) {
   log(`Waiting for ${APP_URL}/health to report build ${expectedTag}`);
   const deadline = Date.now() + 120_000;
@@ -307,8 +309,7 @@ async function verify(expectedTag) {
       if (h.status === 'ok' && h.build === expectedTag) {
         const html = await fetchText(`${APP_URL}/`);
         const served = html.match(/\/assets\/index-[^"]+\.js/)?.[0];
-        const local = readFileSync(join(root, 'apps/web/dist/index.html'), 'utf8').match(/\/assets\/index-[^"]+\.js/)?.[0];
-        if (local && served !== local) fail(`health is on ${expectedTag} but the web bundle served is ${served}, expected ${local}`);
+        if (expectedBundle && served !== expectedBundle) fail(`health is on ${expectedTag} but the web bundle served is ${served}, expected ${expectedBundle}`);
         log(`Live: v${h.version} (${h.commit}), build ${h.build}, bundle ${served}`);
         return;
       }
@@ -336,9 +337,11 @@ async function release() {
   run('docker', ['build',
     '--build-arg', `BUILD_TAG=${tag}`, '--build-arg', `APP_VERSION=${version}`, '--build-arg', `GIT_COMMIT=${sha}`,
     '-t', `${IMAGE}:${tag}`, '-t', `${IMAGE}:latest`, '.']);
-  // The verification step compares the served bundle to this local build output.
-  run('docker', ['run', '--rm', '--entrypoint', 'sh', `${IMAGE}:${tag}`, '-c', 'cat /app/apps/web/dist/index.html'],
-    { stdio: ['ignore', 'pipe', 'inherit'] });
+  // The verification step compares the served bundle to the one inside this exact image
+  // (never to a local apps/web/dist, which the release does not rebuild and may be stale).
+  expectedBundle = out('docker', ['run', '--rm', '--entrypoint', 'sh', `${IMAGE}:${tag}`, '-c', 'cat /app/apps/web/dist/index.html'])
+    .match(/\/assets\/index-[^"]+\.js/)?.[0] ?? null;
+  if (!expectedBundle) fail('the built image has no web bundle in apps/web/dist/index.html');
 
   await e2e(tag);
   if (flag('--dry-run')) { log(`Dry run: ${IMAGE}:${tag} built and tested; nothing shipped.`); return; }

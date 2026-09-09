@@ -7,6 +7,10 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+## v0.3.2 — 2026-09-09
+
+- Release verification compares the served web bundle to the one inside the image it just built, not to a possibly stale local `apps/web/dist`.
+
 ## v0.3.1 — 2026-09-09
 
 - Sign-in page: the tablet-app link has its own style class so it never collides with the version tag.
