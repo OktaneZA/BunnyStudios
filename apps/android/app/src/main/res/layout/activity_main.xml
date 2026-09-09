@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/brand_navy">
+
+    <WebView
+        android:id="@+id/web"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="invisible" />
+
+    <!-- Splash: shown until the first page has painted. Long-press opens the address dialog. -->
+    <LinearLayout
+        android:id="@+id/splash"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:background="@color/brand_navy">
+        <ImageView
+            android:layout_width="144dp"
+            android:layout_height="156dp"
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/ic_bunny" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/app_name"
+            android:textColor="@color/text_on_navy"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+        <ProgressBar
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:indeterminateTint="@color/brand_lilac" />
+    </LinearLayout>
+
+    <!-- Unreachable server. Same design language as the web app's cards, in the teen's words. -->
+    <LinearLayout
+        android:id="@+id/offline"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+        <ImageView
+            android:layout_width="96dp"
+            android:layout_height="104dp"
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/ic_bunny" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/offline_title"
+            android:textColor="@color/text_on_navy"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:maxWidth="560dp"
+            android:gravity="center"
+            android:text="@string/offline_body"
+            android:textColor="@color/text_on_navy"
+            android:textSize="17sp" />
+        <TextView
+            android:id="@+id/offline_address"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:alpha="0.7"
+            android:textColor="@color/text_on_navy"
+            android:textSize="14sp"
+            tools:text="Looking for: http://192.168.1.73:3001" />
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:orientation="horizontal">
+            <Button
+                android:id="@+id/retry"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="160dp"
+                android:minHeight="56dp"
+                android:text="@string/retry"
+                android:textSize="17sp" />
+            <Button
+                android:id="@+id/change_address"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:minHeight="56dp"
+                android:text="@string/change_address"
+                android:textColor="@color/text_on_navy"
+                android:textSize="17sp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bunny Studios</string>
+    <string name="tagline">Plan a cartoon, shot by shot.</string>
+
+    <!-- Offline / unreachable screen. Written for a 10–15 year old: what to do, not what broke. -->
+    <string name="offline_title">Can\'t reach Bunny Studios</string>
+    <string name="offline_body">Check the tablet is on the home Wi‑Fi and the studio server is switched on, then try again.</string>
+    <string name="offline_address">Looking for: %1$s</string>
+    <string name="retry">Try again</string>
+    <string name="change_address">Change address</string>
+
+    <!-- Server address dialog -->
+    <string name="address_title">Studio address</string>
+    <string name="address_hint">http://192.168.1.73:3001</string>
+    <string name="address_help">Where Bunny Studios lives. Only change this if the person who set up the studio asks you to.</string>
+    <string name="address_reset">Use default</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="address_invalid">That doesn\'t look like a web address. It should start with http:// or https://</string>
+
+    <!-- Native dialogs for the web app's confirm() -->
+    <string name="ok">OK</string>
+</resources>

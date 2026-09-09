@@ -30,3 +30,10 @@ deploy/synology/backups/
 
 # Release settings for this PC (NAS user etc.)
 deploy/release.env
+
+# Android signing keystore and built APK served by the web app
+deploy/android/
+apps/web/public/downloads/
+
+# Browser test output
+.playwright-results/

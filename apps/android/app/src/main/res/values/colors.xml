@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the web app's theme-color and its purple bunny. -->
+    <color name="brand_navy">#1D3557</color>
+    <color name="brand_purple">#B597EE</color>
+    <color name="brand_lilac">#E5C6FF</color>
+    <color name="ink">#261737</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="text_on_navy">#F4F1FA</color>
+</resources>

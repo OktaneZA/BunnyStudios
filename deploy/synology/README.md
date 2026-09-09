@@ -201,6 +201,34 @@ change meaning, so any released version runs against the newest schema.
 If verification times out, the container log is the first place to look:
 `ssh <user>@192.168.1.73 'sudo docker logs --tail 100 storyboard-studio'`.
 
+## The Fire tablet app
+
+`npm run release` also builds the Android app in `apps/android` when `JAVA_HOME` and
+`ANDROID_HOME` are set in `release.env`, signs it with the keystore named there, and ships it
+inside the image so the server offers it at `/downloads/bunny-studios.apk`. The sign-in page
+shows a **Get the tablet app** link whenever that file is present.
+
+On the Fire HD 10: Settings > Security & Privacy > Apps from Unknown Sources > allow Silk,
+then open `http://192.168.1.73:3001/downloads/bunny-studios.apk` in Silk, download and
+install. The app is a WebView around the studio, so every later release updates it without
+a new APK; reinstall only when the wrapper itself changes (the APK version matches the
+server version it was built with). Its server address is changeable in-app: long-press the
+splash or use the offline screen's **Change address**. Details in
+[apps/android/README.md](../../apps/android/README.md).
+
+## Browser tests
+
+The release runs the Playwright suite in `apps/web/e2e` against the freshly built image,
+started on this PC against a scratch database and reached through the PC's LAN IP, so the
+browser treats the origin as insecure exactly like the NAS. Sign-in, cartoons, scenes, drag
+reordering, editing, both bins and account privacy are covered; a failure stops the release
+before anything ships. `--skip-e2e` bypasses it; `--dry-run` runs everything and ships nothing.
+To run the suite by hand against any server:
+
+```bash
+E2E_BASE_URL=http://192.168.1.107:3999 npx playwright test -c apps/web/e2e
+```
+
 ## Backups
 
 [backup.sh](backup.sh) dumps the whole database with `pg_dump` (custom format, compressed)

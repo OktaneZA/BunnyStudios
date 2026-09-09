@@ -111,6 +111,17 @@ no SFTP unless enabled, so `scp` fails; `deploy/release.mjs` uploads through pla
 - Secrets never enter the repository: `.env` files, `release.env`, dumps and image tarballs are
   all ignored. Rotate anything that is ever pasted into a chat or a ticket.
 
+**The Fire tablet app is the web app.** `apps/android` is a WebView shell; nothing in it knows
+about cartoons or scenes. If a change needs the tablet to behave differently, it belongs in
+the web app. The wrapper needs a new APK only when the wrapper itself changes; the release
+builds, signs and serves it when `JAVA_HOME` and `ANDROID_HOME` are in `release.env`.
+
+**Browser tests live in `apps/web/e2e`** and run against a real server, never against Vite.
+Selectors use the accessible names the app already has (`aria-label`s on the board buttons,
+form labels), so a wording change that breaks a test is a wording change a screen reader
+would feel too. Drag uses real pointer events (see the dnd-kit note above). `npm run release
+-- --dry-run` runs the suite against the freshly built image without shipping.
+
 ## Validate at runtime, not just at compile time
 
 A phase is not done because it typechecks. Start the app, hit the endpoints, drive the UI in a

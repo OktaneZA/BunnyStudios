@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Window background while the WebView loads: navy with the bunny centred. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/brand_navy" />
+    <item
+        android:drawable="@drawable/ic_bunny"
+        android:gravity="center"
+        android:width="144dp"
+        android:height="156dp" />
+</layer-list>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The NAS serves the app over plain HTTP on the home LAN, which Android blocks by default.
+  Cleartext is allowed everywhere here because the server address is user-configurable; when
+  the app moves behind HTTPS (see docs/architecture.md, change C) this can be narrowed to
+  cleartextTrafficPermitted="false" with a <domain-config> for the LAN address only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Lets a DSM self-signed certificate installed by the user on the tablet be trusted. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
