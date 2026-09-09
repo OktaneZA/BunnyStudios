@@ -30,7 +30,9 @@ RUN npm prune --omit=dev
 FROM node:24-alpine
 # Stamped by deploy/release.mjs; surfaced by GET /health so a release can prove what is live.
 ARG BUILD_TAG=dev
-ENV BUILD_TAG=${BUILD_TAG}
+ARG APP_VERSION=0.0.0-dev
+ARG GIT_COMMIT=unknown
+ENV BUILD_TAG=${BUILD_TAG} APP_VERSION=${APP_VERSION} GIT_COMMIT=${GIT_COMMIT}
 # Lets the release prune only this app's leftover images on a shared Docker host.
 LABEL app=storyboard-studio
 ENV NODE_ENV=production \

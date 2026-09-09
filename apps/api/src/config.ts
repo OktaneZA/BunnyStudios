@@ -40,7 +40,13 @@ const schema = z.object({
    * Unset in development, where Vite serves the web app and proxies /api.
    */
   WEB_ROOT: z.string().trim().default(''),
-  /** Image build tag, set by the Dockerfile. Reported by /health so a release can be verified. */
+  /**
+   * Version identity, stamped into the image by deploy/release.mjs and reported by /health.
+   * APP_VERSION is the root package.json version (the human one); GIT_COMMIT pins the source;
+   * BUILD_TAG is the image tag, `v<version>-<commit>`, which is what a rollback names.
+   */
+  APP_VERSION: z.string().trim().default('0.0.0-dev'),
+  GIT_COMMIT: z.string().trim().default('unknown'),
   BUILD_TAG: z.string().trim().default('dev'),
   ANTHROPIC_API_KEY: z.string().trim().default(''),
   ANTHROPIC_MODEL: z.string().trim().min(1).default('claude-sonnet-5'),

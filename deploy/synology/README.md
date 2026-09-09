@@ -171,14 +171,32 @@ that file, so a change to `deploy/synology/docker-compose.yml` reaches the NAS o
 release. Anything the release loads or starts shows up in Container Manager's Image and
 Project pages, because the script drives the same Docker engine that the UI does.
 
+**Versions.** The root `package.json` version is the version. The usual flow:
+
+```bash
+npm version minor            # 0.1.0 -> 0.2.0; commits "v0.2.0" and tags it
+git push --follow-tags
+npm run release              # ships storyboard-studio:v0.2.0-<commit>
+```
+
+`/health` reports `version`, `commit` and `build`, and the sign-in page shows `v0.2.0`, so a
+screenshot of a problem says which build it came from. The release refuses an uncommitted
+tree (`--allow-dirty` ships it tagged `-dirty`) and warns if `HEAD` is not the tagged version
+commit. Record what changed in [CHANGELOG.md](../../CHANGELOG.md) under the version heading.
+
 Other commands:
 
 | Command | What |
 |---|---|
 | `npm run release -- --skip-tests` | skip the test step |
 | `npm run release -- --no-backup` | skip the pre-release dump |
+| `npm run release -- --allow-dirty` | ship uncommitted work, tagged `-dirty` |
 | `npm run release -- --list` | image tags present on the NAS (the newest 5 are kept) |
-| `npm run release -- --rollback <tag>` | point `latest` at an earlier tag and restart |
+| `npm run release -- --rollback v0.1.0` | back to the newest build of that version (a full tag also works) |
+
+Rolling back the app never rolls back the database. That is safe because migrations are
+additive by rule: they add nullable columns, enums or tables and never rename, drop or
+change meaning, so any released version runs against the newest schema.
 
 If verification times out, the container log is the first place to look:
 `ssh <user>@192.168.1.73 'sudo docker logs --tail 100 storyboard-studio'`.

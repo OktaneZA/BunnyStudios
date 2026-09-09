@@ -72,7 +72,12 @@ export async function buildApp(options: { thumbnailProvider?: ThumbnailProvider;
 
   registerErrorHandler(app, { spaFallback: Boolean(config.WEB_ROOT) });
 
-  app.get('/health', async () => ({ status: 'ok', build: config.BUILD_TAG }));
+  app.get('/health', async () => ({
+    status: 'ok',
+    version: config.APP_VERSION,
+    commit: config.GIT_COMMIT,
+    build: config.BUILD_TAG,
+  }));
 
   await app.register(
     async (v1) => {

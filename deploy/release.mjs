@@ -2,11 +2,13 @@
 /**
  * Release Storyboard Studio to the Synology NAS in one command.
  *
- *   npm run release                 test, build, ship, restart, verify
+ *   npm version minor && git push --follow-tags     bump: 0.1.0 -> 0.2.0, commit, tag v0.2.0
+ *   npm run release                 test, build, ship, restart, verify (image v<version>-<commit>)
  *   npm run release -- --skip-tests
  *   npm run release -- --no-backup  skip the pre-release database dump
- *   npm run release -- --setup      one-time: install an SSH key and passwordless docker on the NAS
- *   npm run release -- --rollback <tag>   point the NAS back at an earlier image and restart
+ *   npm run release -- --allow-dirty  ship uncommitted work, tagged -dirty
+ *   npm run release -- --setup      one-time: install an SSH key on the NAS
+ *   npm run release -- --rollback <tag | vX.Y.Z>   point the NAS back at an earlier build
  *   npm run release -- --list       show the image tags present on the NAS
  *
  * Reads deploy/release.env (see release.env.example). Everything runs from this PC over SSH;
@@ -150,12 +152,41 @@ function setup() {
   log(`Docker on the NAS: ${v}. Setup complete. Run: npm run release`);
 }
 
-// ---------- rollback / list ----------
-function list() {
-  console.log(ssh(`${DOCKER_ON_NAS} images ${IMAGE} --format '{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}'`));
+// ---------- version identity ----------
+/**
+ * One semantic version, from the root package.json, bumped with `npm version <bump>` (which
+ * also commits and tags v<version>). The image tag pins the commit too, so `v0.2.0-59b7124`
+ * is both a human version and an exact build. A dirty tree is refused unless --allow-dirty,
+ * and then it is marked so it can never be mistaken for a release.
+ */
+function versionIdentity() {
+  const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+  const sha = (() => { try { return out('git', ['rev-parse', '--short', 'HEAD']); } catch { return 'nogit'; } })();
+  const dirty = (() => { try { return out('git', ['status', '--porcelain']).length > 0; } catch { return false; } })();
+  if (dirty && !flag('--allow-dirty')) {
+    fail('Uncommitted changes. Commit them (or pass --allow-dirty to ship a build marked -dirty).');
+  }
+  try {
+    const tagged = out('git', ['tag', '--points-at', 'HEAD']).split(/\r?\n/).includes(`v${version}`);
+    if (!tagged) console.warn(`\x1b[33mrelease !\x1b[0m HEAD is not tagged v${version}. Usual flow: npm version <patch|minor|major> && git push --follow-tags && npm run release`);
+  } catch { /* no git */ }
+  return { version, sha, tag: `v${version}-${sha}${dirty ? '-dirty' : ''}` };
 }
-async function rollback(tag) {
-  if (!tag) fail('usage: npm run release -- --rollback <tag>   (see --list)');
+
+// ---------- rollback / list ----------
+function nasTags() {
+  return ssh(`${DOCKER_ON_NAS} images ${IMAGE} --format '{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}'`)
+    .split(/\r?\n/).filter(Boolean).map((l) => { const [tag, created, size] = l.split('\t'); return { tag, created, size }; });
+}
+function list() {
+  for (const t of nasTags()) console.log(`${t.tag.padEnd(28)} ${t.created}  ${t.size}`);
+}
+async function rollback(want) {
+  if (!want) fail('usage: npm run release -- --rollback <tag | vX.Y.Z>   (see --list)');
+  const tags = nasTags().map((t) => t.tag).filter((t) => t !== 'latest');
+  // Accept a full image tag, or just a version: the newest build of that version wins.
+  const tag = tags.includes(want) ? want : tags.filter((t) => t.startsWith(`${want}-`)).sort().reverse()[0];
+  if (!tag) fail(`No image for "${want}" on the NAS. Available: ${tags.join(', ') || 'none'}`);
   log(`Pointing ${IMAGE}:latest at ${tag} on the NAS`);
   sshRun(`${DOCKER_ON_NAS} tag ${IMAGE}:${tag} ${IMAGE}:latest && cd ${NAS_DIR} && ${DOCKER_ON_NAS} compose -p ${composeProject()} up -d`);
   await verify(tag);
@@ -175,7 +206,7 @@ async function verify(expectedTag) {
         const served = html.match(/\/assets\/index-[^"]+\.js/)?.[0];
         const local = readFileSync(join(root, 'apps/web/dist/index.html'), 'utf8').match(/\/assets\/index-[^"]+\.js/)?.[0];
         if (local && served !== local) fail(`health is on ${expectedTag} but the web bundle served is ${served}, expected ${local}`);
-        log(`Live: build ${h.build}, bundle ${served}`);
+        log(`Live: v${h.version} (${h.commit}), build ${h.build}, bundle ${served}`);
         return;
       }
     } catch { /* not up yet */ }
@@ -186,10 +217,8 @@ async function verify(expectedTag) {
 
 // ---------- the release ----------
 async function release() {
-  const sha = (() => { try { return out('git', ['rev-parse', '--short', 'HEAD']); } catch { return 'nogit'; } })();
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/T(\d{4})\d{2}\.\d+Z/, '-$1');
-  const tag = `${stamp}-${sha}`;
-  log(`Release ${IMAGE}:${tag} -> ${target}:${NAS_DIR}`);
+  const { version, sha, tag } = versionIdentity();
+  log(`Release v${version} (${IMAGE}:${tag}) -> ${target}:${NAS_DIR}`);
 
   if (!flag('--skip-tests')) {
     log('Tests');
@@ -199,7 +228,9 @@ async function release() {
   }
 
   log('Building the image');
-  run('docker', ['build', '--build-arg', `BUILD_TAG=${tag}`, '-t', `${IMAGE}:${tag}`, '-t', `${IMAGE}:latest`, '.']);
+  run('docker', ['build',
+    '--build-arg', `BUILD_TAG=${tag}`, '--build-arg', `APP_VERSION=${version}`, '--build-arg', `GIT_COMMIT=${sha}`,
+    '-t', `${IMAGE}:${tag}`, '-t', `${IMAGE}:latest`, '.']);
   // The verification step compares the served bundle to this local build output.
   run('docker', ['run', '--rm', '--entrypoint', 'sh', `${IMAGE}:${tag}`, '-c', 'cat /app/apps/web/dist/index.html'],
     { stdio: ['ignore', 'pipe', 'inherit'] });
