@@ -116,7 +116,7 @@ test.describe('tablet app download', () => {
     const head = await page.request.head('/downloads/bunny-studios.apk');
     const served = head.ok() && (head.headers()['content-type'] ?? '').includes('android');
     await page.goto('/');
-    await expect(page.locator('.version-tag')).toHaveCount(served ? 2 : 1);
+    await expect(page.locator('.apk-link')).toHaveCount(served ? 1 : 0);
     const link = page.getByRole('link', { name: 'Get the tablet app' });
     await expect(link).toHaveCount(served ? 1 : 0);
     if (served) await expect(link).toHaveAttribute('href', '/downloads/bunny-studios.apk');
