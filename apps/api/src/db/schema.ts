@@ -86,6 +86,7 @@ export const detectorEnum = pgEnum('detector', [
 export const severityEnum = pgEnum('severity', ['info', 'warning', 'error']);
 export const assetKindEnum = pgEnum('asset_kind', [
   'style_ref', 'character_ref', 'location_ref', 'prop_ref', 'generated_output', 'cover', 'scene_thumbnail',
+  'final_render', 'music', 'voiceover', 'poster',
 ]);
 export const proposalStatusEnum = pgEnum('proposal_status', [
   'pending', 'accepted', 'rejected', 'cancelled', 'expired',
@@ -97,6 +98,16 @@ export const exportFormatEnum = pgEnum('export_format', [
   'markdown', 'json', 'csv', 'pdf', 'txt_bundle',
 ]);
 export const exportScopeEnum = pgEnum('export_scope', ['episode', 'scene', 'shot_selection']);
+
+// ── Director Mode (docs/director-mode-plan-v1.md) ───────────────────────────
+export const generationJobKindEnum = pgEnum('generation_job_kind', ['image', 'video', 'render']);
+export const generationJobStatusEnum = pgEnum('generation_job_status', [
+  'queued', 'submitted', 'running', 'reviewing', 'ready', 'failed', 'cancelled',
+]);
+export const ledgerStatusEnum = pgEnum('ledger_status', ['reserved', 'settled', 'refunded']);
+export const reviewStatusEnum = pgEnum('review_status', ['not_required', 'pending', 'allowed', 'rejected']);
+export const characterSourceEnum = pgEnum('character_source', ['manual', 'story']);
+export const transitionOutEnum = pgEnum('transition_out', ['cut', 'fade', 'slide']);
 
 // ── §3.2 Account ────────────────────────────────────────────────────────────
 export const accounts = pgTable('accounts', {
@@ -114,6 +125,10 @@ export const accounts = pgTable('accounts', {
    */
   isMinor: boolean('is_minor').notNull().default(false),
   aiCreditBalance: integer('ai_credit_balance').notNull().default(0),
+  /** Plan D31: caps in pence, set by the adult account; the teen sees them as "about N pictures". */
+  dailyBudgetPence: integer('daily_budget_pence').notNull().default(200),
+  monthlyBudgetPence: integer('monthly_budget_pence').notNull().default(2000),
+  currency: varchar('currency', { length: 3 }).notNull().default('GBP'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -201,6 +216,14 @@ export const characters = pgTable(
     characterArc: text('character_arc').notNull().default(''),
     /** [{other_character_id, relationship}] */
     relationships: jsonb('relationships').notNull().default([]),
+    /** Plan D39: 'story' rows were found in the scene text by a proposal; 'manual' were typed. */
+    source: characterSourceEnum('source').notNull().default('manual'),
+    foundInSceneIds: uuid('found_in_scene_ids').array().notNull().default([]),
+    /** Fingerprint of the description the cast proposal read, so pictures can be marked stale. */
+    descriptionFingerprint: text('description_fingerprint'),
+    mainReferenceAssetId: uuid('main_reference_asset_id'),
+    backgroundStory: text('background_story').notNull().default(''),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [index('characters_project_idx').on(t.projectId)],
 );
@@ -369,6 +392,8 @@ export const shots = pgTable(
     generationStatus: generationStatusEnum('generation_status').notNull().default('not_started'),
     generatedAssetIds: uuid('generated_asset_ids').array().notNull().default([]),
     heroAssetId: uuid('hero_asset_id'),
+    /** The picked clip (D35). heroAssetId stays the picked picture the clip started from. */
+    heroVideoAssetId: uuid('hero_video_asset_id'),
     reworkNote: text('rework_note'),
     userPromptAddendum: text('user_prompt_addendum').notNull().default(''),
     promptLocked: boolean('prompt_locked').notNull().default(false),
@@ -406,9 +431,17 @@ export const assets = pgTable(
     durationMs: integer('duration_ms'),
     /** Extracted first frame for videos; what GR-4 and EX-6 display. */
     posterAssetId: uuid('poster_asset_id'),
+    /** Plan D32 gate 3: a rejected take is kept, hidden from the teen, listed for the adult. */
+    reviewStatus: reviewStatusEnum('review_status').notNull().default('not_required'),
+    reviewReason: text('review_reason'),
+    /** Which generation job made this take, so the media bin can group by request. */
+    generationJobId: uuid('generation_job_id'),
+    /** The model that made it, for the adult's view and the ledger. */
+    modelId: text('model_id'),
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
-  (t) => [index('assets_project_idx').on(t.projectId, t.kind)],
+  (t) => [index('assets_project_idx').on(t.projectId, t.kind), index('assets_owner_idx').on(t.ownerEntityType, t.ownerEntityId)],
 );
 
 // ── §3.13b UnmatchedUpload — backs the GR-2 manual-assignment tray ───────────
@@ -516,4 +549,112 @@ export const sceneVersions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex('scene_versions_unique').on(t.sceneId, t.version)],
+);
+
+// ── Director Mode: jobs, ledger, timeline ───────────────────────────────────
+
+/** The queue (plan D30). A runner claims rows with UPDATE … RETURNING; stale claims are free. */
+export const generationJobs = pgTable(
+  'generation_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    /** The client's Idempotency-Key, so a lost response never double-spends. */
+    requestKey: uuid('request_key').notNull(),
+    kind: generationJobKindEnum('kind').notNull(),
+    /** 'shot' | 'character' | 'timeline' */
+    targetEntityType: text('target_entity_type').notNull(),
+    targetEntityId: uuid('target_entity_id').notNull(),
+    modelId: text('model_id').notNull(),
+    provider: text('provider').notNull(),
+    providerJobId: text('provider_job_id'),
+    /** Prompt, options and the asset ids used as references; never file bytes. */
+    request: jsonb('request').notNull(),
+    status: generationJobStatusEnum('status').notNull().default('queued'),
+    attempt: integer('attempt').notNull().default(0),
+    claimedBy: text('claimed_by'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    errorCode: text('error_code'),
+    /** Always user-safe. Upstream bodies are never stored here. */
+    errorDetail: text('error_detail'),
+    resultAssetIds: uuid('result_asset_ids').array().notNull().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('generation_jobs_request_key').on(t.accountId, t.requestKey),
+    index('generation_jobs_status_idx').on(t.status, t.createdAt),
+    index('generation_jobs_target_idx').on(t.targetEntityType, t.targetEntityId),
+  ],
+);
+
+/** Plan D31: real money per generation, reserved before submit, settled or refunded after. */
+export const generationLedger = pgTable(
+  'generation_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    jobId: uuid('job_id').notNull().references(() => generationJobs.id, { onDelete: 'cascade' }),
+    modelId: text('model_id').notNull(),
+    units: integer('units').notNull(),
+    unitCostPence: numeric('unit_cost_pence', { precision: 8, scale: 3 }).notNull(),
+    estimatedPence: integer('estimated_pence').notNull(),
+    actualPence: integer('actual_pence'),
+    currency: varchar('currency', { length: 3 }).notNull().default('GBP'),
+    status: ledgerStatusEnum('status').notNull().default('reserved'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('generation_ledger_account_day_idx').on(t.accountId, t.createdAt)],
+);
+
+export const timelines = pgTable('timelines', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().unique().references(() => projects.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull().default(1),
+  handEdited: boolean('hand_edited').notNull().default(false),
+  musicAssetId: uuid('music_asset_id'),
+  musicVolume: integer('music_volume').notNull().default(70),
+  musicFadeInMs: integer('music_fade_in_ms').notNull().default(0),
+  musicFadeOutMs: integer('music_fade_out_ms').notNull().default(1500),
+  /** The last successful render, shown in the player. */
+  renderAssetId: uuid('render_asset_id'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const timelineItems = pgTable(
+  'timeline_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    timelineId: uuid('timeline_id').notNull().references(() => timelines.id, { onDelete: 'cascade' }),
+    sceneId: uuid('scene_id').notNull().references(() => scenes.id, { onDelete: 'cascade' }),
+    shotId: uuid('shot_id'),
+    /** Null means the DM-24 fallback: the shot's hero picture, then its sketch, else skipped. */
+    assetId: uuid('asset_id'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    trimInMs: integer('trim_in_ms').notNull().default(0),
+    trimOutMs: integer('trim_out_ms'),
+    /** Plan D40: how this item joins the next one. */
+    transitionOut: transitionOutEnum('transition_out').notNull().default('fade'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [index('timeline_items_timeline_idx').on(t.timelineId, t.sortOrder)],
+);
+
+export const timelineVoiceovers = pgTable(
+  'timeline_voiceovers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    timelineId: uuid('timeline_id').notNull().references(() => timelines.id, { onDelete: 'cascade' }),
+    assetId: uuid('asset_id').notNull(),
+    startMs: integer('start_ms').notNull().default(0),
+    volume: integer('volume').notNull().default(100),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [index('timeline_voiceovers_timeline_idx').on(t.timelineId, t.startMs)],
 );

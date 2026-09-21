@@ -40,6 +40,11 @@ jobs:
       - run: npm ci
       - run: npm test -w @storyboard/vocabularies
       - run: npm run build -w @storyboard/vocabularies
+      - run: npm test -w @storyboard/models
+      - run: npm run build -w @storyboard/models
+      - run: npm run build -w @storyboard/compiler
+      - run: npm test -w @storyboard/compiler
+      - run: sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run build -w @storyboard/api
       - run: npm run build -w @storyboard/web
       - run: npm run migrate -w @storyboard/api

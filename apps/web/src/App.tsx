@@ -7,9 +7,14 @@ import { ProjectList } from './screens/ProjectList';
 import { NewProject } from './screens/NewProject';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { SceneDetail } from './screens/SceneDetail';
+import { Director } from './screens/Director';
+import { Together } from './screens/Together';
+import { Grownups } from './screens/Grownups';
 
 export default function App() {
   const sceneRoute = useMatch('/projects/:projectId/scenes/:sceneId');
+  const togetherRoute = useMatch('/projects/:projectId/together');
+  const directorRoute = useMatch('/projects/:projectId/director');
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,6 +55,11 @@ export default function App() {
         </div>
 
         <nav className="menu">
+          {!account.is_minor && (
+            <Link className="btn secondary" to="/grownups">
+              Grown-ups
+            </Link>
+          )}
           <Link className="btn" to="/projects/new">
             + New cartoon
           </Link>
@@ -62,7 +72,9 @@ export default function App() {
       <main>
         <nav className="crumbs" aria-label="Back navigation">
           {sceneRoute && <Link to={`/projects/${sceneRoute.params.projectId}`}>← Back to scenes</Link>}
-          <Link to="/">← Back to Cartoons</Link>
+          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Director</Link>}
+          {!directorRoute && !togetherRoute && <Link to="/">← Back to Cartoons</Link>}
+          {directorRoute && <Link to="/">← All cartoons</Link>}
         </nav>
         <Routes>
           <Route path="/" element={<ProjectList />} />
@@ -72,6 +84,9 @@ export default function App() {
             path="/projects/:projectId/scenes/:sceneId"
             element={<SceneDetail account={account} />}
           />
+          <Route path="/projects/:projectId/director" element={<Director account={account} />} />
+          <Route path="/projects/:projectId/together" element={<Together />} />
+          {!account.is_minor && <Route path="/grownups" element={<Grownups />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

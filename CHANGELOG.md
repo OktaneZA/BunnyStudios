@@ -7,6 +7,16 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+- Director Mode (docs/director-mode-plan-v1.md, docs/director-mode.md): a second tab on every
+  cartoon. The cast is found from the scene text by a Claude proposal; each scene gets one
+  compiled shot; "Make a picture" and "Make it move" run through fal.ai picture makers listed in
+  a data-driven catalogue (`packages/models`), queued in a `generation_jobs` table, budgeted in
+  real pence with adult-set daily and monthly caps, and passed through three safety gates;
+  "Put it together" renders the scenes with music, voice and cut/fade/slide transitions to one
+  MP4 with ffmpeg. New packages `@storyboard/models` and `@storyboard/compiler` (the pure prompt
+  compiler, 100% covered). Migration `0006_director_mode`. The image now installs ffmpeg and
+  mounts a storage folder at `/data/storage` (`STORAGE_DIR` in the NAS `.env`).
+
 ## v0.3.2 — 2026-09-09
 
 - Release verification compares the served web bundle to the one inside the image it just built, not to a possibly stale local `apps/web/dist`.

@@ -1,0 +1,43 @@
+{
+  "input": {
+    "bible": {
+      "artStyle": "",
+      "lineTreatment": "",
+      "defaultLighting": "flat bright studio light",
+      "renderQualityTokens": "",
+      "negativePrompt": "",
+      "colourPalette": []
+    },
+    "scene": {
+      "description": "",
+      "sceneryDescription": "",
+      "cameraAngle": null,
+      "timeOfDay": "unspecified",
+      "weather": null,
+      "moodAtmosphere": null,
+      "lightingPreset": "candlelight",
+      "lighting": "a bedside lamp glow",
+      "styleOverride": null,
+      "locationName": "",
+      "locationDescription": "",
+      "locationDefaultLighting": "grey light from a skylight"
+    },
+    "shot": {
+      "shotType": null,
+      "lensFocalLength": null,
+      "depthOfField": null,
+      "subjectPlacement": "",
+      "actionBeat": "Bunny reads a book",
+      "expressionNote": "",
+      "lightingOverride": null,
+      "userPromptAddendum": "",
+      "characters": [],
+      "propTokens": []
+    }
+  },
+  "expected": {
+    "prompt": "Bunny reads a book. flickering warm candlelight, small pool of light.",
+    "negativePrompt": "text, watermark, signature, extra limbs, deformed hands, photorealistic, blurry",
+    "characterCount": 0
+  }
+}

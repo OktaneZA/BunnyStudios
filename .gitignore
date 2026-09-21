@@ -37,3 +37,4 @@ apps/web/public/downloads/
 
 # Browser test output
 .playwright-results/
+apps/api/storage/

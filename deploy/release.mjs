@@ -328,6 +328,8 @@ async function release() {
     log('Tests');
     const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     run(npm, ['test', '-w', '@storyboard/vocabularies'], { shell: process.platform === 'win32' });
+    run(npm, ['test', '-w', '@storyboard/models'], { shell: process.platform === 'win32' });
+    run(npm, ['test', '-w', '@storyboard/compiler'], { shell: process.platform === 'win32' });
     run(npm, ['test', '-w', '@storyboard/api'], { shell: process.platform === 'win32', stdio: ['inherit', 'ignore', 'inherit'] });
   }
 

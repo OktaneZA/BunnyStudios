@@ -18,6 +18,7 @@ container on a Synology NAS against an existing Postgres server.
 | [docs/director-mode-plan-v1.md](docs/director-mode-plan-v1.md) | Director Mode: requirements DM-1–DM-30, decisions D27–D37, build stages for pictures, clips and the finished cartoon |
 | [docs/requirements-v1.0.md](docs/requirements-v1.0.md) | The original specification |
 | [docs/scene-thumbnails.md](docs/scene-thumbnails.md) | How AI thumbnails and "Improve for me" work, and their limits |
+| [docs/director-mode.md](docs/director-mode.md) | Director Mode as built: setup, shape, what is verified, limits |
 | [deploy/synology/README.md](deploy/synology/README.md) | Deploying, releasing, backing up and restoring on the NAS |
 | [docs/spike/](docs/spike/) | Phase −1: validates the core bet before the prompt compiler is written |
 
@@ -37,8 +38,14 @@ container on a Synology NAS against an existing Postgres server.
 - An Android app for the Amazon Fire HD 10 (`apps/android`): the same studio in a landscape
   WebView with an icon, splash and offline screen, downloadable from the sign-in page.
 
-Not yet built: the prompt compiler (Phase 2, waiting on the spike), the series bible and cast
-screens, shots, exports and continuity checks. See the build plan.
+- **Director** (docs/director-mode.md): the cast is found from the story, each scene becomes a
+  picture and then a clip through fal.ai picture makers chosen from a data-driven catalogue,
+  every request is budgeted in real money and passed through three safety gates, and
+  "Put it together" renders the scenes with music, a voice track and three transitions into
+  one MP4 on the server.
+
+Not yet built: exports, continuity checks, the Director chat agent, AI voices. See the build plan
+and the Director Mode plan.
 
 ## Running it locally
 
@@ -75,6 +82,10 @@ ANTHROPIC_API_KEY=your-api-key
 ANTHROPIC_MODEL=claude-sonnet-5
 THUMBNAIL_DAILY_LIMIT=30
 THUMBNAIL_REQUESTS_PER_MINUTE=3
+FAL_KEY=your-fal-key           # Director Mode picture makers; blank hides them
+STORAGE_ROOT=./storage         # generated pictures, clips and renders
+FFMPEG_PATH=ffmpeg             # full paths on Windows
+FFPROBE_PATH=ffprobe
 ```
 
 The key stays on the server. Each request makes one generation call and one review call. The

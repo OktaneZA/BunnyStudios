@@ -27,6 +27,10 @@ services:
       HOST: 0.0.0.0
       WEB_ROOT: /app/apps/web/dist
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      # Generated pictures, clips and renders (plan D29): a folder on the NAS volume, see STORAGE_DIR in .env.
+      STORAGE_ROOT: /data/storage
+    volumes:
+      - '${STORAGE_DIR:-./storage}:/data/storage'
     ports:
       - '${STORYBOARD_PORT:-3001}:3001'
     healthcheck:

@@ -22,6 +22,7 @@ import { ProblemBox } from '../components/ProblemBox';
 import { SceneRow } from '../components/SceneRow';
 import { CopyButton } from '../components/CopyButton';
 import { storyText } from '../sceneExport';
+import { ProjectTabs } from '../components/ProjectTabs';
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -172,6 +173,8 @@ export function ProjectDetail() {
       <header className="project-head">
         <h2>{project.title}</h2>
         {project.logline && <p className="lede">{project.logline}</p>}
+        <p className="hint">Plan your cartoon here. When the scenes are ready, go to <b>Director</b> to make it.</p>
+        <ProjectTabs projectId={project.id} />
         <CopyButton label="Copy all scenes" disabled={saving || scenes.length === 0} text={() => storyText(project.title, project.logline, scenes)} />
         <p className="hint">Copies scene descriptions, camera, time, mood and your notes as text.</p>
       </header>
@@ -241,6 +244,12 @@ export function ProjectDetail() {
             </SortableContext>
           </DndContext>
         </>
+      )}
+
+      {scenes.length > 0 && (
+        <div className="row go-director">
+          <Link className="btn" to={`/projects/${project.id}/director`}>Ready? Go to Director →</Link>
+        </div>
       )}
 
       <form className="card add-scene" onSubmit={addScene}>
