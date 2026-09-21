@@ -225,7 +225,8 @@ export function createRunner(deps: RunnerDeps) {
     const safe = userSafeError(error);
     const reason = (error as { reason?: string }).reason;
     const retry = RETRYABLE.has(safe.code) && job.attempt < MAX_ATTEMPTS;
-    log.error(`job ${job.id} ${retry ? 'will retry' : 'failed'}: ${safe.code}`);
+    // The raw error stays in the server log; the user sees only the safe detail.
+    log.error(`job ${job.id} ${retry ? 'will retry' : 'failed'}: ${safe.code}: ${error instanceof Error ? error.message.slice(0, 600) : String(error)}`);
     if (retry) {
       // Guarded on ACTIVE so a job cancelled while we were waiting is never revived.
       await db.update(schema.generationJobs).set({ status: job.providerJobId ? 'submitted' : 'queued', claimedBy: null, claimedAt: null, errorCode: safe.code, errorDetail: safe.detail, updatedAt: new Date() })

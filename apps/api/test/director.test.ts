@@ -44,10 +44,11 @@ let sceneIds: string[];
 
 before(async () => {
   if (await ffmpegAvailable()) {
-    // A real one-second clip so poster extraction and review run for real.
+    // A real one-second SILENT clip (like Wan's) so poster extraction, review and the render's
+    // silent-track path all run for real.
     const dir = await mkdtemp(join(tmpdir(), 'clip-'));
     const out = join(dir, 'clip.mp4');
-    await promisify(execFile)(config.FFMPEG_PATH, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:d=1:r=25', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo', '-t', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', out]);
+    await promisify(execFile)(config.FFMPEG_PATH, ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:d=1:r=25', '-t', '1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', out]);
     testVideo = await readFile(out);
     await rm(dir, { recursive: true, force: true });
   }
@@ -384,6 +385,10 @@ test('make my cartoon: the render job runs, or explains that ffmpeg is missing (
   await runner.drain();
   const done = await job(started.json().id);
   await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: done.results[0].id } });
+  // A silent clip on scene 2 joins a still on scene 1: both item kinds and the silent-audio path.
+  const second = await shotFor(sceneIds[1]!);
+  await startJob(second.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 5 });
+  await runner.drain();
   const render = await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/timeline/render`, headers: { ...token(), 'idempotency-key': randomUUID() } });
   assert.equal(render.statusCode, 202, render.body);
   await runner.drain(60_000);
@@ -392,6 +397,7 @@ test('make my cartoon: the render job runs, or explains that ffmpeg is missing (
     assert.ok(t.render, JSON.stringify(t.render_job));
     assert.equal(t.render.mime_type, 'video/mp4');
     assert.ok(t.render.duration_ms >= 5000);
+    if (testVideo) assert.equal(t.items[1].source, 'video', 'the silent clip made it into the render plan');
   } else {
     assert.equal(t.render_job.status, 'failed');
     assert.match(t.render_job.error, /video tools are missing/);

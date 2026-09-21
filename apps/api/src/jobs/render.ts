@@ -10,7 +10,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db, schema } from '../db/client.ts';
-import { ffmpegAvailable, render, type RenderItem, type RenderPlan } from '../generation/media.ts';
+import { ffmpegAvailable, probeHasAudio, render, type RenderItem, type RenderPlan } from '../generation/media.ts';
 import { providerError } from '../generation/provider.ts';
 import type { Job, RunnerDeps } from './runner.ts';
 
@@ -117,7 +117,9 @@ export async function renderTimeline(job: Job, deps: RunnerDeps, signal: AbortSi
     };
     const renderItems: RenderItem[] = [];
     for (const [i, item] of items.entries()) {
-      renderItems.push({ path: await materialise(item.asset!, `item${i}`), isVideo: item.source === 'video', holdMs: item.durationMs, transitionOut: item.transitionOut });
+      const path = await materialise(item.asset!, `item${i}`);
+      const isVideo = item.source === 'video';
+      renderItems.push({ path, isVideo, hasAudio: isVideo ? await probeHasAudio(path) : false, holdMs: item.durationMs, transitionOut: item.transitionOut });
     }
     let music: RenderPlan['music'] = null;
     if (timeline.musicAssetId) {

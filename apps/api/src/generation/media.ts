@@ -65,11 +65,21 @@ export async function makeTestImage(colour = 'goldenrod'): Promise<Buffer | null
   } catch { return null; } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
+/** Whether a media file carries an audio stream; clips from some makers are silent. */
+export async function probeHasAudio(path: string): Promise<boolean> {
+  try {
+    const { stdout } = await run(config.FFPROBE_PATH, ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', path]);
+    return stdout.includes('audio');
+  } catch { return false; }
+}
+
 export type Transition = 'cut' | 'fade' | 'slide';
 export interface RenderItem {
   /** Absolute path to an mp4, or an image (png/jpg/svg) shown for `holdMs`. */
   path: string;
   isVideo: boolean;
+  /** A silent clip gets a generated silent track so the audio graph stays uniform. */
+  hasAudio: boolean;
   holdMs: number;
   transitionOut: Transition;
 }
@@ -95,7 +105,7 @@ export function renderArgs(plan: RenderPlan, output: string): string[] {
     if (item.isVideo) args.push('-i', item.path);
     else args.push('-loop', '1', '-t', (item.holdMs / 1000).toFixed(3), '-i', item.path);
     filters.push(`[${i}:v]scale=${plan.width}:${plan.height}:force_original_aspect_ratio=decrease,pad=${plan.width}:${plan.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25,format=yuv420p,settb=AVTB,setpts=PTS-STARTPTS[v${i}]`);
-    filters.push(item.isVideo
+    filters.push(item.isVideo && item.hasAudio
       ? `[${i}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS[a${i}]`
       : `anullsrc=r=48000:cl=stereo,atrim=0:${(item.holdMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`);
   });

@@ -48,6 +48,6 @@ export function createDirectorServices(overrides: DirectorOverrides = {}): Direc
   const store = overrides.store ?? createDiskStore(config.STORAGE_ROOT);
   const review = overrides.review ?? (fake ? { ...noReview, enabled: true } : config.ANTHROPIC_API_KEY ? createClaudeReview() : noReview);
   const finder = overrides.finder ?? createClaudeCastFinder();
-  const runner = createRunner({ catalogue, store, review, render: renderTimeline, ...(overrides.log ? { log: overrides.log } : {}), ...(overrides.pollMs ? { pollMs: overrides.pollMs } : {}) });
+  const runner = createRunner({ catalogue, store, review, render: renderTimeline, log: overrides.log ?? { info: (m) => console.log(`[runner] ${m}`), error: (m) => console.error(`[runner] ${m}`) }, ...(overrides.pollMs ? { pollMs: overrides.pollMs } : {}) });
   return { catalogue, store, review, finder, runner };
 }

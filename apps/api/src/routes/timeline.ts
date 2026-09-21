@@ -3,7 +3,7 @@
  * the three transitions, and the render job.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
@@ -28,7 +28,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const voiceAssets = voiceRows.length ? await db.select().from(schema.assets).where(and(inArray(schema.assets.id, voiceRows.map((v) => v.assetId)), isNull(schema.assets.deletedAt))) : [];
     const [renderAsset] = timeline.renderAssetId ? await db.select().from(schema.assets).where(and(eq(schema.assets.id, timeline.renderAssetId), isNull(schema.assets.deletedAt))) : [];
     const [activeJob] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.targetEntityId, timeline.id), eq(schema.generationJobs.kind, 'render'), inArray(schema.generationJobs.status, ['queued', 'submitted', 'running', 'reviewing']))).limit(1);
-    const [lastJob] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.targetEntityId, timeline.id), eq(schema.generationJobs.kind, 'render'))).orderBy(schema.generationJobs.createdAt).limit(1);
+    const [lastJob] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.targetEntityId, timeline.id), eq(schema.generationJobs.kind, 'render'))).orderBy(desc(schema.generationJobs.createdAt)).limit(1);
     const renders = await db.select().from(schema.assets).where(and(eq(schema.assets.ownerEntityId, timeline.id), eq(schema.assets.kind, 'final_render'), isNull(schema.assets.deletedAt))).orderBy(schema.assets.uploadedAt);
     const total = totalMs(items, TRANSITION_MS);
     // start_ms walks only the items that play, so an empty scene between two playing ones
