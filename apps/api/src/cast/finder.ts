@@ -26,7 +26,8 @@ const SYSTEM = `You read a child's storyboard and list the characters who appear
 
 const jsonSchema = {
   type: 'object', additionalProperties: false, required: ['characters'],
-  properties: { characters: { type: 'array', maxItems: 40, items: {
+  // Structured outputs reject maxItems; the zod parse below caps the list instead.
+  properties: { characters: { type: 'array', items: {
     type: 'object', additionalProperties: false, required: ['name', 'description', 'scene_numbers'],
     properties: { name: { type: 'string' }, description: { type: 'string' }, scene_numbers: { type: 'array', items: { type: 'integer' } } },
   } } },
@@ -65,7 +66,7 @@ export function createClaudeCastFinder(settings = { apiKey: config.ANTHROPIC_API
       const parsed = responseSchema.safeParse(await response.json());
       const text = parsed.success ? parsed.data.content.find((c) => c.type === 'text')?.text : undefined;
       if (!parsed.success || parsed.data.stop_reason !== 'end_turn' || !text) throw castUnavailable('The cast could not be read from the story. Try again.');
-      const result = z.object({ characters: z.array(foundCharacterSchema) }).safeParse(JSON.parse(text));
+      const result = z.object({ characters: z.array(foundCharacterSchema).max(40) }).safeParse(JSON.parse(text));
       if (!result.success) throw castUnavailable('The cast could not be read from the story. Try again.');
       return { characters: result.data.characters, inputTokens: parsed.data.usage.input_tokens, outputTokens: parsed.data.usage.output_tokens };
     },
