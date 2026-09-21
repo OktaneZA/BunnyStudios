@@ -71,8 +71,17 @@ generation.
   dedupe, determinism over 100 runs, a source scan for impurity.
 - `packages/models`: catalogue validation.
 
-Not yet verified: a real fal.ai call (no key on this machine), a real Claude review call, and the
-browser flows on the Fire HD 10. Do those before calling stage 3 done, per the plan's §9.
+- **Real fal.ai runs (21 September 2026, adult account, reviewer off):** FLUX Schnell made two
+  1024×576 pictures in 6 s; Nano Banana edit made a picture from a cast reference in 12 s; Wan 2.2
+  made a 3.4 s clip with a poster in 18 s; Kling 2.1 made a 5.0 s clip with a poster in 3 m 43 s.
+  Two catalogue mistakes were found and fixed by fal's validation detail (now logged server-side):
+  Wan wants `580p`/`720p`, Veo 3 wants `4s`/`6s`/`8s` at `720p`/`1080p`. Nano Banana edit refuses
+  a request with no reference pictures, so `requires_reference_images` is a capability and the
+  route says "give someone a picture in Cast" instead of submitting.
+
+Not yet verified: a real Claude review or cast-finder call (the key in `.env` was rejected by
+Anthropic on 21 September; with it blank the adult can generate unreviewed and the teen cannot
+generate at all), Veo 3 and FLUX Dev end to end, and the browser flows on the Fire HD 10.
 
 ## Limits and decisions worth knowing
 

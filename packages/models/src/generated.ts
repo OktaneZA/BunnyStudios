@@ -57,6 +57,7 @@ export const MODELS = [
     "icon": "model-image",
     "capabilities": {
       "reference_images": true,
+      "requires_reference_images": true,
       "start_frame": false,
       "end_frame": false,
       "audio": false,
@@ -208,9 +209,9 @@ export const MODELS = [
       "1080p"
     ],
     "duration_seconds": {
-      "min": 8,
+      "min": 4,
       "max": 8,
-      "step": 8
+      "step": 2
     },
     "max_reference_images": 0,
     "max_prompt_length": 2000,
@@ -255,7 +256,7 @@ export const MODELS = [
       "1:1"
     ],
     "resolutions": [
-      "480p",
+      "580p",
       "720p"
     ],
     "duration_seconds": {

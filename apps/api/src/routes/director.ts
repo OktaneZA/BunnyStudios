@@ -205,6 +205,9 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       }
       const cast = await sceneCharacters(tx, request.accountId, scene);
       const referenceAssetIds = cast.map((c) => c.mainReferenceAssetId).filter((v): v is string => Boolean(v)).slice(0, model.max_reference_images);
+      if (model.capabilities.requires_reference_images && !referenceAssetIds.length) {
+        throw ApiError.validation(`${model.friendlyLabel} works from your cast pictures, and nobody in this scene has one yet. Give someone a picture in Cast, or pick a different picture maker.`);
+      }
       const jobRequest: JobRequest = {
         prompt, negativePrompt: current.compiledNegativePrompt, referenceAssetIds, startFrameAssetId,
         aspectRatio: options.aspect, count: options.count, durationSeconds: options.durationSeconds, audio: options.audio, resolution: options.resolution,

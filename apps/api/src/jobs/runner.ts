@@ -58,6 +58,9 @@ const ACTIVE: Job['status'][] = ['queued', 'submitted', 'running', 'reviewing'];
 
 export function userSafeError(error: unknown): { code: string; detail: string } {
   if (isProviderError(error)) return { code: error.code, detail: error.message };
+  if (error instanceof Error && error.message === 'review-auth') {
+    return { code: 'review_unavailable', detail: 'The safety checker’s Claude key was rejected, so nothing was made. A grown-up needs to check ANTHROPIC_API_KEY.' };
+  }
   if (error instanceof Error && error.message === 'review-unavailable') {
     return { code: 'review_unavailable', detail: 'The safety checker is not available right now, so nothing was made. Please try again later.' };
   }
@@ -258,8 +261,11 @@ export function createRunner(deps: RunnerDeps) {
     if (stopped) return 0;
     const stale = new Date(Date.now() - config.GENERATION_CLAIM_TIMEOUT_MS);
     const claimed = await db.transaction(async (tx) => {
+      // Only jobs for providers this runner holds: a development server sharing the database
+      // with the test suite must never pick up (and pay for) a test's fake-provider jobs.
+      const providers = [...deps.catalogue.providers.keys(), ...(deps.render ? ['ffmpeg'] : [])];
       const candidates = await tx.select({ id: schema.generationJobs.id }).from(schema.generationJobs)
-        .where(and(inArray(schema.generationJobs.status, ACTIVE), or(isNull(schema.generationJobs.claimedBy), lt(schema.generationJobs.claimedAt, stale))))
+        .where(and(inArray(schema.generationJobs.status, ACTIVE), inArray(schema.generationJobs.provider, providers), or(isNull(schema.generationJobs.claimedBy), lt(schema.generationJobs.claimedAt, stale))))
         .orderBy(schema.generationJobs.createdAt).limit(Math.max(0, limit - running.size)).for('update', { skipLocked: true });
       if (!candidates.length) return [] as Job[];
       return tx.update(schema.generationJobs).set({ claimedBy: instanceId, claimedAt: new Date(), attempt: raw`${schema.generationJobs.attempt} + 1`, updatedAt: new Date() })

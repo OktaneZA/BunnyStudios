@@ -105,7 +105,10 @@ export function createFalProvider(
     const status = response.status;
     if (status === 401 || status === 403) throw providerError('auth', MESSAGES.auth);
     if (status === 400 || status === 422) {
-      if (looksLikePolicyRejection(await readJson(response))) throw providerError('rejected', MESSAGES.rejected);
+      const body = await readJson(response);
+      // Server log only, never a user message: the detail names the field the catalogue got wrong.
+      console.warn(`[fal] ${status} validation detail: ${JSON.stringify((body as { detail?: unknown })?.detail ?? body).slice(0, 600)}`);
+      if (looksLikePolicyRejection(body)) throw providerError('rejected', MESSAGES.rejected);
       throw providerError('invalid', MESSAGES.invalid);
     }
     if (status === 404) throw providerError('invalid', MESSAGES.unknownJob);

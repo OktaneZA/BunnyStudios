@@ -34,6 +34,7 @@ for (const m of doc.models) {
     if (!m[field] || String(m[field]).trim() === '') errors.push(`${at}: missing ${field}`);
   }
   for (const cap of CAPS) if (typeof m.capabilities?.[cap] !== 'boolean') errors.push(`${at}: capabilities.${cap} must be a boolean`);
+  if (m.capabilities?.requires_reference_images && !m.capabilities.reference_images) errors.push(`${at}: requires_reference_images needs reference_images`);
   if (!Array.isArray(m.aspect_ratios) || !m.aspect_ratios.length || m.aspect_ratios.some((a) => !ASPECTS.has(a))) errors.push(`${at}: aspect_ratios must list 16:9, 9:16 and/or 1:1`);
   if (!Array.isArray(m.resolutions) || !m.resolutions.length) errors.push(`${at}: resolutions must be a non-empty list`);
   if (!Number.isInteger(m.max_reference_images) || m.max_reference_images < 0) errors.push(`${at}: max_reference_images must be a non-negative integer`);

@@ -53,6 +53,7 @@ export function createClaudeReview(settings = { apiKey: config.ANTHROPIC_API_KEY
       throw new Error('review-unavailable');
     }
     // Never reflect the upstream body: it may echo the content under review.
+    if (response.status === 401 || response.status === 403) throw new Error('review-auth');
     if (!response.ok) throw new Error('review-unavailable');
     const parsed = responseSchema.safeParse(await response.json());
     const text = parsed.success ? parsed.data.content.find((c) => c.type === 'text')?.text : undefined;

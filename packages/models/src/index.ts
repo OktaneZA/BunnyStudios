@@ -12,6 +12,8 @@ export type AspectRatio = '16:9' | '9:16' | '1:1';
 
 export interface ModelCapabilities {
   readonly reference_images: boolean;
+  /** The endpoint refuses a request with no reference pictures (an edit model). */
+  readonly requires_reference_images?: boolean;
   readonly start_frame: boolean;
   readonly end_frame: boolean;
   readonly audio: boolean;
