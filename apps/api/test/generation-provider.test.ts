@@ -6,7 +6,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import type { GenerationModel } from '@storyboard/models';
 import { isProviderError, type GenerationProvider, type GenerationRequest, type ProviderError } from '../src/generation/provider.ts';
-import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, TINY_PNG } from '../src/generation/fake.ts';
+import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_I2V_MODEL as FAKE_VIDEO_MODEL, TINY_PNG } from '../src/generation/fake.ts';
 import { createFalProvider, falAppId, falUrls } from '../src/generation/fal.ts';
 
 const signal = () => new AbortController().signal;

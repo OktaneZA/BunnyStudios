@@ -12,7 +12,7 @@ import { createClaudeCastFinder, type CastFinder } from './cast/finder.ts';
 import { createRunner, type Runner } from './jobs/runner.ts';
 import { renderTimeline } from './jobs/render.ts';
 import type { GenerationModel } from '@storyboard/models';
-import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, TINY_PNG } from './generation/fake.ts';
+import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_HIGH_MODEL, TINY_PNG } from './generation/fake.ts';
 import { makeTestClip, makeTestImage } from './generation/media.ts';
 
 export interface DirectorServices {
@@ -44,7 +44,7 @@ export function createDirectorServices(overrides: DirectorOverrides = {}): Direc
     if (file.mimeType.startsWith('video/')) return (await makeTestClip(Math.max(1, Math.round((file.durationMs ?? 5000) / 1000)), colour)) ?? Buffer.alloc(0);
     return (await makeTestImage(colour)) ?? TINY_PNG;
   } })] : [createFalProvider({ apiKey: config.FAL_KEY })]);
-  const catalogue = overrides.models ? createCatalogue(providers, overrides.models) : fake ? createCatalogue(providers, [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL]) : createCatalogue(providers);
+  const catalogue = overrides.models ? createCatalogue(providers, overrides.models) : fake ? createCatalogue(providers, [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_HIGH_MODEL]) : createCatalogue(providers);
   const store = overrides.store ?? createDiskStore(config.STORAGE_ROOT);
   const review = overrides.review ?? (fake ? { ...noReview, enabled: true } : config.ANTHROPIC_API_KEY ? createClaudeReview() : noReview);
   const finder = overrides.finder ?? createClaudeCastFinder();

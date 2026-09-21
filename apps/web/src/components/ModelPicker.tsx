@@ -51,26 +51,3 @@ export function ModelPicker({ models, kind, selectedId, onPick, onClose, advance
 export function ModelBadge({ model }: { model: ModelInfo }) {
   return <span className={`model-badge ${model.kind}`} aria-hidden="true">{model.friendly_label.charAt(0)}</span>;
 }
-
-/** The compact model card on a step: tap to open the picker. */
-export function ModelCard({ model, advanced, onChange, disabled }: { model: ModelInfo | null; advanced: boolean; onChange: () => void; disabled?: boolean }) {
-  return (
-    <button type="button" className="model-card" onClick={onChange} disabled={disabled}>
-      {model ? (
-        <>
-          <ModelBadge model={model} />
-          <span className="model-text">
-            <span className="model-name">
-              {model.friendly_label}
-              {advanced && model.label && <span className="model-real">{model.label}{model.provider ? ` · ${model.provider}` : ''}</span>}
-            </span>
-            <span className="chips">{modelChips(model).map((c) => <span key={c} className="chip">{c}</span>)}</span>
-          </span>
-        </>
-      ) : (
-        <span className="model-text"><span className="model-name">No picture maker yet</span><span className="model-help">Tap to pick one.</span></span>
-      )}
-      <span className="model-change">Change ›</span>
-    </button>
-  );
-}

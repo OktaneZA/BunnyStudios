@@ -16,6 +16,8 @@ teen; the app itself explains changes in its own words.
   MP4 with ffmpeg. New packages `@storyboard/models` and `@storyboard/compiler` (the pure prompt
   compiler, 100% covered). Migration `0006_director_mode`. The image now installs ffmpeg and
   mounts a storage folder at `/data/storage` (`STORAGE_DIR` in the NAS `.env`).
+- Director makes clips straight from the scene text: a cost level (Low cost, Medium, High) and
+  a length instead of a picture step; the finished clip joins the story order by itself.
 
 ## v0.3.2 — 2026-09-09
 

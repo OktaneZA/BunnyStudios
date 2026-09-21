@@ -32,6 +32,7 @@ export function presentModel(m: GenerationModel, advanced: boolean) {
   return {
     id: m.id,
     kind: m.kind,
+    tier: m.tier ?? null,
     friendly_label: m.friendlyLabel,
     label: advanced ? m.label : null,
     provider: advanced ? m.provider : null,

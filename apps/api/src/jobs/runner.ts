@@ -209,6 +209,14 @@ export function createRunner(deps: RunnerDeps) {
       if (job.targetEntityType === 'shot') {
         await tx.update(schema.shots).set({ generatedAssetIds: raw`array_cat(${schema.shots.generatedAssetIds}, ${raw.raw(`ARRAY[${assetIds.map((id) => `'${id}'`).join(',')}]::uuid[]`)})`, updatedAt: new Date() })
           .where(and(eq(schema.shots.id, job.targetEntityId), eq(schema.shots.accountId, job.accountId)));
+        // A finished clip goes straight into the story order (the timeline reads hero_video_asset_id).
+        // The child can still pick another take; this only fills an empty slot.
+        if (model.kind === 'video') {
+          const [first] = await tx.select({ id: schema.assets.id }).from(schema.assets)
+            .where(and(inArray(schema.assets.id, assetIds), inArray(schema.assets.reviewStatus, ['allowed', 'not_required']))).limit(1);
+          if (first) await tx.update(schema.shots).set({ heroVideoAssetId: first.id, generationStatus: 'generated', version: raw`${schema.shots.version} + 1`, updatedAt: new Date() })
+            .where(and(eq(schema.shots.id, job.targetEntityId), eq(schema.shots.accountId, job.accountId), isNull(schema.shots.heroVideoAssetId)));
+        }
       }
     });
   }

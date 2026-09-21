@@ -8,6 +8,8 @@ export * from './generated.js';
 import { MODELS, type ModelId } from './generated.js';
 
 export type ModelKind = 'image' | 'video';
+/** The cost level a child picks for a clip (plan: no model names in Simple mode). */
+export type ModelTier = 'low' | 'medium' | 'high';
 export type AspectRatio = '16:9' | '9:16' | '1:1';
 
 export interface ModelCapabilities {
@@ -60,6 +62,7 @@ export interface GenerationModel {
   readonly provider: 'fal' | 'fake';
   readonly provider_model: string;
   readonly kind: ModelKind;
+  readonly tier?: ModelTier;
   readonly label: string;
   readonly friendlyLabel: string;
   readonly help: string;
@@ -82,6 +85,8 @@ export const ALL_MODELS: readonly GenerationModel[] = MODELS as unknown as reado
 export function modelById(id: string): GenerationModel | undefined {
   return ALL_MODELS.find((m) => m.id === id);
 }
+
+export const TIERS: readonly ModelTier[] = ['low', 'medium', 'high'];
 
 export function modelsOfKind(kind: ModelKind): GenerationModel[] {
   return ALL_MODELS.filter((m) => m.kind === kind);

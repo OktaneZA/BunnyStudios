@@ -3,32 +3,30 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiProblem, type Account, type Project, type Scene } from '../api';
 import {
   director, formatPence, isActiveJob, seconds,
-  type AspectRatio, type Asset, type CastList, type GenerationSettings, type Job, type ModelInfo, type Shot, type Timeline,
+  type Asset, type CastList, type GenerationSettings, type Job, type ModelInfo, type ModelTier, type Shot, type Timeline,
 } from '../director-api';
 import { useJobs } from '../useJobs';
 import { uuid } from '../uuid';
 import { ProblemBox } from '../components/ProblemBox';
 import { ProjectTabs } from '../components/ProjectTabs';
 import { AssetImage, AssetVideo, TakeImage } from '../components/AssetMedia';
-import { ModelCard, ModelPicker } from '../components/ModelPicker';
 import { CastSheet } from '../components/CastSheet';
 import { CartoonStrip } from '../components/CartoonStrip';
 import { JobProgress } from '../components/JobProgress';
 
-type SceneState = 'nothing' | 'sketch' | 'picture' | 'moving';
-const STATE_WORDS: Record<SceneState, string> = { nothing: 'Nothing yet', sketch: 'Sketch only', picture: 'Picture', moving: 'Moving' };
+type SceneState = 'nothing' | 'making' | 'done';
+const STATE_WORDS: Record<SceneState, string> = { nothing: 'Nothing yet', making: 'Making…', done: 'In the cartoon' };
 
-function sceneState(scene: Scene, shot: Shot | undefined): SceneState {
-  if (shot?.hero_video_asset_id) return 'moving';
-  if (shot?.hero_asset_id) return 'picture';
-  if (scene.thumbnail) return 'sketch';
+function sceneState(shot: Shot | undefined, jobs: Job[]): SceneState {
+  if (shot && jobs.some((j) => j.target_entity_type === 'shot' && j.target_entity_id === shot.id && isActiveJob(j))) return 'making';
+  if (shot?.hero_video_asset_id) return 'done';
   return 'nothing';
 }
 
 /**
- * Director (plan D38, §6): one screen. Scenes down the left, the current step in the
- * middle, takes on the right, the whole cartoon along the bottom. Nothing here edits the
- * story; it only reads it.
+ * Director (plan D38, §6): one screen. Scenes down the left, the clip settings in the
+ * middle, clips on the right, the whole cartoon along the bottom. A scene goes straight
+ * from its words to a clip. Nothing here edits the story; it only reads it.
  */
 export function Director({ account }: { account: Account }) {
   const { projectId } = useParams<{ projectId: string }>();
@@ -37,12 +35,11 @@ export function Director({ account }: { account: Account }) {
   const [scenes, setScenes] = useState<Scene[] | null>(null);
   const [shots, setShots] = useState<Map<string, Shot>>(new Map());
   const [settings, setSettings] = useState<GenerationSettings | null>(null);
+  const [tiers, setTiers] = useState<ModelInfo[]>([]);
   const [cast, setCast] = useState<CastList | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [media, setMedia] = useState<Asset[]>([]);
-  const [sheet, setSheet] = useState<'cast' | 'pick-image' | 'pick-video' | null>(null);
-  const [imageModelId, setImageModelId] = useState<string | null>(null);
-  const [videoModelId, setVideoModelId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<'cast' | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   const advanced = (project?.editor_mode ?? account.default_editor_mode) === 'advanced';
@@ -57,6 +54,8 @@ export function Director({ account }: { account: Account }) {
     if (shot) setShots((prev) => new Map(prev).set(sceneId, shot));
   }, []);
 
+  // A finished clip lands in the story order by itself, so the shot, the strip and the
+  // allowance all need a fresh read when a job settles.
   const onSettled = useCallback((job: Job) => {
     if (job.target_entity_type === 'shot') {
       const entry = [...shots.entries()].find(([, s]) => s.id === job.target_entity_id);
@@ -82,15 +81,13 @@ export function Director({ account }: { account: Account }) {
       })
       .catch(setError);
     void refreshSettings();
+    director.tiers().then((r) => setTiers(r.data)).catch(() => setTiers([]));
     refreshCast().catch(setError);
     refreshTimeline().catch(setError);
     refreshMedia().catch(() => {});
   }, [projectId, refreshSettings, refreshCast, refreshTimeline, refreshMedia]);
 
   const models = settings?.models ?? [];
-  const castHasPictures = (cast?.data ?? []).some((c) => c.main_reference);
-  const imageModel = useMemo(() => pickDefault(models, 'image', imageModelId, castHasPictures), [models, imageModelId, castHasPictures]);
-  const videoModel = useMemo(() => pickDefault(models, 'video', videoModelId, false), [models, videoModelId]);
 
   const selected = scenes?.find((s) => s.id === search.get('scene')) ?? scenes?.[0] ?? null;
   const assetsById = useMemo(() => {
@@ -133,7 +130,7 @@ export function Director({ account }: { account: Account }) {
           {scenes.length === 0 && <p className="hint">No scenes yet. Add some in Story.</p>}
           <ul className="scene-buttons">
             {scenes.map((scene) => {
-              const state = sceneState(scene, shots.get(scene.id));
+              const state = sceneState(shots.get(scene.id), jobs);
               const active = selected?.id === scene.id;
               return (
                 <li key={scene.id}>
@@ -156,15 +153,12 @@ export function Director({ account }: { account: Account }) {
             scene={selected}
             shot={shots.get(selected.id)}
             settings={settings}
-            imageModel={imageModel}
-            videoModel={videoModel}
-            advanced={advanced}
+            tiers={tiers}
             jobs={jobs}
             assetsById={assetsById}
             addJob={addJob}
             onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
             afterHero={() => { void refreshTimeline().catch(() => {}); }}
-            openPicker={(kind) => setSheet(kind === 'image' ? 'pick-image' : 'pick-video')}
             refreshSettings={refreshSettings}
           />
         ) : (
@@ -174,14 +168,6 @@ export function Director({ account }: { account: Account }) {
 
       <CartoonStrip projectId={project.id} timeline={timeline} onTimeline={setTimeline} />
 
-      {sheet === 'pick-image' && (
-        <ModelPicker models={models} kind="image" selectedId={imageModel?.id ?? null} advanced={advanced} message={settings?.message}
-          onPick={(m) => setImageModelId(m.id)} onClose={() => setSheet(null)} />
-      )}
-      {sheet === 'pick-video' && (
-        <ModelPicker models={models} kind="video" selectedId={videoModel?.id ?? null} advanced={advanced} message={settings?.message}
-          onPick={(m) => setVideoModelId(m.id)} onClose={() => setSheet(null)} />
-      )}
       {sheet === 'cast' && (
         <CastSheet projectId={project.id} cast={cast} models={models} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
           onClose={() => setSheet(null)} advanced={advanced} settingsMessage={settings?.message ?? null} />
@@ -190,45 +176,27 @@ export function Director({ account }: { account: Account }) {
   );
 }
 
-/** Default model: the cheapest enabled one of its kind, preferring one that can use cast pictures when there are any. */
-function pickDefault(models: ModelInfo[], kind: 'image' | 'video', chosenId: string | null, preferReferences: boolean): ModelInfo | null {
-  const ofKind = models.filter((m) => m.kind === kind);
-  const chosen = ofKind.find((m) => m.id === chosenId);
-  if (chosen) return chosen;
-  const cheapest = [...ofKind].sort((a, b) => a.unit_cost_pence - b.unit_cost_pence);
-  if (preferReferences) {
-    const withRefs = cheapest.find((m) => m.capabilities.reference_images);
-    if (withRefs) return withRefs;
-  }
-  return cheapest[0] ?? null;
-}
-
 // ── The middle and right columns for one scene ────────────────────────────────
 
 interface WorkProps {
   scene: Scene;
   shot: Shot | undefined;
   settings: GenerationSettings | null;
-  imageModel: ModelInfo | null;
-  videoModel: ModelInfo | null;
-  advanced: boolean;
+  tiers: ModelInfo[];
   jobs: Job[];
   assetsById: Map<string, Asset>;
   addJob: (job: Job) => void;
   onShot: (shot: Shot) => void;
   afterHero: () => void;
-  openPicker: (kind: 'image' | 'video') => void;
   refreshSettings: () => Promise<void>;
 }
 
-const SHAPES: { value: AspectRatio; label: string }[] = [{ value: '16:9', label: 'Wide' }, { value: '9:16', label: 'Tall' }, { value: '1:1', label: 'Square' }];
+const TIER_ORDER: ModelTier[] = ['low', 'medium', 'high'];
+const TIER_WORDS: Record<ModelTier, string> = { low: 'Low cost', medium: 'Medium', high: 'High' };
 
-function SceneWork({ scene, shot, settings, imageModel, videoModel, advanced, jobs, assetsById, addJob, onShot, afterHero, openPicker, refreshSettings }: WorkProps) {
-  const canMove = Boolean(shot?.hero_asset_id) || Boolean(videoModel?.capabilities.text_to_video);
-  const [step, setStep] = useState<1 | 2>(shot?.hero_asset_id ? 2 : 1);
+function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onShot, afterHero, refreshSettings }: WorkProps) {
+  const [tier, setTier] = useState<ModelTier>('low');
   const [addendum, setAddendum] = useState(shot?.user_prompt_addendum ?? '');
-  const [shape, setShape] = useState<AspectRatio>('16:9');
-  const [count, setCount] = useState(1);
   const [duration, setDuration] = useState<number | null>(null);
   const [audio, setAudio] = useState(false);
   const [estimate, setEstimate] = useState<string | null>(null);
@@ -236,33 +204,34 @@ function SceneWork({ scene, shot, settings, imageModel, videoModel, advanced, jo
   const [blocked, setBlocked] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [saveNote, setSaveNote] = useState('');
-  const [noteFor, setNoteFor] = useState<'image' | 'video' | null>(null);
+  const [askingNote, setAskingNote] = useState(false);
   const [note, setNote] = useState('');
-  const [pickedTake, setPickedTake] = useState<string | null>(null);
+  const [pickedClip, setPickedClip] = useState<string | null>(null);
 
   useEffect(() => { setAddendum(shot?.user_prompt_addendum ?? ''); }, [shot?.id, shot?.user_prompt_addendum]);
 
-  // Keep the shape and the duration inside what the chosen model can do (DM-4).
+  // The clip maker for the chosen cost level. Low is the default; if it is missing, the cheapest there is.
+  const available = useMemo(() => TIER_ORDER.filter((t) => tiers.some((m) => m.tier === t)), [tiers]);
+  const model = useMemo(() => tiers.find((m) => m.tier === tier) ?? tiers.find((m) => m.tier === available[0]) ?? null, [tiers, tier, available]);
+  useEffect(() => { const first = available[0]; if (first && !available.includes(tier)) setTier(first); }, [available, tier]);
+
+  // Keep the duration inside what the chosen clip maker can do (DM-4).
   useEffect(() => {
-    if (imageModel && !imageModel.aspect_ratios.includes(shape)) setShape(imageModel.aspect_ratios[0] ?? '16:9');
-  }, [imageModel, shape]);
-  useEffect(() => {
-    const d = videoModel?.duration_seconds;
+    const d = model?.duration_seconds;
     if (!d) { setDuration(null); return; }
     setDuration((prev) => (prev !== null && prev >= d.min && prev <= d.max && (prev - d.min) % d.step === 0 ? prev : Math.min(d.max, Math.max(d.min, 5 - ((5 - d.min) % d.step)))));
-    if (!videoModel?.capabilities.audio) setAudio(false);
-  }, [videoModel]);
+    if (!model?.capabilities.audio) setAudio(false);
+  }, [model]);
 
   // The estimate comes from the server so it always matches what will be reserved (DM-14).
   useEffect(() => {
-    const model = step === 1 ? imageModel : videoModel;
     if (!model) { setEstimate(null); return; }
     let alive = true;
-    director.estimate(model.id, step === 1 ? { count } : { duration_seconds: duration ?? undefined })
+    director.estimate(model.id, { duration_seconds: duration ?? undefined })
       .then((r) => { if (alive) setEstimate(formatPence(r.pence)); })
       .catch(() => { if (alive) setEstimate(null); });
     return () => { alive = false; };
-  }, [step, imageModel, videoModel, count, duration]);
+  }, [model, duration]);
 
   // After a 402, keep the button off until the allowance shows money again.
   useEffect(() => {
@@ -274,10 +243,7 @@ function SceneWork({ scene, shot, settings, imageModel, videoModel, advanced, jo
     if (blocked && settings && Math.min(settings.allowance.remaining_today_pence, settings.allowance.remaining_this_month_pence) > 0) setBlocked(null);
   }, [settings, blocked]);
 
-  const myJobs = shot ? jobs.filter((j) => j.target_entity_type === 'shot' && j.target_entity_id === shot.id) : [];
-  const imageJobs = myJobs.filter((j) => j.kind === 'image');
-  const videoJobs = myJobs.filter((j) => j.kind === 'video');
-  const heroPicture = shot?.hero_asset_id ? assetsById.get(shot.hero_asset_id) ?? null : null;
+  const videoJobs = shot ? jobs.filter((j) => j.target_entity_type === 'shot' && j.target_entity_id === shot.id && j.kind === 'video') : [];
   const enabled = Boolean(settings?.enabled);
 
   async function saveAddendum() {
@@ -295,18 +261,16 @@ function SceneWork({ scene, shot, settings, imageModel, videoModel, advanced, jo
     }
   }
 
-  async function start(kind: 'image' | 'video', withNote?: string) {
-    const model = kind === 'image' ? imageModel : videoModel;
+  async function start(withNote?: string) {
     if (!shot || !model) return;
     setBusy(true); setError(null);
     try {
       const job = await director.startJob(shot.id, {
-        kind, model_id: model.id,
-        ...(kind === 'image' ? { aspect_ratio: shape, count } : { duration_seconds: duration ?? undefined, audio }),
+        kind: 'video', model_id: model.id, duration_seconds: duration ?? undefined, audio,
         ...(withNote?.trim() ? { note: withNote.trim() } : {}),
       }, uuid());
       addJob(job);
-      setNoteFor(null); setNote('');
+      setAskingNote(false); setNote('');
       void refreshSettings();
     } catch (err) {
       if (err instanceof ApiProblem && err.problem.status === 402) setBlocked(err.problem.detail);
@@ -314,148 +278,119 @@ function SceneWork({ scene, shot, settings, imageModel, videoModel, advanced, jo
     } finally { setBusy(false); }
   }
 
-  async function useThisOne(asset: Asset) {
+  async function useInstead(asset: Asset) {
     if (!shot) return;
     setBusy(true); setError(null);
     try {
-      const updated = await director.pickHero(shot.id, asset.id);
-      onShot(updated);
+      onShot(await director.pickHero(shot.id, asset.id));
       afterHero();
-      if (!asset.mime_type.startsWith('video/')) setStep(2);
     } catch (err) { setError(err); }
     finally { setBusy(false); }
   }
 
-  const takes = (list: Job[]) => list.flatMap((j) => j.results);
-  const currentTakes = step === 1 ? takes(imageJobs) : takes(videoJobs);
-  const heroId = step === 1 ? shot?.hero_asset_id : shot?.hero_video_asset_id;
-  const picked = currentTakes.find((a) => a.id === pickedTake) ?? currentTakes.find((a) => a.id !== heroId) ?? null;
-  const pickedVideo = step === 2 ? currentTakes.find((a) => a.id === (pickedTake ?? heroId)) ?? picked : null;
-  const anyActive = (step === 1 ? imageJobs : videoJobs).some(isActiveJob);
+  const clips = videoJobs.flatMap((j) => j.results);
+  const heroId = shot?.hero_video_asset_id ?? null;
+  const hero = heroId ? assetsById.get(heroId) ?? clips.find((a) => a.id === heroId) ?? null : null;
+  const playing = clips.find((a) => a.id === pickedClip) ?? hero ?? clips[0] ?? null;
+  const anyActive = videoJobs.some(isActiveJob);
   const notReady = !shot || !enabled || busy || Boolean(blocked);
+  const canMake = !notReady && Boolean(model) && Boolean(shot?.compiled_prompt);
 
   return (
     <div className="director-work">
       <div className="director-main">
         <header className="work-head">
           <h3>Scene {scene.scene_number} · {scene.title}</h3>
-          <div className="steps" role="tablist" aria-label="Steps">
-            <button type="button" role="tab" aria-selected={step === 1} className={`step-pill${step === 1 ? ' active' : ''}`} onClick={() => setStep(1)}><span className="step-n">1</span>Make a picture</button>
-            <button type="button" role="tab" aria-selected={step === 2} className={`step-pill${step === 2 ? ' active' : ''}`} onClick={() => setStep(2)} disabled={!canMove} title={canMove ? undefined : 'Pick a picture first'}><span className="step-n">2</span>Make it move</button>
-          </div>
         </header>
 
-        {settings && !settings.enabled && <p className="notice">{settings.message ?? 'Picture makers are not set up yet. Ask a grown-up to add a key.'}</p>}
+        {settings && !settings.enabled && <p className="notice">{settings.message ?? 'Clip makers are not set up yet. Ask a grown-up to add a key.'}</p>}
         <ProblemBox error={error} />
 
-        {step === 1 ? (
-          <section className="card step-card">
-            <h4>What the picture maker will be told</h4>
-            <p className="hint">Made from your scene and your cast. To change it, edit the scene in <b>Story</b>.</p>
-            <p className="prompt-box">{shot?.compiled_prompt || 'Write what happens in this scene first, in Story.'}</p>
-            <label htmlFor="addendum">Anything to add?</label>
-            <input id="addendum" value={addendum} maxLength={400} onChange={(e) => { setAddendum(e.target.value); setSaveNote(''); }} onBlur={() => void saveAddendum()} placeholder="Example: make the ball really big" disabled={!shot} />
-            <p className="save-state" aria-live="polite">{saveNote}</p>
+        <section className="card step-card">
+          <h4>What the clip maker will be told</h4>
+          <p className="hint">Made from your scene and your cast. To change it, edit the scene in <b>Story</b>.</p>
+          <p className="prompt-box">{shot?.compiled_prompt || 'Write what happens in this scene first, in Story.'}</p>
+          <label htmlFor="addendum">Anything to add?</label>
+          <input id="addendum" value={addendum} maxLength={400} onChange={(e) => { setAddendum(e.target.value); setSaveNote(''); }} onBlur={() => void saveAddendum()} placeholder="Example: make the ball really big" disabled={!shot} />
+          <p className="save-state" aria-live="polite">{saveNote}</p>
 
-            <ModelCard model={imageModel} advanced={advanced} onChange={() => openPicker('image')} />
-
-            <div className="settings-row">
-              <div>
-                <span className="label-text">Shape</span>
-                <div className="segmented" role="group" aria-label="Shape">
-                  {SHAPES.filter((s) => !imageModel || imageModel.aspect_ratios.includes(s.value)).map((s) => (
-                    <button key={s.value} type="button" className={shape === s.value ? 'on' : ''} aria-pressed={shape === s.value} onClick={() => setShape(s.value)}>{s.label}</button>
-                  ))}
+          <div className="field">
+            <span className="label-text">How much to spend?</span>
+            {tiers.length === 0 ? (
+              <p className="hint">{settings?.message ?? 'No clip makers are set up yet. Ask a grown-up.'}</p>
+            ) : (
+              <>
+                <div className="segmented tiers" role="group" aria-label="How much to spend?">
+                  {available.map((t) => {
+                    const m = tiers.find((x) => x.tier === t)!;
+                    const on = model?.tier === t;
+                    return (
+                      <button key={t} type="button" className={on ? 'on' : ''} aria-pressed={on} onClick={() => setTier(t)}>
+                        <span className="tier-name">{TIER_WORDS[t]}</span>
+                        <span className="tier-price">{formatPence(m.unit_cost_pence)} a second</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-              <div>
-                <span className="label-text">How many</span>
-                <div className="segmented" role="group" aria-label="How many">
-                  {[1, 2, 4].map((n) => <button key={n} type="button" className={count === n ? 'on' : ''} aria-pressed={count === n} onClick={() => setCount(n)}>{n}</button>)}
-                </div>
-              </div>
-            </div>
-
-            <div className="go-row">
-              <button type="button" onClick={() => void start('image')} disabled={notReady || !imageModel || !shot?.compiled_prompt}>
-                {busy && <span className="ai-spinner" aria-hidden="true" />}Make a picture
-              </button>
-              <p className="hint go-cost">
-                {blocked ? blocked : <>{estimate && <>About {estimate} for {count}. </>}{settings?.allowance_words}</>}
-              </p>
-            </div>
-          </section>
-        ) : (
-          <section className="card step-card">
-            <div className="start-from">
-              <span className="take-still small">
-                {heroPicture ? <AssetImage url={heroPicture.url} alt="The picture you picked" /> : <span className="asset-placeholder">Your picture</span>}
-              </span>
-              <div>
-                <h4>Your picture starts moving</h4>
-                <p className="hint">{heroPicture
-                  ? 'The clip begins with the picture you picked in step 1. The picture maker works out what happens next from your scene.'
-                  : 'No picture is picked yet, so the clip is made from your scene words alone.'}</p>
-              </div>
-            </div>
-
-            <ModelCard model={videoModel} advanced={advanced} onChange={() => openPicker('video')} />
-
-            {videoModel?.duration_seconds && (
-              <div className="field">
-                <span className="label-text">How long should it play?</span>
-                <p className="hint">5 seconds is about right for one thing happening. Longer clips cost more.</p>
-                <div className="segmented" role="group" aria-label="How long">
-                  {durations(videoModel.duration_seconds).map((n) => (
-                    <button key={n} type="button" className={duration === n ? 'on' : ''} aria-pressed={duration === n} onClick={() => setDuration(n)}>{n} seconds</button>
-                  ))}
-                </div>
-              </div>
+                {model?.help && <p className="hint">{model.help}</p>}
+              </>
             )}
+          </div>
 
-            {videoModel?.capabilities.audio && (
-              <div className="toggle-row">
-                <div>
-                  <span className="label-text">Add sounds?</span>
-                  <p className="hint">Waves, footsteps, a bounce. Music comes later, when you put it together.</p>
-                </div>
-                <button type="button" role="switch" aria-checked={audio} className={`switch${audio ? ' on' : ''}`} onClick={() => setAudio((v) => !v)} aria-label="Add sounds">
-                  <span className="knob" aria-hidden="true" />
-                </button>
+          {model?.duration_seconds && (
+            <div className="field">
+              <span className="label-text">How long?</span>
+              <p className="hint">Longer clips cost more.</p>
+              <div className="segmented" role="group" aria-label="How long?">
+                {durations(model.duration_seconds).map((n) => (
+                  <button key={n} type="button" className={duration === n ? 'on' : ''} aria-pressed={duration === n} onClick={() => setDuration(n)}>{n} seconds</button>
+                ))}
               </div>
-            )}
-
-            <div className="go-row">
-              <button type="button" onClick={() => void start('video')} disabled={notReady || !videoModel}>
-                {busy && <span className="ai-spinner" aria-hidden="true" />}Make it move
-              </button>
-              <p className="hint go-cost">
-                {blocked ? blocked : <>{estimate && duration && <>About {estimate} for {duration} seconds. </>}{settings?.allowance_words}</>}
-              </p>
             </div>
-          </section>
-        )}
+          )}
+
+          {model?.capabilities.audio && (
+            <div className="toggle-row">
+              <div>
+                <span className="label-text">Add sounds?</span>
+                <p className="hint">Waves, footsteps, a bounce. Music comes later, when you put it together.</p>
+              </div>
+              <button type="button" role="switch" aria-checked={audio} className={`switch${audio ? ' on' : ''}`} onClick={() => setAudio((v) => !v)} aria-label="Add sounds">
+                <span className="knob" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+
+          <div className="go-row">
+            <button type="button" onClick={() => void start()} disabled={!canMake}>
+              {busy && <span className="ai-spinner" aria-hidden="true" />}Make it move
+            </button>
+            <p className="hint go-cost">
+              {blocked ? blocked : <>{estimate && duration && <>About {estimate} for {duration} seconds. </>}{settings?.allowance_words}</>}
+            </p>
+          </div>
+        </section>
       </div>
 
       <aside className="director-right">
-        <h4>{step === 1 ? 'Your takes' : 'Your clips'}</h4>
-        {(step === 1 ? imageJobs : videoJobs).length === 0 && <p className="hint">{step === 1 ? 'Nothing made yet. Press Make a picture.' : 'No clips yet. Press Make it move.'}</p>}
+        <h4>Your clips</h4>
+        {videoJobs.length === 0 && <p className="hint">No clips yet. Press Make it move.</p>}
         <div className="takes">
-          {(step === 1 ? imageJobs : videoJobs).map((job) => (
+          {videoJobs.map((job) => (
             <div key={job.id} className="take-job">
-              {isActiveJob(job) && <JobProgress job={job} what={step === 1 ? 'picture' : 'clip'} />}
+              {isActiveJob(job) && <JobProgress job={job} what="clip" />}
               {job.status === 'failed' && <p className="problem-inline">{job.error ?? 'That did not work. Try again.'}</p>}
               {job.status === 'cancelled' && <p className="hint">Stopped.</p>}
-              {job.held_back > 0 && <p className="hint">{job.held_back === 1 ? '1 picture was' : `${job.held_back} pictures were`} held back by the safety checker.</p>}
+              {job.held_back > 0 && <p className="hint">{job.held_back === 1 ? '1 clip was' : `${job.held_back} clips were`} held back by the safety checker.</p>}
               {job.results.length > 0 && (
                 <div className="take-grid">
                   {job.results.map((a) => {
                     const isHero = a.id === heroId;
-                    const isPicked = picked?.id === a.id || (step === 2 && pickedVideo?.id === a.id);
+                    const isPlaying = playing?.id === a.id;
                     return (
-                      <button key={a.id} type="button" className={`take-tile${isHero ? ' hero' : ''}${isPicked ? ' picked' : ''}`} onClick={() => setPickedTake(a.id)} aria-pressed={isPicked} aria-label={isHero ? 'Your picked take' : 'A take'}>
+                      <button key={a.id} type="button" className={`take-tile${isHero ? ' hero' : ''}${isPlaying ? ' picked' : ''}`} onClick={() => setPickedClip(a.id)} aria-pressed={isPlaying} aria-label={isHero ? 'The clip in your cartoon' : 'A clip'}>
                         <TakeImage asset={a} alt="" />
-                        {isHero && <span className="take-tag">Picked</span>}
+                        {isHero && <span className="take-tag">In your cartoon</span>}
                         {a.duration_ms ? <span className="take-secs">{seconds(a.duration_ms)}</span> : null}
                       </button>
                     );
@@ -465,24 +400,25 @@ function SceneWork({ scene, shot, settings, imageModel, videoModel, advanced, jo
             </div>
           ))}
         </div>
-        {step === 2 && pickedVideo && <AssetVideo url={pickedVideo.url} poster={pickedVideo.poster_url} className="clip-player" />}
-        {currentTakes.length > 0 && (
+        {playing && <AssetVideo url={playing.url} poster={playing.poster_url} className="clip-player" />}
+        {clips.length > 0 && (
           <div className="row take-actions">
-            <button type="button" disabled={busy || !picked || picked.id === heroId || picked.review_status === 'rejected'} onClick={() => picked && void useThisOne(picked)}>Use this one</button>
-            <button type="button" className="secondary" disabled={notReady || anyActive} onClick={() => setNoteFor(step === 1 ? 'image' : 'video')}>Try again</button>
+            {playing && playing.id !== heroId && (
+              <button type="button" disabled={busy || playing.review_status === 'rejected'} onClick={() => void useInstead(playing)}>Use this one instead</button>
+            )}
+            <button type="button" className="secondary" disabled={!canMake || anyActive} onClick={() => setAskingNote(true)}>Try again</button>
           </div>
         )}
-        {noteFor && (
+        {askingNote && (
           <div className="try-again">
             <label htmlFor="try-note">What should be different this time?</label>
             <input id="try-note" value={note} maxLength={400} onChange={(e) => setNote(e.target.value)} placeholder="Example: closer to the sea" />
             <div className="row">
-              <button type="button" disabled={notReady} onClick={() => void start(noteFor, note)}>Go</button>
-              <button type="button" className="secondary" onClick={() => setNoteFor(null)}>Cancel</button>
+              <button type="button" disabled={!canMake} onClick={() => void start(note)}>Go</button>
+              <button type="button" className="secondary" onClick={() => setAskingNote(false)}>Cancel</button>
             </div>
           </div>
         )}
-        {step === 2 && videoJobs.length > 0 && <p className="hint">Only the clip changes. Your picture stays.</p>}
       </aside>
     </div>
   );

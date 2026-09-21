@@ -43,6 +43,8 @@ for (const m of doc.models) {
   if (typeof m.enabled !== 'boolean') errors.push(`${at}: enabled must be a boolean`);
   if (!m.request_shape?.prompt) errors.push(`${at}: request_shape.prompt is required`);
   if (!m.result_shape?.files) errors.push(`${at}: result_shape.files is required`);
+  if (m.kind === 'video' && m.enabled && !['low', 'medium', 'high'].includes(m.tier)) errors.push(`${at}: an enabled video model needs tier low, medium or high`);
+  if (m.kind === 'image' && m.tier !== undefined) errors.push(`${at}: only video models carry a tier`);
 
   if (m.kind === 'image') {
     if (m.duration_seconds !== null) errors.push(`${at}: an image model cannot have duration_seconds`);

@@ -140,7 +140,7 @@ export const MODELS = [
     "kind": "video",
     "label": "Kling 2.1 Standard",
     "friendlyLabel": "Move Maker",
-    "help": "Makes your picture move. Smooth and reliable.",
+    "help": "Makes your picture move. Smooth and reliable. (Off: clips are made straight from the scene now.)",
     "icon": "model-video",
     "capabilities": {
       "reference_images": false,
@@ -180,7 +180,7 @@ export const MODELS = [
     "result_shape": {
       "files": "video"
     },
-    "enabled": true
+    "enabled": false
   },
   {
     "id": "sound_mover",
@@ -189,7 +189,7 @@ export const MODELS = [
     "kind": "video",
     "label": "Veo 3 Fast",
     "friendlyLabel": "Sound Mover",
-    "help": "Makes your picture move and adds sounds. Costs more.",
+    "help": "Makes your picture move and adds sounds. Costs more. (Off: clips are made straight from the scene now.)",
     "icon": "model-video",
     "capabilities": {
       "reference_images": false,
@@ -230,7 +230,7 @@ export const MODELS = [
     "result_shape": {
       "files": "video"
     },
-    "enabled": true
+    "enabled": false
   },
   {
     "id": "budget_mover",
@@ -239,7 +239,7 @@ export const MODELS = [
     "kind": "video",
     "label": "Wan 2.2 5B",
     "friendlyLabel": "Budget Mover",
-    "help": "The cheapest way to make a picture move. Simpler motion.",
+    "help": "The cheapest way to make a picture move. Simpler motion. (Off: clips are made straight from the scene now.)",
     "icon": "model-video",
     "capabilities": {
       "reference_images": false,
@@ -273,6 +273,150 @@ export const MODELS = [
       "start_frame": "image_url",
       "aspect_ratio": "aspect_ratio",
       "aspect_ratio_format": "ratio",
+      "resolution": "resolution",
+      "negative_prompt": "negative_prompt"
+    },
+    "result_shape": {
+      "files": "video"
+    },
+    "enabled": false
+  },
+  {
+    "id": "clip_low",
+    "provider": "fal",
+    "provider_model": "fal-ai/wan/v2.2-5b/text-to-video",
+    "kind": "video",
+    "tier": "low",
+    "label": "Wan 2.2 5B (text to video)",
+    "friendlyLabel": "Low cost",
+    "help": "The cheapest clip. Simple motion, no sounds.",
+    "icon": "model-video",
+    "capabilities": {
+      "reference_images": false,
+      "start_frame": false,
+      "end_frame": false,
+      "audio": false,
+      "multi_shot": false,
+      "image_to_video": false,
+      "text_to_video": true
+    },
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1"
+    ],
+    "resolutions": [
+      "580p",
+      "720p"
+    ],
+    "duration_seconds": {
+      "min": 5,
+      "max": 5,
+      "step": 5
+    },
+    "max_reference_images": 0,
+    "max_prompt_length": 2000,
+    "unit": "second",
+    "unit_cost_pence": 1.6,
+    "request_shape": {
+      "prompt": "prompt",
+      "aspect_ratio": "aspect_ratio",
+      "aspect_ratio_format": "ratio",
+      "resolution": "resolution",
+      "negative_prompt": "negative_prompt"
+    },
+    "result_shape": {
+      "files": "video"
+    },
+    "enabled": true
+  },
+  {
+    "id": "clip_medium",
+    "provider": "fal",
+    "provider_model": "fal-ai/minimax/hailuo-02/standard/text-to-video",
+    "kind": "video",
+    "tier": "medium",
+    "label": "Hailuo 02 Standard (text to video)",
+    "friendlyLabel": "Medium",
+    "help": "Better motion and detail. No sounds. 6 or 10 seconds.",
+    "icon": "model-video",
+    "capabilities": {
+      "reference_images": false,
+      "start_frame": false,
+      "end_frame": false,
+      "audio": false,
+      "multi_shot": false,
+      "image_to_video": false,
+      "text_to_video": true
+    },
+    "aspect_ratios": [
+      "16:9"
+    ],
+    "resolutions": [
+      "768p"
+    ],
+    "duration_seconds": {
+      "min": 6,
+      "max": 10,
+      "step": 4
+    },
+    "max_reference_images": 0,
+    "max_prompt_length": 2000,
+    "unit": "second",
+    "unit_cost_pence": 4,
+    "request_shape": {
+      "prompt": "prompt",
+      "duration": "duration",
+      "duration_format": "string_seconds"
+    },
+    "result_shape": {
+      "files": "video"
+    },
+    "enabled": true
+  },
+  {
+    "id": "clip_high",
+    "provider": "fal",
+    "provider_model": "fal-ai/veo3/fast",
+    "kind": "video",
+    "tier": "high",
+    "label": "Veo 3 Fast (text to video)",
+    "friendlyLabel": "High",
+    "help": "The best clips, with sounds. Costs the most.",
+    "icon": "model-video",
+    "capabilities": {
+      "reference_images": false,
+      "start_frame": false,
+      "end_frame": false,
+      "audio": true,
+      "multi_shot": false,
+      "image_to_video": false,
+      "text_to_video": true
+    },
+    "aspect_ratios": [
+      "16:9",
+      "9:16"
+    ],
+    "resolutions": [
+      "720p",
+      "1080p"
+    ],
+    "duration_seconds": {
+      "min": 4,
+      "max": 8,
+      "step": 2
+    },
+    "max_reference_images": 0,
+    "max_prompt_length": 2000,
+    "unit": "second",
+    "unit_cost_pence": 20,
+    "request_shape": {
+      "prompt": "prompt",
+      "duration": "duration",
+      "duration_format": "string_seconds_suffix",
+      "aspect_ratio": "aspect_ratio",
+      "aspect_ratio_format": "ratio",
+      "audio": "generate_audio",
       "resolution": "resolution",
       "negative_prompt": "negative_prompt"
     },

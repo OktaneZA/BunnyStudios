@@ -79,6 +79,11 @@ generation.
   a request with no reference pictures, so `requires_reference_images` is a capability and the
   route says "give someone a picture in Cast" instead of submitting.
 
+- **Straight to clip (D41):** `GET /models/tiers` returns one text-to-video model per cost level
+  (low = Wan 2.2 5B, medium = Hailuo 02 Standard, high = Veo 3 Fast with sounds); a video job
+  needs no picture, and when its first allowed clip lands the runner sets the shot's
+  `hero_video_asset_id` so the timeline picks it up with no tap. Tested with fakes for both
+  tiers, the second-clip-does-not-replace rule, and the Advanced image-to-video path.
 - **Real Claude runs (21 September 2026, teen account):** gate 1 and gate 3 allowed two FLUX
   pictures and a Wan clip (poster frames reviewed); the cast finder read the three beach scenes
   and returned Timmy and Sister with the right scene numbers; "Draw Timmy" produced two reference
@@ -91,6 +96,9 @@ Not yet verified: Veo 3 and FLUX Dev end to end, and the browser flows on the Fi
 
 - **One shot per scene in Simple mode.** Advanced mode's multi-shot editing has routes for
   patching a shot but no UI for adding shots yet.
+- **Clips come straight from the text (D41).** Cast pictures are not passed to the clip makers
+  (none of the three tiers accept references); cast consistency comes from the cast descriptions
+  in the compiled prompt. The picture-first path still exists in the API for Advanced use.
 - **Places have no reference pictures** (DM-8). The scene text describes the place.
 - **Renders need ffmpeg.** Without it the render job fails with a message that says so; picture
   and clip generation still work, but a clip for the teen account is held back because its frames

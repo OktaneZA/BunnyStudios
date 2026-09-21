@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { buildApp } from '../src/app.ts';
 import { db, sql, schema } from '../src/db/client.ts';
-import { createFakeProvider, fakeImageFile, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL } from '../src/generation/fake.ts';
+import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_HIGH_MODEL, FAKE_I2V_MODEL } from '../src/generation/fake.ts';
 import { createMemoryStore } from '../src/storage/objectStore.ts';
 import type { ReviewProvider } from '../src/generation/review.ts';
 import type { CastFinder } from '../src/cast/finder.ts';
@@ -36,7 +36,7 @@ const review: ReviewProvider = {
 let found = [{ name: 'Timmy', description: 'a skinny stick boy with a big round head', scene_numbers: [1, 2] }, { name: 'Sister', description: 'a girl with a red bow', scene_numbers: [2] }];
 const finder: CastFinder = { enabled: true, model: 'fake-finder', async find() { return { characters: found, inputTokens: 10, outputTokens: 20 }; } };
 
-const app = await buildApp({ director: { providers: [provider], models: [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL], store, review, finder, pollMs: 5 } });
+const app = await buildApp({ director: { providers: [provider], models: [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_HIGH_MODEL, FAKE_I2V_MODEL], store, review, finder, pollMs: 5 } });
 const runner = app.director.runner;
 const token = (n = 0) => ({ authorization: `Bearer ${app.jwt.sign({ sub: ids[n] })}` });
 let projectId: string;
@@ -92,7 +92,9 @@ test('settings list the enabled models, the allowance and plain words', async ()
   assert.equal(r.statusCode, 200, r.body);
   const body = r.json();
   assert.equal(body.enabled, true);
-  assert.deepEqual(body.models.map((m: { id: string }) => m.id), ['quick_picture', 'move_maker']);
+  assert.deepEqual(body.models.map((m: { id: string }) => m.id), ['quick_picture', 'clip_low', 'clip_high', 'move_maker']);
+  const tiers = (await app.inject({ method: 'GET', url: '/api/v1/models/tiers', headers: token() })).json().data;
+  assert.deepEqual(tiers.map((m: { tier: string; id: string }) => [m.tier, m.id]), [['low', 'clip_low'], ['high', 'clip_high']], 'one clip maker per cost level, in order');
   assert.equal(body.models[0].label, null, 'the teen never sees the real model name');
   assert.match(body.allowance_words, /about \d+ more pictures/);
   const adult = (await app.inject({ method: 'GET', url: '/api/v1/settings/generation', headers: token(1) })).json();
@@ -166,26 +168,20 @@ test('the hero pick is the accept; the media bin lists takes; the timeline picks
   assert.equal(one.json().items[1].transition_out, 'cut');
 });
 
-test('make it move needs a picked picture, then makes a clip that starts from it (DM-18)', async () => {
+test('a clip is made straight from the scene and drops into the story order by itself (DM-18, D35)', async () => {
   const shot = await shotFor(sceneIds[0]!);
-  const noHero = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 }, 0);
-  assert.equal(noHero.statusCode, 422);
-  assert.match(noHero.json().detail, /pick one first/i);
-  const picture = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
-  await runner.drain();
-  const takes = await job(picture.json().id);
-  await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: takes.results[0].id } });
-  const badDuration = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 7 });
+  const badDuration = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 7 });
   assert.equal(badDuration.statusCode, 422);
-  const clip = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5, audio: true });
+  const clip = await startJob(shot.id, { kind: 'video', model_id: 'clip_high', duration_seconds: 6, audio: true });
   assert.equal(clip.statusCode, 202, clip.body);
   await runner.drain();
   const done = await job(clip.json().id);
   const request = provider.submitted.at(-1)!;
   assert.equal(request.model.kind, 'video');
-  assert.ok(request.startFrame, 'the clip starts from the picked picture');
-  assert.equal(request.durationSeconds, 5);
+  assert.equal(request.startFrame, null, 'text to video: no picture needed');
+  assert.equal(request.durationSeconds, 6);
   assert.equal(request.audio, true);
+  assert.match(request.prompt, /spots a red beach ball/);
   const [row] = await db.select().from(schema.generationJobs).where(eq(schema.generationJobs.id, clip.json().id));
   assert.equal(row!.status, 'ready', row!.errorDetail ?? '');
   const [asset] = await db.select().from(schema.assets).where(eq(schema.assets.id, row!.resultAssetIds[0]!));
@@ -195,12 +191,40 @@ test('make it move needs a picked picture, then makes a clip that starts from it
     assert.ok(asset!.posterAssetId, 'a poster frame was extracted');
     assert.equal(done.results.length, 1);
     assert.ok(reviewCalls.filter((c) => c === 'image').length >= 2, 'poster frames were reviewed');
+    const after = await shotFor(sceneIds[0]!);
+    assert.equal(after.hero_video_asset_id, asset!.id, 'the finished clip is in the cartoon without a tap');
+    const timeline = (await app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}/timeline`, headers: token() })).json();
+    assert.equal(timeline.items[0].source, 'video');
+    assert.equal(timeline.items[0].asset.id, asset!.id);
+    // A second clip does not replace the one already in the cartoon; the child picks.
+    const again = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 5 });
+    await runner.drain();
+    const second = await job(again.json().id);
+    assert.equal((await shotFor(sceneIds[0]!)).hero_video_asset_id, asset!.id);
+    const pick = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: second.results[0].id } });
+    assert.equal(pick.json().hero_video_asset_id, second.results[0].id);
   } else {
-    assert.equal(asset!.durationMs, 5000, 'without ffprobe the requested length stands in');
+    assert.equal(asset!.durationMs, 6000, 'without ffprobe the requested length stands in');
     assert.equal(asset!.reviewStatus, 'rejected', 'without ffmpeg a clip cannot be checked for a minor, so it is held back');
+    assert.equal((await shotFor(sceneIds[0]!)).hero_video_asset_id, null, 'a held-back clip never enters the cartoon');
   }
   const rows = await ledger(clip.json().id);
-  assert.equal(rows[0]!.estimatedPence, 100);
+  assert.equal(rows[0]!.estimatedPence, 120);
+});
+
+test('an image-to-video model (Advanced) still needs a picked picture and starts from it', async () => {
+  const shot = await shotFor(sceneIds[1]!);
+  const noHero = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 });
+  assert.equal(noHero.statusCode, 422);
+  assert.match(noHero.json().detail, /needs a picture to start from/);
+  const picture = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
+  await runner.drain();
+  const takes = await job(picture.json().id);
+  await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: takes.results[0].id } });
+  const clip = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 });
+  assert.equal(clip.statusCode, 202, clip.body);
+  await runner.drain();
+  assert.ok(provider.submitted.at(-1)!.startFrame, 'the clip starts from the picked picture');
 });
 
 test('the daily cap is checked inside the reservation and says when it resets (DM-26)', async () => {

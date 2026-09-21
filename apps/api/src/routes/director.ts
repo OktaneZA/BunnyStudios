@@ -199,9 +199,10 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       const budget = promptBudget(prompt, model.max_prompt_length);
       if (budget.over) throw ApiError.validation(`The scene description is too long for ${model.friendlyLabel}. Shorten it in Story by about ${budget.length - budget.max} letters.`);
       let startFrameAssetId: string | null = null;
-      if (model.kind === 'video') {
-        if (model.capabilities.image_to_video && current.heroAssetId) startFrameAssetId = current.heroAssetId;
-        else if (!model.capabilities.text_to_video) throw ApiError.validation('Make a picture and pick one first. The clip starts from it.');
+      if (model.kind === 'video' && !model.capabilities.text_to_video) {
+        // An image-to-video model (Advanced only) needs a picked picture to start from.
+        if (current.heroAssetId) startFrameAssetId = current.heroAssetId;
+        else throw ApiError.validation('This clip maker needs a picture to start from. Pick one that makes clips straight from the scene instead.');
       }
       const cast = await sceneCharacters(tx, request.accountId, scene);
       const referenceAssetIds = cast.map((c) => c.mainReferenceAssetId).filter((v): v is string => Boolean(v)).slice(0, model.max_reference_images);
@@ -353,6 +354,13 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const [asset] = await db.update(schema.assets).set({ deletedAt: null }).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, request.accountId), isNotNull(schema.assets.deletedAt))).returning();
     if (!asset) throw ApiError.notFound('File');
     return presentAsset(asset);
+  });
+
+  /** The clip maker for a cost level: the child picks low, medium or high, never a model. */
+  app.get('/models/tiers', async () => {
+    // Only makers that work straight from the scene text: the child never needs a picture first.
+    const enabled = catalogue.enabled().filter((m) => m.kind === 'video' && m.tier && m.capabilities.text_to_video);
+    return { data: ['low', 'medium', 'high'].map((tier) => enabled.find((m) => m.tier === tier)).filter(Boolean).map((m) => presentModel(m!, false)) };
   });
 
   /** Adult-only budget settings (DM-26). */

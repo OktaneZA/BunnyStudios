@@ -83,7 +83,20 @@ export const FAKE_IMAGE_MODEL: GenerationModel = {
   unit: 'image', unit_cost_pence: 5, request_shape: { prompt: 'prompt', count: 'num_images', reference_images: 'image_urls' }, result_shape: { files: 'images' }, enabled: true,
 };
 export const FAKE_VIDEO_MODEL: GenerationModel = {
-  id: 'move_maker', provider: 'fake', provider_model: 'fake/video', kind: 'video', label: 'Fake video', friendlyLabel: 'Move Maker', help: '', icon: 'model-video',
+  id: 'clip_low', provider: 'fake', provider_model: 'fake/video', kind: 'video', tier: 'low', label: 'Fake video', friendlyLabel: 'Low cost', help: '', icon: 'model-video',
+  capabilities: { reference_images: false, start_frame: false, end_frame: false, audio: false, multi_shot: false, image_to_video: false, text_to_video: true },
+  aspect_ratios: ['16:9', '9:16'], resolutions: ['720p'], duration_seconds: { min: 5, max: 10, step: 5 }, max_reference_images: 0, max_prompt_length: 2000,
+  unit: 'second', unit_cost_pence: 2, request_shape: { prompt: 'prompt', duration: 'duration', duration_format: 'string_seconds' }, result_shape: { files: 'video' }, enabled: true,
+};
+export const FAKE_VIDEO_HIGH_MODEL: GenerationModel = {
+  id: 'clip_high', provider: 'fake', provider_model: 'fake/video-high', kind: 'video', tier: 'high', label: 'Fake video high', friendlyLabel: 'High', help: '', icon: 'model-video',
+  capabilities: { reference_images: false, start_frame: false, end_frame: false, audio: true, multi_shot: false, image_to_video: false, text_to_video: true },
+  aspect_ratios: ['16:9', '9:16'], resolutions: ['720p'], duration_seconds: { min: 4, max: 8, step: 2 }, max_reference_images: 0, max_prompt_length: 2000,
+  unit: 'second', unit_cost_pence: 20, request_shape: { prompt: 'prompt', duration: 'duration', duration_format: 'string_seconds_suffix', audio: 'generate_audio' }, result_shape: { files: 'video' }, enabled: true,
+};
+/** An image-to-video model kept for the Advanced path, so the start-frame code still has a test. */
+export const FAKE_I2V_MODEL: GenerationModel = {
+  id: 'move_maker', provider: 'fake', provider_model: 'fake/video', kind: 'video', tier: 'medium', label: 'Fake i2v', friendlyLabel: 'Move Maker', help: '', icon: 'model-video',
   capabilities: { reference_images: false, start_frame: true, end_frame: false, audio: true, multi_shot: false, image_to_video: true, text_to_video: false },
   aspect_ratios: ['16:9', '9:16'], resolutions: ['720p'], duration_seconds: { min: 5, max: 10, step: 5 }, max_reference_images: 0, max_prompt_length: 2000,
   unit: 'second', unit_cost_pence: 20, request_shape: { prompt: 'prompt', start_frame: 'image_url', duration: 'duration', duration_format: 'string_seconds', audio: 'generate_audio' }, result_shape: { files: 'video' }, enabled: true,

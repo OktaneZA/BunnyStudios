@@ -6,11 +6,14 @@ import { request } from './api';
 
 export type ModelKind = 'image' | 'video';
 export type AspectRatio = '16:9' | '9:16' | '1:1';
+/** How much to spend on a clip: the child picks a level, never a model (D41). */
+export type ModelTier = 'low' | 'medium' | 'high';
 export type Transition = 'cut' | 'fade' | 'slide';
 
 export interface ModelInfo {
   id: string;
   kind: ModelKind;
+  tier: ModelTier | null;
   friendly_label: string;
   /** Real name and provider: only the adult account sees them. */
   label: string | null;
@@ -212,6 +215,8 @@ function upload(file: Blob, filename: string) {
 
 export const director = {
   settings: () => request<GenerationSettings>('/settings/generation'),
+  /** The clip maker behind each cost level, low to high. */
+  tiers: () => request<{ data: ModelInfo[] }>('/models/tiers'),
   estimate: (modelId: string, opts: { count?: number; duration_seconds?: number }) => {
     const q = new URLSearchParams({ model_id: modelId });
     if (opts.count) q.set('count', String(opts.count));
