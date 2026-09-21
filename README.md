@@ -15,6 +15,7 @@ container on a Synology NAS against an existing Postgres server.
 | [docs/architecture.md](docs/architecture.md) | Current architecture, an honest review, and the target design |
 | [docs/working-in-this-repo.md](docs/working-in-this-repo.md) | Rules, conventions and the gotchas found the hard way |
 | [docs/build-plan-v1.1.md](docs/build-plan-v1.1.md) | Approved plan: decisions D1–D18, build sequence, spec defects fixed |
+| [docs/director-mode-plan-v1.md](docs/director-mode-plan-v1.md) | Director Mode: requirements DM-1–DM-30, decisions D27–D37, build stages for pictures, clips and the finished cartoon |
 | [docs/requirements-v1.0.md](docs/requirements-v1.0.md) | The original specification |
 | [docs/scene-thumbnails.md](docs/scene-thumbnails.md) | How AI thumbnails and "Improve for me" work, and their limits |
 | [deploy/synology/README.md](deploy/synology/README.md) | Deploying, releasing, backing up and restoring on the NAS |
