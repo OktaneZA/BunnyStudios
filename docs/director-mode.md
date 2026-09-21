@@ -79,9 +79,13 @@ generation.
   a request with no reference pictures, so `requires_reference_images` is a capability and the
   route says "give someone a picture in Cast" instead of submitting.
 
-Not yet verified: a real Claude review or cast-finder call (the key in `.env` was rejected by
-Anthropic on 21 September; with it blank the adult can generate unreviewed and the teen cannot
-generate at all), Veo 3 and FLUX Dev end to end, and the browser flows on the Fire HD 10.
+- **Real Claude runs (21 September 2026, teen account):** gate 1 and gate 3 allowed two FLUX
+  pictures and a Wan clip (poster frames reviewed); the cast finder read the three beach scenes
+  and returned Timmy and Sister with the right scene numbers; "Draw Timmy" produced two reference
+  sheets; a Cast Picture job for scene 3 then carried Timmy's main picture automatically. One
+  fix: Anthropic's structured outputs reject `maxItems`, so the finder caps the list after parsing.
+
+Not yet verified: Veo 3 and FLUX Dev end to end, and the browser flows on the Fire HD 10.
 
 ## Limits and decisions worth knowing
 
