@@ -71,6 +71,13 @@
       "when": 1790534664235,
       "tag": "0009_legacy-character-candidates",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790535548269,
+      "tag": "0010_shot-cast-saved",
+      "breakpoints": true
     }
   ]
 }

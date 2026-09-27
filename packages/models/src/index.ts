@@ -66,6 +66,13 @@ export interface GenerationModel {
     readonly audio_mode?: 'optional' | 'always' | 'none';
     readonly final_model_id?: string;
     readonly documentation: string;
+    /**
+     * Release gate (build plan Stage 1/6). `advanced`: only Advanced accounts can pick it, and
+     * Simple-mode routing ignores it, until a real request, bill and the teen policy have been
+     * checked (`verified_live`). Absent means the model is in production.
+     */
+    readonly rollout?: 'production' | 'advanced';
+    readonly verified_live?: boolean;
   };
   readonly pricing?: VideoPricing;
   readonly id: ModelId;

@@ -15,6 +15,7 @@ import {
   TIME_OF_DAY,
   ART_STYLE,
   MOOD_ATMOSPHERE,
+  REFERENCE_VIEW,
   MUSIC_GENRE,
 } from './generated.js';
 
@@ -50,6 +51,7 @@ export const PROMPT_VOCABULARIES = {
   time_of_day: TIME_OF_DAY,
   art_style: ART_STYLE,
   mood_atmosphere: MOOD_ATMOSPHERE,
+  reference_view: REFERENCE_VIEW,
 } as const satisfies Record<string, readonly PromptOption[]>;
 
 export const NON_PROMPT_VOCABULARIES = {

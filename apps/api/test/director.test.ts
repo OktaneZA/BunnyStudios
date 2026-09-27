@@ -358,17 +358,19 @@ test('the cast is found from the story, accepted, drawn, and attached to scene p
   const shot = await shotFor(sceneIds[0]!);
   assert.match(shot.compiled_prompt, /Timmy: a skinny stick boy/);
 
-  // Draw Timmy → a character_ref take → make it the main picture.
+  // Draw Timmy → a candidate picture → "This looks like Timmy" approves it as his look.
   const draw = await app.inject({ method: 'POST', url: `/api/v1/characters/${timmy.id}/jobs`, headers: { ...token(), 'idempotency-key': randomUUID() }, payload: { intent: 'portrait', model_id: 'quick_picture' } });
   assert.equal(draw.statusCode, 202, draw.body);
   await runner.drain();
   const drawn = await job(draw.json().id);
   assert.equal(drawn.status, 'ready', JSON.stringify(drawn));
   assert.equal(drawn.results[0].kind, 'character_ref');
-  assert.match(provider.submitted.at(-1)!.prompt, /reference sheet/i);
+  assert.match(provider.submitted.at(-1)!.prompt, /character design sheet/i);
   assert.match(provider.submitted.at(-1)!.prompt, /Timmy: a skinny stick boy/);
-  const main = await app.inject({ method: 'PATCH', url: `/api/v1/characters/${timmy.id}`, headers: token(), payload: { main_reference_asset_id: drawn.results[0].id } });
-  assert.equal(main.statusCode, 200, main.body);
+  const before = (await app.inject({ method: 'GET', url: `/api/v1/characters/${timmy.id}`, headers: token() })).json();
+  assert.equal(before.main_reference, null, 'finishing a picture does not approve it');
+  const main = await app.inject({ method: 'POST', url: `/api/v1/characters/${timmy.id}/looks`, headers: { ...token(), 'if-match': String(before.version) }, payload: { main_asset_id: drawn.results[0].id, pictures: [{ asset_id: drawn.results[0].id, role: 'main' }] } });
+  assert.equal(main.statusCode, 201, main.body);
   assert.equal(main.json().main_reference.id, drawn.results[0].id);
 
   // A scene picture now carries Timmy's main picture as a reference, automatically.
@@ -399,12 +401,15 @@ test('uploaded reference pictures are sniffed, stripped and reviewed (DM-6)', as
   ]);
   const upload = await app.inject({ method: 'POST', url: `/api/v1/characters/${added.json().id}/references`, headers: { ...token(), 'content-type': `multipart/form-data; boundary=${boundary}` }, payload: body });
   assert.equal(upload.statusCode, 201, upload.body);
-  assert.equal(upload.json().mime_type, 'image/png', 'the type comes from the bytes, not the filename');
+  assert.equal(upload.json().asset.mime_type, 'image/png', 'the type comes from the bytes, not the filename');
   const notImage = Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="x.png"\r\nContent-Type: image/png\r\n\r\n`), Buffer.from('not a picture at all'), Buffer.from(`\r\n--${boundary}--\r\n`)]);
   const rejected = await app.inject({ method: 'POST', url: `/api/v1/characters/${added.json().id}/references`, headers: { ...token(), 'content-type': `multipart/form-data; boundary=${boundary}` }, payload: notImage });
   assert.equal(rejected.statusCode, 422);
   const character = (await app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}/cast`, headers: token() })).json().data.find((c: { name: string }) => c.name === 'Stickman');
-  assert.equal(character.main_reference.id, upload.json().id, 'the first upload becomes the main picture');
+  // CS-04: even the first upload is only a candidate until someone says it looks right.
+  assert.equal(character.main_reference, null);
+  assert.equal(character.look_status, 'none');
+  assert.equal(upload.json().source, 'upload');
 });
 
 test('make my cartoon: the render job runs, or explains that ffmpeg is missing (DM-23)', async () => {

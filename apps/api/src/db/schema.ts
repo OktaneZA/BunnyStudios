@@ -490,6 +490,8 @@ export const shots = pgTable(
     /** CR-06: chosen production pictures a clip starts / ends on. Never a rough sketch. */
     startFrameAssetId: uuid('start_frame_asset_id'),
     endFrameAssetId: uuid('end_frame_asset_id'),
+    /** CR-01: the user saved "Characters in this shot" (possibly nobody); stop proposing from the story. */
+    castSaved: boolean('cast_saved').notNull().default(false),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

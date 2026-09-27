@@ -67,6 +67,8 @@ for (const m of doc.models) {
     if (m.capabilities.reference_images && !m.request_shape.reference_images) errors.push(`${at}: references need a payload field`);
     if (m.capabilities.end_frame && !m.request_shape.end_frame) errors.push(`${at}: end frame needs a payload field`);
     if (m.video && (!m.video.family || !m.video.documentation || !m.video.categories?.length || m.video.categories.some((c) => !['recommended', 'fast', 'cinematic', 'references', 'more'].includes(c)))) errors.push(`${at}: invalid video presentation`);
+    if (m.video?.rollout !== undefined && !['production', 'advanced'].includes(m.video.rollout)) errors.push(`${at}: rollout must be production or advanced`);
+    if (m.video?.rollout === 'production' && m.video.verified_live !== true) errors.push(`${at}: a production rollout needs verified_live: true`);
     if (m.pricing) {
       const p = m.pricing;
       if (!['per_second', 'per_clip', 'video_tokens'].includes(p.strategy) || !Number.isFinite(p.pence_per_usd) || p.pence_per_usd <= 0 || !p.source || !p.verified_on) errors.push(`${at}: invalid pricing metadata`);

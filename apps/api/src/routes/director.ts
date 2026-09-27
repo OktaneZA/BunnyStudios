@@ -14,7 +14,8 @@ import { presentModel, type Catalogue } from '../generation/catalogue.ts';
 import type { ReviewProvider } from '../generation/review.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
 import type { JobRequest, Runner } from '../jobs/runner.ts';
-import { ownShot, presentShot, sceneCharacters, syncSceneShots } from '../shots/sync.ts';
+import { ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
+import { buildManifest, shotCast } from '../shots/cast.ts';
 import { projectIsLive } from './scenes.ts';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -140,7 +141,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     if (!account) throw ApiError.notFound('Account');
     const advanced = account.defaultEditorMode === 'advanced';
-    const enabled = catalogue.enabled();
+    const enabled = catalogue.available(advanced);
     const a = await allowance(request.accountId);
     const cheapestImage = catalogue.cheapest('image');
     const cheapestClip = catalogue.cheapest('video');
@@ -156,7 +157,8 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.get('/models', async (request) => {
     const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
-    return { data: catalogue.enabled().map((m) => presentModel(m, account?.defaultEditorMode === 'advanced')) };
+    const advanced = account?.defaultEditorMode === 'advanced';
+    return { data: catalogue.available(advanced).map((m) => presentModel(m, advanced)) };
   });
 
   // ── Shots (one per scene in Simple mode) ──────────────────────────────────
@@ -197,7 +199,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       if (previous) return { job: previous, fresh: false };
       const { shot, scene } = await ownShot(tx, request.accountId, id, true);
       const { account, aspectRatio, constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, scene.projectId);
-      const model = catalogue.enabled().find((m) => m.id === body.model_id);
+      const model = catalogue.available(account.defaultEditorMode === 'advanced').find((m) => m.id === body.model_id);
       if (!model) throw ApiError.validation('That picture maker is not available. Pick another one.');
       if (constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so pictures cannot be made on this account yet. Ask a grown-up.');
       const options = resolveOptions(model, body, aspectRatio);
@@ -214,19 +216,19 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
         if (current.heroAssetId) startFrameAssetId = current.heroAssetId;
         else throw ApiError.validation('This clip maker needs a picture to start from. Pick one that makes clips straight from the scene instead.');
       }
-      const cast = await sceneCharacters(tx, request.accountId, scene);
-      const referencedCast = model.capabilities.reference_images ? cast.filter((c) => c.mainReferenceAssetId) : [];
-      if (referencedCast.length > model.max_reference_images) throw ApiError.validation('There are too many cast pictures for this clip maker. Choose another maker.');
-      const referenceAssetIds = referencedCast.map((c) => c.mainReferenceAssetId!);
-      const referenceNames = referencedCast.map((c) => c.name);
-      if (model.kind === 'video' && model.capabilities.requires_reference_images && referencedCast.length !== cast.length) {
-        throw ApiError.validation('Give each character in this scene a main picture in Cast first.');
+      // Character pictures come only from approved looks, one main picture each, pinned by hash (CS-10).
+      const manifest = model.capabilities.reference_images ? buildManifest(await shotCast(tx, request.accountId, current, scene), 1) : null;
+      const refs = manifest?.references ?? [];
+      if (refs.length > model.max_reference_images) throw ApiError.validation('There are too many characters for this maker. Choose fewer characters in this scene, or another maker.');
+      if (model.kind === 'video' && model.capabilities.requires_reference_images && manifest?.missingLooks.length) {
+        throw ApiError.validation(`Choose how ${manifest.missingLooks.map((m) => m.name).join(' and ')} ${manifest.missingLooks.length === 1 ? 'looks' : 'look'} in Cast first.`);
       }
-      if (model.capabilities.requires_reference_images && !referenceAssetIds.length) {
-        throw ApiError.validation(`${model.friendlyLabel} works from your cast pictures, and nobody in this scene has one yet. Give someone a picture in Cast, or pick a different picture maker.`);
+      if (model.capabilities.requires_reference_images && !refs.length) {
+        throw ApiError.validation(`${model.friendlyLabel} works from your approved character pictures, and nobody in this scene has one yet. Choose a look in Cast, or pick a different picture maker.`);
       }
       const jobRequest: JobRequest = {
-        prompt, negativePrompt: current.compiledNegativePrompt, referenceAssetIds, referenceNames, startFrameAssetId,
+        prompt, negativePrompt: current.compiledNegativePrompt, referenceAssetIds: refs.map((r) => r.assetId), referenceHashes: refs.map((r) => r.contentHash),
+        referenceNames: refs.map((r) => r.characterName), startFrameAssetId,
         aspectRatio: options.aspect, count: options.count, durationSeconds: options.durationSeconds, audio: options.audio, resolution: options.resolution,
         constrained, assetKind: 'generated_output',
       };

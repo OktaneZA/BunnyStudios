@@ -129,6 +129,19 @@
         { "value": "menacing", "prompt_phrase": "menacing, threatening atmosphere", "label": "Menacing", "friendlyLabel": "Threatening", "help": "Something dangerous is coming.", "icon": "mood-menacing" },
         { "value": "bittersweet", "prompt_phrase": "bittersweet atmosphere", "label": "Bittersweet", "friendlyLabel": "Happy and sad at once", "help": "A good ending that still hurts a bit.", "icon": "mood-bittersweet" }
       ]
+    },
+    "reference_view": {
+      "specSection": "CS-05",
+      "note": "Views of a character reference pack. The phrase describes the sheet; identity comes from the approved anchor picture, never from these words.",
+      "options": [
+        { "value": "main", "prompt_phrase": "character design sheet, full body, standing, facing the camera, neutral pose, plain white background", "label": "Main picture", "friendlyLabel": "Main picture", "help": "The picture everyone else is compared with.", "icon": "view-main" },
+        { "value": "front", "prompt_phrase": "the same character seen straight from the front, full body, plain white background", "label": "Front", "friendlyLabel": "From the front", "help": "Looking straight at us.", "icon": "view-front" },
+        { "value": "three_quarter", "prompt_phrase": "the same character in a three-quarter view, turned slightly to one side, full body, plain white background", "label": "Three-quarter", "friendlyLabel": "Turned a little", "help": "Turned slightly, so we see some of the side.", "icon": "view-three-quarter" },
+        { "value": "side", "prompt_phrase": "the same character seen from the side in profile, full body, plain white background", "label": "Side", "friendlyLabel": "From the side", "help": "Side on, like a shadow puppet.", "icon": "view-side" },
+        { "value": "back", "prompt_phrase": "the same character seen from behind, full body, plain white background", "label": "Back", "friendlyLabel": "From behind", "help": "What they look like walking away.", "icon": "view-back" },
+        { "value": "full_body", "prompt_phrase": "the same character, full body from head to feet, standing naturally, plain white background", "label": "Full body", "friendlyLabel": "Head to toe", "help": "All of them, so shoes and tails are clear.", "icon": "view-full-body" },
+        { "value": "expression", "prompt_phrase": "the same character, head and shoulders, showing a clear facial expression, plain white background", "label": "Expression", "friendlyLabel": "A face", "help": "A close-up of a feeling. Say which one.", "icon": "view-expression" }
+      ]
     }
   },
   "nonPromptVocabularies": {
