@@ -43,7 +43,9 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
   const [saved, setSaved] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // Set on every mount: React's dev mode mounts, unmounts and mounts again, and a flag only
+  // cleared would leave the studio ignoring its own data ("Opening the studio…" for ever).
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const load = useCallback(async () => {
     const s = await director.studio(characterId);
