@@ -82,6 +82,12 @@ export function Together() {
 
   function stopRecording() { recorder.current?.stop(); }
 
+  // Leaving the screen switches the microphone off and drops the unfinished recording.
+  useEffect(() => () => {
+    const rec = recorder.current;
+    if (rec && rec.state !== 'inactive') { rec.onstop = null; rec.stop(); rec.stream.getTracks().forEach((t) => t.stop()); }
+  }, []);
+
   const renderUrl = useAssetUrl(timeline?.render?.url ?? null);
 
   if (error && !timeline) return <ProblemBox error={error} />;
@@ -113,17 +119,13 @@ export function Together() {
         </section>
       )}
 
-      <div className="together">
+      <div className="together together-simple">
         <div className="together-main stack">
-          <section className="card player-card">
+          {/* Watch and save first (docs/teen-ui-review.md P2); music and timing are optional, below. */}
+          <section className="card player-card" aria-labelledby="watch-heading">
+            <h3 id="watch-heading">Watch your cartoon</h3>
             {timeline.render ? (
-              <>
-                <AssetVideo url={timeline.render.url} className="player" />
-                <div className="row player-actions">
-                  <a className="btn" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Download</a>
-                  <span className="hint">Made {new Date(timeline.render.created_at).toLocaleString()} · {seconds(timeline.render.duration_ms ?? timeline.total_ms)}</span>
-                </div>
-              </>
+              <AssetVideo url={timeline.render.url} className="player" />
             ) : (
               <div className="player-empty">
                 {rendering ? <JobProgress job={timeline.render_job!} what="cartoon" /> : <p className="muted">Your cartoon shows here once you press <b>Make my cartoon</b>.</p>}
@@ -131,9 +133,23 @@ export function Together() {
             )}
             {timeline.render && rendering && timeline.render_job && <JobProgress job={timeline.render_job} what="cartoon" />}
             {failed && <p className="problem-inline">{failed.error ?? 'Putting it together did not work. Try again in a minute.'}</p>}
+            <p className="hint">
+              {playing.length} {playing.length === 1 ? 'scene plays' : 'scenes play'} · {Math.round(timeline.total_ms / 1000)} seconds · {countWords(counts)}.
+              {skipped.length > 0 && <> Left out: {skipped.map((i) => `scene ${i.scene_number}`).join(', ')}.</>}
+              {' '}Putting it together is free and takes about a minute.
+            </p>
+            <div className="row player-actions">
+              <button type="button" onClick={() => void makeCartoon()} disabled={busy || rendering || playing.length === 0}>
+                {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? 'Make my cartoon again' : 'Make my cartoon'}
+              </button>
+              {timeline.render && <a className="btn secondary" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Save video</a>}
+              {timeline.render && <span className="hint">Made {new Date(timeline.render.created_at).toLocaleString()} · {seconds(timeline.render.duration_ms ?? timeline.total_ms)}</span>}
+            </div>
           </section>
 
-          <section className="card timeline-card">
+          <details className="card together-extras">
+          <summary>Music, voice and timing (optional)</summary>
+          <section className="timeline-card">
             <header className="strip-head">
               <h3>Your cartoon, in story order</h3>
               <span className="hint">Total <b>{Math.round(timeline.total_ms / 1000)} seconds</b>{skipped.length > 0 && <> · {skipped.length === 1 ? `scene ${skipped[0]!.scene_number} skipped (empty)` : `${skipped.length} scenes skipped (empty)`}</>}</span>
@@ -212,26 +228,15 @@ export function Together() {
 
             <p className="hint">The little buttons between scenes choose how one scene joins the next: <b>Cut</b>, <b>Fade</b> or <b>Slide</b>. Sounds come from clips that had sounds on.</p>
           </section>
-        </div>
+          </details>
 
-        <aside className="together-side stack">
-          <section className="card">
-            <h3>Ready when you are</h3>
-            <p className="hint">
-              {playing.length} {playing.length === 1 ? 'scene plays' : 'scenes play'} · {Math.round(timeline.total_ms / 1000)} seconds · {countWords(counts)}.
-              <br /><br />Putting it together is free and takes about a minute. You can do it again any time.
-            </p>
-            <button type="button" onClick={() => void makeCartoon()} disabled={busy || rendering || playing.length === 0}>
-              {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? 'Make my cartoon again' : 'Make my cartoon'}
-            </button>
-          </section>
           {timeline.renders.length > 1 && (
-            <section className="card">
-              <h3>Earlier versions</h3>
+            <details className="card">
+              <summary>Earlier versions of your cartoon</summary>
               {timeline.renders.slice(1).map((r) => <p key={r.id} className="hint">{new Date(r.created_at).toLocaleString()} · {seconds(r.duration_ms ?? 0)}</p>)}
-            </section>
+            </details>
           )}
-        </aside>
+        </div>
       </div>
 
       {joinItem && join !== null && (

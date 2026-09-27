@@ -23,6 +23,11 @@ export interface FakeProviderOptions {
   pollsBeforeDone?: number;
   /** Optional byte source for downloads; defaults to TINY_PNG or a small MP4 stub. */
   bytesFor?: (file: ProviderFile) => Buffer | Promise<Buffer>;
+  /**
+   * Provider name, and so which jobs a runner claims. The development server's fake mode uses
+   * its own name so its runner never picks up the test suite's jobs in the shared database.
+   */
+  name?: string;
 }
 
 export function createFakeProvider(options: FakeProviderOptions = {}) {
@@ -30,7 +35,7 @@ export function createFakeProvider(options: FakeProviderOptions = {}) {
   const submitted: GenerationRequest[] = [];
   const cancelled: string[] = [];
   const provider: GenerationProvider & { jobs: typeof jobs; submitted: typeof submitted; cancelled: typeof cancelled; enabled: boolean } = {
-    name: 'fake',
+    name: options.name ?? 'fake',
     enabled: true,
     jobs, submitted, cancelled,
     async submit(request) {

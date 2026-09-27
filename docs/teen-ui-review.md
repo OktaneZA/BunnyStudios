@@ -1,6 +1,23 @@
 # Teen UI and flow review
 
-Date: 27 September 2026. Status: recommendations, not implemented.
+Date: 27 September 2026. Status: implemented 27 September 2026, except where noted below. Not yet
+checked with teens or on a physical tablet.
+
+## Implementation status
+
+| Priority | Done | Not done / differs |
+| --- | --- | --- |
+| P0 one flow | `SceneComposer` replaces the text-only panel and the characters card: one costed action, Preview/Final choice, "Make final clip" from a selected preview, direct final still available ("Start a new final instead"). The old cost-level buttons are gone from Simple mode; the server routes previews to the cheapest fit and finals to a recommended or highest-level maker. | — |
+| P0 retry | "Make another version" reuses the selected clip's recorded recipe (characters, look versions, frames, length) plus an optional note, with a fresh quote; older clips without a recipe are remade from the current scene and say so. The chosen clip stays until another is picked. | — |
+| P0 settings | Length, Preview/Final, sound, frames, words-only and (Advanced) maker/size all go into the same request and its quote; a changed price is refused (409) and requoted. | — |
+| P1 Studio | Describe → Choose a picture → Ready; making pictures saves edited words first and stops if that fails; "Use this look"; Ready shows the portrait, "Return to the scene", folded "Add more angles" and "Earlier looks". | — |
+| P1 characters | Portraits with "Using your chosen look" / "Using an earlier look" / "Choose X's look"; first-time "Are these the characters in this scene?"; "Edit characters"; words-only is an explicit option under More options. | Returning restores focus to the button that opened Studio (Sheet behaviour), not a scroll position. |
+| P1 controls | Characters button first; layout, colour, movable panels and reset under a remembered View menu; movable panels hidden on narrow screens. | — |
+| P1 prices | The main action carries the quoted total; per-part and generated seconds sit in Price details; "Preview" is never labelled cheaper. | — |
+| P2 style | Each scene shows its style with Change, and warns that a new style can differ from chosen pictures. | No cartoon-wide default style with representative thumbnails yet. |
+| P2 Together | Watch and "Save video" first, with left-out scenes listed; music, voice and the timeline under "Music, voice and timing (optional)". Microphone switches off when leaving. | — |
+| Language | "Characters" replaces "Cast" in Director and the sheet; "Generation isn't connected yet. Ask the account owner to set it up." replaces the add-a-key messages. | Some older server messages still say "Ask a grown-up" (safety checker, budget). |
+| Usability sessions | — | Not run. The proposed tasks and success criteria below still need teens and a real tablet. |
 
 ## Evidence and limits
 

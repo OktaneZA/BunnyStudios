@@ -17,17 +17,21 @@ test.describe('Director', () => {
     await page.getByRole('link', { name: 'The biscuit escape', exact: true }).click();
     await page.getByLabel('Scene description').fill('A small rabbit carries a biscuit through a sunny garden.');
     await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
+    await page.getByRole('button', { name: 'Change', exact: true }).click();
     await expect(page.getByRole('group', { name: 'Clip style' }).getByRole('button')).toHaveCount(5);
     await expect(page.getByLabel('Anything to add? (optional)')).toHaveCount(0);
     await page.getByRole('button', { name: 'Watercolour', exact: true }).click();
     await expect(page.getByText('Style saved for this scene')).toBeVisible();
     await page.reload();
+    await expect(page.locator('.composer-field', { hasText: 'Style' })).toContainText('Watercolour');
+    await page.getByRole('button', { name: 'Change', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Watercolour', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.prompt-box')).toContainText("children's storybook watercolour illustration");
-    for (const name of ['Low cost', 'Medium', 'High']) {
-      await page.getByRole('button', { name: new RegExp(name + '.*a second') }).click();
+    for (const kind of ['Preview', 'Final']) {
+      await page.getByRole('button', { name: kind, exact: true }).click();
       for (const seconds of [5, 10, 15, 30]) await expect(page.getByRole('button', { name: `${seconds} seconds`, exact: true })).toBeVisible();
     }
+    await page.getByText('View', { exact: true }).click();
     for (const design of ['Film Strip', 'Scene Board']) {
       await page.getByRole('button', { name: design, exact: true }).click();
       for (const mode of ['Black', 'White']) {
@@ -42,6 +46,8 @@ test.describe('Director', () => {
       }
     }
     await page.reload();
+    // Layout and colour are remembered; they live in the View menu, closed after a reload.
+    await page.getByText('View', { exact: true }).click();
     await expect(page.getByRole('button', { name: 'Scene Board', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('html')).toHaveAttribute('data-director-theme', 'white');
     await page.getByRole('button', { name: /2 The plan goes wrong/ }).click();
@@ -59,7 +65,7 @@ test.describe('Director', () => {
     await page.mouse.move(grip!.x - 30, grip!.y - 20, { steps: 8 });
     await page.mouse.up();
     expect((await window.boundingBox())!.x).toBeLessThan(dragStart.x);
-    await page.getByRole('button', { name: 'Reset windows', exact: true }).click();
+    await page.getByRole('button', { name: 'Reset layout', exact: true }).click();
     await expect(page.locator('.floating-panel')).toHaveCount(0);
     await page.getByRole('button', { name: /Change how scenes join/ }).first().click();
     const dialog = page.getByRole('dialog');
@@ -80,12 +86,10 @@ test.describe('Director', () => {
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
     await expect(page.getByRole('heading', { name: /Scene 1 · Timmy finds the ball/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /2 Sister wants a go/ })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Your scene', exact: true })).toBeVisible();
     await expect(page.getByText('Describe what happens before making a clip.')).toBeVisible();
-    await expect(page.getByRole('link', { name: /Write this scene/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Make it move' })).toBeDisabled();
-    await expect(page.getByText('How much to spend?').first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Make it move' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Edit scene' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
+    await expect(page.getByText('Describe what happens in this scene first.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Your cartoon' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Put it together →' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Change how scenes join/ }).first()).toBeVisible();
@@ -118,10 +122,10 @@ test.describe('Director', () => {
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
     const opener = page.locator('.cast-button');
     await opener.click();
-    const dialog = page.getByRole('dialog', { name: 'Your cast' });
+    const dialog = page.getByRole('dialog', { name: 'Your characters' });
     await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
     await page.keyboard.press('Shift+Tab');
-    await expect(dialog).toContainText('Your cast');
+    await expect(dialog).toContainText('Your characters');
     expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
     await page.keyboard.press('Tab');
     await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
@@ -143,19 +147,21 @@ test.describe('Director', () => {
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
 
     const saved = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes('/scenes/'));
+    await page.getByRole('button', { name: 'Change', exact: true }).click();
     await page.getByRole('button', { name: 'Pixar-like 3D', exact: true }).click();
     expect((await saved).ok()).toBe(true);
     await expect(page.locator('.prompt-box')).toContainText('stylised 3D animated film look');
     await page.getByRole('button', { name: '15 seconds', exact: true }).click();
+    await page.getByText('Price details').click();
     await expect(page.getByText(/shorter clips joined together/)).toBeVisible();
-    await page.getByRole('button', { name: 'Make it move' }).click();
+    await page.getByRole('button', { name: /^Make preview · about/ }).click();
     await expect(page.getByRole('button', { name: /1 Timmy finds the ball In the cartoon/ })).toBeVisible({ timeout: 90_000 });
 
     await page.getByRole('link', { name: 'Put it together →' }).click();
     await page.getByRole('button', { name: 'Make my cartoon' }).click();
-    await expect(page.getByRole('link', { name: 'Download' })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole('link', { name: 'Save video' })).toBeVisible({ timeout: 90_000 });
     const download = page.waitForEvent('download');
-    await page.getByRole('link', { name: 'Download' }).click();
+    await page.getByRole('link', { name: 'Save video' }).click();
     await (await download).saveAs('.playwright-results/joined-cartoon.mp4');
   });
 
@@ -179,7 +185,7 @@ test.describe('Director', () => {
     await expect(steps.getByRole('link', { name: 'Make clips', exact: true })).toHaveAttribute('aria-current', 'step');
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();
     // Writing from Make clips returns to the same scene's clip, not to the board.
-    await page.getByRole('link', { name: /Write this scene/ }).click();
+    await page.getByRole('link', { name: 'Edit scene' }).click();
     await expect(page.getByRole('heading', { name: 'Follow the map' })).toBeVisible();
     await page.getByRole('link', { name: /Back to making clips/ }).click();
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();

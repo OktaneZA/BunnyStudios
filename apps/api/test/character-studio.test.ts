@@ -457,3 +457,24 @@ test('an old displayed quote cannot spend after the creative request changes', a
   assert.equal(accepted.statusCode, 202, accepted.body);
   await runner.drain();
 });
+
+test('"Make another version" keeps the clip’s characters, looks and length, and adds the change note', async () => {
+  const bunny = await characterWithLook('Bunny', true);
+  await saveCast(0, [{ character_id: bunny.id }]);
+  const first = await video(0, { purpose: 'preview', duration_seconds: 6 });
+  assert.equal(first.statusCode, 202, first.body);
+  await runner.drain();
+  // Bunny gets a newer look meanwhile: the new version still uses the look the clip had.
+  const newer = await draw(bunny.id, { intent: 'portrait', count: 1 });
+  await approve(bunny.id, newer.results[0].id, [{ asset_id: newer.results[0].id, role: 'main' }]);
+  const again = await video(0, { purpose: 'preview', from_job_id: first.json().id, note: 'Make it snow.' });
+  assert.equal(again.statusCode, 202, again.body);
+  const a = (await jobRow(first.json().id)).request as JobRequest;
+  const b = (await jobRow(again.json().id)).request as JobRequest;
+  assert.deepEqual(b.creative!.references, a.creative!.references);
+  assert.equal(b.creative!.output.durationSeconds, 6);
+  assert.ok(b.creative!.prompt.startsWith(a.creative!.prompt));
+  assert.ok(b.creative!.prompt.endsWith('Make it snow.'));
+  assert.equal(b.creative!.intent, 'draft');
+  await runner.drain();
+});

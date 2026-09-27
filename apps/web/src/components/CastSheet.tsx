@@ -16,8 +16,10 @@ interface Props {
   onClose: () => void;
   advanced: boolean;
   settingsMessage: string | null;
-  /** Open straight on this character (from "Choose how Fox looks" in a scene). */
+  /** Open straight on this character (from "Choose Fox's look" in a scene). */
   initialCharacterId?: string | null;
+  /** Opened from a scene: the scene's name, for "Return to …". */
+  returnToScene?: string | null;
 }
 
 const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Needs new pictures' } as const;
@@ -26,7 +28,7 @@ const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Nee
  * Your cast (plan D39) and Character Studio: find people in the story or add someone, then
  * choose how each of them looks. Choosing a look is always a deliberate step (CS-04).
  */
-export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId }: Props) {
+export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene }: Props) {
   const characters = cast?.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacterId ?? null);
   const [proposal, setProposal] = useState<CastProposal | null>(null);
@@ -85,17 +87,17 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
   const needsFinding = cast ? cast.never_found || cast.story_changed : false;
 
   return (
-    <Sheet title="Your cast" lede="Make each character, then choose the pictures that look right. Clips use the chosen pictures to keep everyone looking the same, but check each clip: they can still change a little." onClose={onClose}>
+    <Sheet title="Your characters" lede="Describe each character and choose the picture that looks right. Chosen pictures help keep them the same in every scene; check each clip, as they can still change a little." onClose={onClose}>
       <ProblemBox error={error} />
 
       {needsFinding && !proposal && (
         <div className="cast-find card-soft">
-          <p>{cast?.never_found ? 'Nobody has been found yet. The finder reads your scenes and lists who is in them.' : 'Your story changed since the cast was found. Find it again to catch anyone new.'}</p>
+          <p>{cast?.never_found ? 'Nobody has been found yet. The finder reads your scenes and lists who is in them.' : 'Your story changed since the characters were found. Look again to catch anyone new.'}</p>
           <button type="button" onClick={() => void find()} disabled={finding || !cast?.finder_enabled}>
             {finding && <span className="ai-spinner" aria-hidden="true" />}
-            {finding ? 'Reading your story…' : 'Find my cast'}
+            {finding ? 'Reading your story…' : 'Find characters in my story'}
           </button>
-          {cast && !cast.finder_enabled && <p className="hint">The cast finder is not switched on yet. Ask a grown-up to turn it on, or add someone yourself below.</p>}
+          {cast && !cast.finder_enabled && <p className="hint">Finding characters isn’t connected yet. Ask the account owner to set it up, or make a character yourself below.</p>}
         </div>
       )}
 
@@ -156,12 +158,13 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
             <h4>{selected.name}</h4>
             {selected.scene_numbers.length > 0 && <p className="muted">In {selected.scene_numbers.length === 1 ? 'scene' : 'scenes'} {listNumbers(selected.scene_numbers)}.</p>}
           </div>
-          <CharacterStudio key={selected.id} characterId={selected.id} jobs={jobs} onJob={onJob} onChanged={() => void refreshCast().catch(() => {})} />
+          <CharacterStudio key={selected.id} characterId={selected.id} jobs={jobs} onJob={onJob} onChanged={() => void refreshCast().catch(() => {})}
+            onReturn={returnToScene ? onClose : null} returnLabel={returnToScene ? "the scene" : null} />
         </>
       )}
 
       {characters.length === 0 && !needsFinding && !proposal && (
-        <p className="muted">Nobody is in the cast yet. Name people in your scenes in Story and find them here, or make a character yourself.</p>
+        <p className="muted">No characters yet. Name them in your scenes and find them here, or make a character yourself.</p>
       )}
       {settingsMessage && <p className="hint">{settingsMessage}</p>}
     </Sheet>

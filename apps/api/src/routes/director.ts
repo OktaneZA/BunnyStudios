@@ -154,7 +154,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       models: enabled.map((m) => presentModel(m, advanced)),
       allowance: a,
       allowance_words: allowanceInWords(a, cheapestImage ? estimatePence(cheapestImage, { count: 1 }) : null, cheapestClip ? estimatePence(cheapestClip, { durationSeconds: cheapestClip.duration_seconds?.min ?? 1 }) : null),
-      message: enabled.length ? null : 'Picture makers are not set up yet. Ask a grown-up to add a key.',
+      message: enabled.length ? null : 'Generation isn’t connected yet. Ask the account owner to set it up.',
     };
   });
 

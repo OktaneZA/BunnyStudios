@@ -237,6 +237,8 @@ export interface VideoBody {
   model_id?: string;
   from_job_id?: string;
   use_latest?: boolean;
+  /** "Make another version": a short change for this run only. */
+  note?: string;
 }
 
 export interface VideoPlan {

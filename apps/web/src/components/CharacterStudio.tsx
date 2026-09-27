@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiProblem } from '../api';
 import { director, isActiveJob, type Candidate, type Character, type Job, type Look, type Studio, type StudioJobBody, type ViewRole } from '../director-api';
 import { uuid } from '../uuid';
@@ -12,9 +12,12 @@ interface Props {
   onJob: (job: Job) => void;
   /** Tell the cast list something changed (a look approved, traits saved). */
   onChanged: () => void;
+  /** Opened from a scene: offer to go straight back to it once the look is chosen. */
+  onReturn?: (() => void) | null;
+  returnLabel?: string | null;
 }
 
-const SOURCE_WORDS: Record<Candidate['source'], string> = { generated: 'Made for you', upload: 'Uploaded', refinement: 'Changed', legacy: 'Older picture' };
+const SOURCE_WORDS: Record<Candidate['source'], string> = { generated: 'New', upload: 'Uploaded', refinement: 'Changed', legacy: 'Older picture' };
 const TRAIT_FIELDS = [
   ['species', 'What are they?', 'A rabbit, a robot, a girl…'],
   ['build', 'Shape and size', 'Tiny and round, tall and thin…'],
@@ -25,11 +28,11 @@ const TRAIT_FIELDS = [
 type TraitKey = 'description' | (typeof TRAIT_FIELDS)[number][0];
 
 /**
- * Character Studio (CS-02–CS-09): describe someone, make or upload choices, say which one looks
- * right, add more views made from that picture, then approve the pack. Pictures are only ever
- * candidates until the child says so, and an approved look never changes by itself.
+ * Character Studio (docs/teen-ui-review.md "Character flow"): Describe → Choose a picture →
+ * Ready. Saving words happens as part of making pictures; choosing a look is always its own,
+ * deliberate step. Chosen pictures help keep a character the same; they do not promise it.
  */
-export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) {
+export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn, returnLabel }: Props) {
   const [studio, setStudio] = useState<Studio | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -40,11 +43,11 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
   const [changing, setChanging] = useState<Candidate | null>(null);
   const [changeNote, setChangeNote] = useState('');
   const [prices, setPrices] = useState<{ portrait?: string; view?: string }>({});
-  const [saved, setSaved] = useState('');
+  const [editing, setEditing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
-  // Set on every mount: React's dev mode mounts, unmounts and mounts again, and a flag only
-  // cleared would leave the studio ignoring its own data ("Opening the studio…" for ever).
+  // Set on every mount: React's dev mode mounts twice, and a flag only ever cleared would
+  // leave the studio ignoring its own data.
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const load = useCallback(async () => {
@@ -55,7 +58,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
   }, [characterId]);
 
   useEffect(() => {
-    setStudio(null); setPicked(null); setPack(new Set()); setChanging(null); setError(null); setDirty(false);
+    setStudio(null); setPicked(null); setPack(new Set()); setChanging(null); setError(null); setDirty(false); setEditing(false);
     load().then((s) => {
       if (!s) return;
       const c = s.character;
@@ -66,7 +69,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
   const character = studio?.character ?? null;
   const look = studio?.looks.find((l) => l.current) ?? null;
 
-  // Prices come from the server before anything is spent (CS-03).
+  // Prices come from the server before anything is spent.
   useEffect(() => {
     if (!character) return;
     let on = true;
@@ -75,7 +78,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
     return () => { on = false; };
   }, [character?.id, look?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When a picture job for this character finishes, reload the candidates.
+  // When a picture job for this character finishes, reload the choices.
   const myJobs = useMemo(() => jobs.filter((j) => j.target_entity_type === 'character' && j.target_entity_id === characterId), [jobs, characterId]);
   const activeJob = myJobs.find(isActiveJob) ?? null;
   const lastDone = myJobs.find((j) => !isActiveJob(j)) ?? null;
@@ -90,38 +93,36 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
     setBusy(true); setError(null);
     try { return await fn(); }
     catch (err) {
-      // Someone changed this character elsewhere: show the latest and let them choose again.
       if (err instanceof ApiProblem && err.problem.status === 409) void load().catch(() => {});
       setError(err);
       return undefined;
     } finally { if (alive.current) setBusy(false); }
   }
 
-  async function saveTraits(e: FormEvent) {
-    e.preventDefault();
-    if (!character) return;
+  /** Save edited words; false when saving failed, so nothing is made from stale words. */
+  async function saveWords(): Promise<boolean> {
+    if (!character || !dirty) return true;
     const updated = await run(() => director.updateCharacter(character.id, traits, character.version));
-    if (updated) {
-      setDirty(false); await load(); onChanged();
-      setSaved(updated.look_status === 'changed' ? `Saved. ${updated.name} keeps the chosen look until you choose new pictures.` : 'Saved.');
-    }
+    if (!updated) return false;
+    setDirty(false); await load(); onChanged();
+    return true;
+  }
+
+  async function make(body: StudioJobBody) {
+    if (!character) return;
+    if (!(await saveWords())) return;
+    const job = await run(() => director.drawCharacter(character.id, body, uuid()));
+    if (job) { onJob(job); setChanging(null); setChangeNote(''); }
   }
 
   async function useStoryWords() {
     if (!character?.story_suggestion) return;
     setTraits((t) => ({ ...t, description: character.story_suggestion! }));
-    const updated = await run(() => director.updateCharacter(character.id, { description: character.story_suggestion! }, character.version));
-    if (updated) { await load(); onChanged(); }
+    if (await run(() => director.updateCharacter(character.id, { description: character.story_suggestion! }, character.version))) { await load(); onChanged(); }
   }
   async function keepMine() {
     if (!character) return;
     if (await run(() => director.updateCharacter(character.id, { dismiss_story_suggestion: true }, character.version))) await load();
-  }
-
-  async function make(body: StudioJobBody) {
-    if (!character) return;
-    const job = await run(() => director.drawCharacter(character.id, body, uuid()));
-    if (job) { onJob(job); setChanging(null); setChangeNote(''); }
   }
 
   async function uploadPicture(file: File | undefined) {
@@ -136,15 +137,15 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
     if (picked === c.asset.id) setPicked(null);
   }
 
-  /** "This looks like <name>": the chosen picture becomes a new look on its own. */
-  async function thisLooksRight() {
+  /** "Use this look": the chosen picture becomes the character's look. */
+  async function useThisLook() {
     if (!character || !picked) return;
     const approved = await run(() => director.approveLook(character.id, { main_asset_id: picked, pictures: [{ asset_id: picked, role: 'main' }] }, character.version));
-    if (approved) { setPicked(null); await load(); onChanged(); }
+    if (approved) { setPicked(null); setEditing(false); await load(); onChanged(); }
   }
 
-  /** "Use these pictures": the current look plus the chosen views, as a new look. */
-  async function useThesePictures() {
+  /** "Add these angles": the current look plus the chosen extra angles. */
+  async function addAngles() {
     if (!character || !look || !studio) return;
     const main = look.references[0]!;
     const keep = look.references.map((r) => ({ asset_id: r.asset.id, role: r.role }));
@@ -160,22 +161,23 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
 
   if (!studio || !character) return <><ProblemBox error={error} />{!error && <p className="muted">Opening the studio…</p>}</>;
 
-  const mains = studio.candidates.filter((c) => c.view_role === 'main');
-  const views = studio.candidates.filter((c) => c.view_role !== 'main');
-  const viewOptions = studio.views.filter((v) => v.value !== 'main');
-  const lookWords = character.look_status === 'none' ? 'No look chosen yet'
-    : character.look_status === 'changed' ? `Look ${look?.visual_version ?? ''} in use · you changed how ${character.name} looks, so choose new pictures when you are ready`
-      : `Look ${look?.visual_version ?? ''} chosen`;
+  const newMains = studio.candidates.filter((c) => c.view_role === 'main' && !look?.references.some((r) => r.asset.id === c.asset.id));
+  const angles = studio.candidates.filter((c) => c.view_role !== 'main' && !look?.references.some((r) => r.asset.id === c.asset.id));
+  const angleOptions = studio.views.filter((v) => v.value !== 'main');
+  const earlier = studio.looks.filter((l) => !l.current);
+  const choosing = !look || editing;
+  const statusWords = character.look_status === 'none' ? 'No look chosen yet'
+    : character.look_status === 'changed' ? `You changed how ${character.name} looks. The chosen look is still used until you choose a new picture.`
+      : 'Using this look';
 
   return (
     <div className="studio stack">
       <ProblemBox error={error} />
-      <p className={`look-status look-${character.look_status}`} role="status">{lookWords}</p>
+      <p className={`look-status look-${character.look_status}`} role="status">{statusWords}</p>
 
       {character.story_suggestion && (
         <div className="card-soft story-suggestion">
           <p>Your story now describes {character.name} as: <i>{character.story_suggestion}</i></p>
-          <p className="hint">{character.name}’s chosen look stays the same unless you change it.</p>
           <div className="row">
             <button type="button" className="secondary" disabled={busy} onClick={() => void useStoryWords()}>Use the story’s words</button>
             <button type="button" className="secondary" disabled={busy} onClick={() => void keepMine()}>Keep mine</button>
@@ -183,120 +185,131 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged }: Props) 
         </div>
       )}
 
-      <form className="card-soft stack studio-describe" onSubmit={saveTraits}>
-        <h4>1 · Describe {character.name}</h4>
-        <div className="field">
-          <label htmlFor="studio-desc">What do they look like?</label>
-          <textarea id="studio-desc" rows={2} maxLength={600} value={traits.description}
-            onChange={(e) => { setTraits({ ...traits, description: e.target.value }); setDirty(true); setSaved(''); }} />
-        </div>
-        <details>
-          <summary>More details (you can skip these)</summary>
-          <div className="studio-traits">
-            {TRAIT_FIELDS.map(([key, label, hint]) => (
-              <div className="field" key={key}>
-                <label htmlFor={`studio-${key}`}>{label}</label>
-                <input id={`studio-${key}`} value={traits[key]} placeholder={hint} maxLength={400}
-                  onChange={(e) => { setTraits({ ...traits, [key]: e.target.value }); setDirty(true); setSaved(''); }} />
+      {look && !choosing && (
+        <section className="card-soft studio-ready stack" aria-label={`${character.name} is ready`}>
+          <div className="ready-portrait">
+            <AssetImage url={look.references[0]!.asset.url} alt={`${character.name}’s chosen look`} className="ready-face" />
+            <div className="stack">
+              <h4>{character.name} is ready</h4>
+              <p className="hint">Scenes use this look to help keep {character.name} the same. Check each clip: it can still change a little.</p>
+              <div className="row">
+                {onReturn && <button type="button" onClick={onReturn}>Return to {returnLabel ?? 'the scene'}</button>}
+                <button type="button" className="secondary" onClick={() => setEditing(true)}>Change how {character.name} looks</button>
               </div>
-            ))}
+            </div>
           </div>
-        </details>
-        <div className="row">
-          <button type="submit" disabled={busy || !dirty}>Save how they look</button>
-          <span className="hint" aria-live="polite">{saved}</span>
-        </div>
-      </form>
 
-      <section className="card-soft stack">
-        <h4>2 · Make some choices</h4>
-        <div className="row">
-          <button type="button" disabled={busy || Boolean(activeJob) || dirty || !traits.description.trim()} onClick={() => void make({ intent: 'portrait', count: 2 })}>
-            Make 2 pictures{prices.portrait ? ` · ${prices.portrait}` : ''}
-          </button>
-          <button type="button" className="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>Upload a picture</button>
-          <input ref={fileInput} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadPicture(e.target.files?.[0])} />
-        </div>
-        {dirty && <p className="hint">Save how they look first, so the pictures match.</p>}
-        {activeJob && <JobProgress job={activeJob} what="pictures" />}
-        {lastDone?.status === 'failed' && <p className="problem-inline">{lastDone.error ?? 'That did not work. Try again.'}</p>}
-        {lastDone && lastDone.held_back > 0 && <p className="hint">{lastDone.held_back === 1 ? '1 picture was' : `${lastDone.held_back} pictures were`} held back by the safety checker.</p>}
-
-        {mains.length > 0 && (
-          <>
-            <p className="hint">New pictures are only ideas until you choose one.</p>
-            <div className="candidate-grid" role="radiogroup" aria-label={`Pictures of ${character.name}`}>
-              {mains.map((c) => (
-                <CandidateTile key={c.id} candidate={c} name={character.name} picked={picked === c.asset.id} busy={busy}
-                  onPick={() => setPicked(c.asset.id)} onChange={() => { setChanging(c); setChangeNote(''); }} onRemove={() => void remove(c)} />
+          <details className="studio-more">
+            <summary>Add more angles (optional)</summary>
+            <p className="hint">Made from the chosen picture. {prices.view ? `About ${prices.view.replace(/^about /, '')} each.` : ''}</p>
+            <div className="view-buttons">
+              {angleOptions.map((v) => (
+                <button key={v.value} type="button" className="secondary" title={v.help} disabled={busy || Boolean(activeJob)} onClick={() => void make({ intent: 'view', view: v.value })}>{v.label}</button>
               ))}
             </div>
-            <button type="button" disabled={busy || !picked} onClick={() => void thisLooksRight()}>This looks like {character.name}</button>
-          </>
-        )}
-        {changing && (
-          <div className="try-again">
-            <label htmlFor="studio-change">What should be different in this picture?</label>
-            <input id="studio-change" value={changeNote} maxLength={300} placeholder="Example: floppier ears" onChange={(e) => setChangeNote(e.target.value)} />
-            <div className="row">
-              <button type="button" disabled={busy || !changeNote.trim() || Boolean(activeJob)} onClick={() => void make({ intent: 'refine', candidate_id: changing.id, note: changeNote.trim() })}>
-                Make a changed picture{prices.view ? ` · ${prices.view}` : ''}
-              </button>
-              <button type="button" className="secondary" onClick={() => setChanging(null)}>Cancel</button>
-            </div>
-          </div>
-        )}
-      </section>
+            {activeJob && <JobProgress job={activeJob} what="pictures" />}
+            {angles.length > 0 && (
+              <>
+                <div className="candidate-grid">
+                  {angles.map((c) => (
+                    <label key={c.id} className={`candidate${pack.has(c.id) ? ' picked' : ''}`}>
+                      <AssetImage url={c.asset.url} alt={`${character.name}, ${viewLabel(studio, c.view_role)}`} />
+                      <span className="candidate-tag">{viewLabel(studio, c.view_role)} · not chosen yet</span>
+                      <span className="row">
+                        <input type="checkbox" disabled={!c.can_approve || busy} checked={pack.has(c.id)} onChange={(e) => {
+                          const next = new Set(pack); if (e.target.checked) next.add(c.id); else next.delete(c.id); setPack(next);
+                        }} /> Add
+                      </span>
+                      {!c.can_approve && <span className="hint">Still being checked</span>}
+                    </label>
+                  ))}
+                </div>
+                <button type="button" disabled={busy || pack.size === 0} onClick={() => void addAngles()}>Add these angles</button>
+              </>
+            )}
+          </details>
 
-      {look && (
-        <section className="card-soft stack">
-          <h4>3 · More views of {character.name} <span className="muted">(optional)</span></h4>
-          <p className="hint">Made from the picture you chose, so they start from the same look. Check each one: pictures can still come out a bit different.</p>
-          <div className="view-buttons">
-            {viewOptions.map((v) => (
-              <button key={v.value} type="button" className="secondary" title={v.help} disabled={busy || Boolean(activeJob)}
-                onClick={() => void make({ intent: 'view', view: v.value })}>{v.label}</button>
-            ))}
-          </div>
-          {prices.view && <p className="hint">About {prices.view.replace(/^about /, '')} a view.</p>}
-          {views.length > 0 && (
-            <>
-              <div className="candidate-grid">
-                {views.map((c) => (
-                  <label key={c.id} className={`candidate${pack.has(c.id) ? ' picked' : ''}`}>
-                    <AssetImage url={c.asset.url} alt={`${character.name}, ${viewLabel(studio, c.view_role)}`} />
-                    <span className="candidate-tag">{viewLabel(studio, c.view_role)} · not chosen yet</span>
-                    <span className="row">
-                      <input type="checkbox" disabled={!c.can_approve || busy} checked={pack.has(c.id)} onChange={(e) => {
-                        const next = new Set(pack); if (e.target.checked) next.add(c.id); else next.delete(c.id); setPack(next);
-                      }} /> Add
-                    </span>
-                    {!c.can_approve && <span className="hint">Still being checked</span>}
-                  </label>
+          {earlier.length > 0 && (
+            <details className="studio-more">
+              <summary>Earlier looks ({earlier.length})</summary>
+              <ul className="look-history">
+                {earlier.map((l) => (
+                  <li key={l.id}>
+                    <div className="look-strip">
+                      {l.references.map((r) => <AssetImage key={r.position} url={r.asset.url} alt={`Earlier look, ${viewLabel(studio, r.role)}`} className="look-thumb" />)}
+                    </div>
+                    <span className="hint">Chosen {new Date(l.approved_at).toLocaleDateString()}</span>
+                    <button type="button" className="secondary" disabled={busy} onClick={() => void goBackTo(l)}>Use this look again</button>
+                  </li>
                 ))}
-              </div>
-              <button type="button" disabled={busy || pack.size === 0} onClick={() => void useThesePictures()}>Use these pictures</button>
-            </>
+              </ul>
+              <p className="hint">Scenes keep the look they were given, and older clips never change.</p>
+            </details>
           )}
         </section>
       )}
 
-      {studio.looks.length > 0 && (
-        <section className="card-soft stack">
-          <h4>{character.name}’s looks</h4>
-          <ul className="look-history">
-            {studio.looks.map((l) => (
-              <li key={l.id} className={l.current ? 'current' : undefined}>
-                <div className="look-strip">
-                  {l.references.map((r) => <AssetImage key={r.position} url={r.asset.url} alt={`Look ${l.visual_version}, ${viewLabel(studio, r.role)}`} className="look-thumb" />)}
+      {choosing && (
+        <>
+          <section className="card-soft stack studio-describe">
+            <h4>1 · Describe {character.name}</h4>
+            <div className="field">
+              <label htmlFor="studio-desc">What do they look like?</label>
+              <textarea id="studio-desc" rows={2} maxLength={600} value={traits.description}
+                onChange={(e) => { setTraits({ ...traits, description: e.target.value }); setDirty(true); }} />
+            </div>
+            <details>
+              <summary>More details (optional)</summary>
+              <div className="studio-traits">
+                {TRAIT_FIELDS.map(([key, label, hint]) => (
+                  <div className="field" key={key}>
+                    <label htmlFor={`studio-${key}`}>{label}</label>
+                    <input id={`studio-${key}`} value={traits[key]} placeholder={hint} maxLength={400}
+                      onChange={(e) => { setTraits({ ...traits, [key]: e.target.value }); setDirty(true); }} />
+                  </div>
+                ))}
+              </div>
+            </details>
+            <div className="row">
+              <button type="button" disabled={busy || Boolean(activeJob) || !traits.description.trim()} onClick={() => void make({ intent: 'portrait', count: 2 })}>
+                Make 2 pictures{prices.portrait ? ` · ${prices.portrait}` : ''}
+              </button>
+              <button type="button" className="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>Upload a picture</button>
+              <input ref={fileInput} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadPicture(e.target.files?.[0])} />
+              {look && <button type="button" className="link-button" onClick={() => { setEditing(false); setPicked(null); }}>Keep the current look</button>}
+            </div>
+            {dirty && <p className="hint">Your words are saved when you make pictures.</p>}
+            {activeJob && <JobProgress job={activeJob} what="pictures" />}
+            {lastDone?.status === 'failed' && <p className="problem-inline">{lastDone.error ?? 'That did not work. Try again.'}</p>}
+            {lastDone && lastDone.held_back > 0 && <p className="hint">{lastDone.held_back === 1 ? '1 picture was' : `${lastDone.held_back} pictures were`} held back by the safety checker.</p>}
+          </section>
+
+          {newMains.length > 0 && (
+            <section className="card-soft stack">
+              <h4>2 · Choose a picture</h4>
+              <p className="hint">These are only ideas until you choose one.</p>
+              <div className="candidate-grid" role="radiogroup" aria-label={`Pictures of ${character.name}`}>
+                {newMains.map((c) => (
+                  <CandidateTile key={c.id} candidate={c} name={character.name} picked={picked === c.asset.id} busy={busy}
+                    onPick={() => setPicked(c.asset.id)} onChange={() => { setChanging(c); setChangeNote(''); }} onRemove={() => void remove(c)} />
+                ))}
+              </div>
+              {changing && (
+                <div className="try-again">
+                  <label htmlFor="studio-change">What should be different in this picture?</label>
+                  <input id="studio-change" value={changeNote} maxLength={300} placeholder="Example: floppier ears" onChange={(e) => setChangeNote(e.target.value)} />
+                  <div className="row">
+                    <button type="button" disabled={busy || !changeNote.trim() || Boolean(activeJob)} onClick={() => void make({ intent: 'refine', candidate_id: changing.id, note: changeNote.trim() })}>
+                      Make a changed picture{prices.view ? ` · ${prices.view}` : ''}
+                    </button>
+                    <button type="button" className="secondary" onClick={() => setChanging(null)}>Cancel</button>
+                  </div>
                 </div>
-                <span>Look {l.visual_version}{l.current ? ' · in use' : ''}</span>
-                {!l.current && <button type="button" className="secondary" disabled={busy} onClick={() => void goBackTo(l)}>Use this look again</button>}
-              </li>
-            ))}
-          </ul>
-          <p className="hint">Scenes keep the look they were given. Older clips never change.</p>
-        </section>
+              )}
+              <button type="button" disabled={busy || !picked} onClick={() => void useThisLook()}>Use this look</button>
+            </section>
+          )}
+        </>
       )}
     </div>
   );
@@ -313,7 +326,7 @@ function CandidateTile({ candidate, name, picked, busy, onPick, onChange, onRemo
         ? <label className="row"><input type="radio" name="studio-main" checked={picked} disabled={busy} onChange={onPick} /> Pick this one</label>
         : <span className="hint">Still being checked</span>}
       <span className="row">
-        <button type="button" className="link-button" disabled={busy || !candidate.can_approve} onClick={onChange}>Change this</button>
+        <button type="button" className="link-button" disabled={busy || !candidate.can_approve} onClick={onChange}>Change this picture</button>
         <button type="button" className="link-button" disabled={busy} onClick={onRemove}>Remove</button>
       </span>
     </div>

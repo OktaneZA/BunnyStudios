@@ -64,6 +64,8 @@ const videoBody = z.object({
   from_job_id: z.string().uuid().optional(),
   /** DF-02: rebuild from the current story instead of the draft's snapshot. Explicit only. */
   use_latest: z.boolean().default(false),
+  /** "Make another version": a short change for this run only, added to the recorded recipe. */
+  note: z.string().trim().max(300).optional(),
 });
 type VideoBody = z.infer<typeof videoBody>;
 
@@ -194,7 +196,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     if (body.from_job_id) {
       const [row] = await database.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, body.from_job_id), eq(schema.generationJobs.accountId, accountId), eq(schema.generationJobs.targetEntityId, shot.id)));
       if (!row) throw ApiError.notFound('Preview');
-      if (row.status !== 'ready') throw ApiError.validation('That preview is not finished, so it cannot be made into a final video yet.');
+      if (row.status !== 'ready') throw ApiError.validation('That clip is not finished yet, so it cannot be used again.');
       parent = row;
       const recorded = (row.request as JobRequest).creative;
       if (!recorded && !body.use_latest) throw needs('That clip was made before previews kept their recipe. Use the latest story instead.', { can_use_latest: true });
@@ -273,7 +275,12 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       // recommended first. "Recommended" never picks a pricier model without this fresh quote.
       const priced = candidates.map((m) => ({ m, p: quoteGeneration(m, { durationSeconds: nativeSeconds, native: task !== 'text-to-video', referenceCount: manifest?.references.length ?? 0 }).pence }));
       if (body.purpose === 'preview') model = priced.sort((a, b) => a.p - b.p)[0]?.m;
-      else model = candidates.find((m) => m.video?.categories.includes('recommended')) ?? candidates[0];
+      else {
+        // A final: a recommended maker first, else the highest cost level, else catalogue order.
+        const rank = { high: 3, medium: 2, low: 1 } as const;
+        model = candidates.find((m) => m.video?.categories.includes('recommended'))
+          ?? [...candidates].sort((a, b) => (rank[b.tier ?? 'low'] ?? 0) - (rank[a.tier ?? 'low'] ?? 0))[0];
+      }
     }
     if (!model) {
       const { nativeDurationSeconds: _ignored, ...anyLength } = requirements as typeof requirements & { nativeDurationSeconds?: number };
@@ -293,7 +300,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     const audio = model.video?.audio_mode === 'always' || (requestedAudio && model.capabilities.audio);
     const native = task !== 'text-to-video';
     const references = manifest?.references ?? [];
-    const prompt = base?.prompt ?? shot.compiledPrompt;
+    // The note is part of this run's recipe, reviewed and length-checked with the rest (MB-06).
+    const prompt = [base?.prompt ?? shot.compiledPrompt, body.note ?? ''].filter((s) => s.trim()).join(' ');
     if (!prompt.trim()) throw ApiError.validation('Write what happens in this scene first, in Story.');
     // MB-06: the names the adapter adds count towards the limit and are reviewed with the prompt.
     const sent = promptWithReferenceTokens(model, prompt, references.map((r) => r.characterName));

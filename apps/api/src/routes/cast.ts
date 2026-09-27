@@ -421,7 +421,7 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
     const chosen = body.model_id ? fits.find((m) => m.id === body.model_id) : [...fits].sort((a, b) => a.unit_cost_pence - b.unit_cost_pence)[0];
     if (!chosen) throw ApiError.validation(needsAnchor
       ? 'Making more views needs a picture maker that can look at your chosen picture, and none is switched on. Ask a grown-up.'
-      : 'Picture makers are not switched on yet. Ask a grown-up to add a key.');
+      : 'Generation isn’t connected yet. Ask the account owner to set it up.');
     return chosen;
   }
 

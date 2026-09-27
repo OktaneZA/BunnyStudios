@@ -22,7 +22,7 @@ import {
 export const FAL_QUEUE_BASE = 'https://queue.fal.run';
 
 const MESSAGES = {
-  disabled: 'The picture maker is not switched on yet. Ask a grown-up to add its key.',
+  disabled: 'Generation isn’t connected yet. Ask the account owner to set it up.',
   auth: 'The picture maker needs its key checked by a grown-up.',
   invalid: 'The picture maker could not use this request. Try a simpler wording.',
   busy: 'The picture maker is busy. Please try again in a minute.',
