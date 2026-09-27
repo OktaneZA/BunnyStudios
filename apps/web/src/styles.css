@@ -904,3 +904,50 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .video-model-option { display: flex; flex-direction: column; gap: .45rem; text-align: left; white-space: normal; }
 .video-model-option span, .video-model-option small { font-weight: normal; }
 .video-model-picker button[aria-pressed="true"] { outline: 2px solid #b9a2ff; outline-offset: 2px; }
+
+/* ── Character Studio and clips with characters (docs/character-studio-requirements.md) ── */
+.link-button { background: none; border: none; padding: 4px 2px; min-height: var(--tap); color: var(--accent); font-weight: 650; text-decoration: underline; cursor: pointer; }
+.link-button:disabled { color: var(--ink-soft); cursor: default; }
+.studio h4 { margin: 0; }
+.look-status { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--control-surface); font-weight: 650; }
+.look-status.look-approved { border-left: 4px solid var(--success); }
+.look-status.look-changed { border-left: 4px solid var(--accent); }
+.look-status.look-none { border-left: 4px dashed var(--ink-soft); }
+.look-badge { display: block; font-size: .72rem; font-weight: 600; color: var(--ink-soft); }
+.look-badge.look-approved { color: var(--success); }
+.studio-traits { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }
+.candidate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.candidate { position: relative; display: grid; gap: 6px; padding: 8px; border: 2px solid var(--line); border-radius: 12px; background: var(--surface); }
+.candidate.picked { border-color: var(--accent); background: var(--selected-surface); }
+.candidate img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--control-surface); }
+.candidate-tag { font-size: .75rem; color: var(--ink-soft); }
+.candidate .row { gap: 8px; align-items: center; }
+.view-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.look-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.look-history li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; border: 1px solid var(--line); }
+.look-history li.current { border-color: var(--success); }
+.look-strip { display: flex; gap: 4px; }
+.look-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; }
+.story-suggestion p { margin: 0 0 6px; }
+.production { margin-top: var(--gap); display: grid; gap: 14px; }
+.production h4 { margin: 0; }
+.shot-cast { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.shot-cast li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: var(--tap); }
+.shot-cast label.row { gap: 8px; align-items: center; }
+.frames summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; font-weight: 650; }
+.frame-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 8px; }
+.frame-slot { display: grid; gap: 6px; }
+.frame-thumb { width: 160px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--control-surface); }
+.frame-thumb.none { display: grid; place-items: center; color: var(--ink-soft); font-size: .85rem; border: 2px dashed var(--line); }
+.purpose-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.purpose { display: grid; gap: 4px; }
+.purpose button { width: 100%; }
+.from-draft { display: grid; gap: 8px; }
+.from-draft p { margin: 0; }
+.notice.needs p { margin: 0 0 8px; }
+.take-kind { position: absolute; top: 6px; right: 6px; padding: 2px 8px; border-radius: 999px; background: var(--navy); color: var(--pale); font-size: .72rem; font-weight: 700; }
+.quick-clip-title { margin: 0 0 8px; }
+.video-model-option .unverified { color: var(--red); }
+.studio input[type="checkbox"], .studio input[type="radio"], .production input[type="checkbox"] { width: 22px; height: 22px; min-height: 0; flex: none; margin: 0; accent-color: var(--accent); }
+.shot-cast label.row, .candidate label.row, .frame-slot label.row { display: inline-flex; align-items: center; gap: 8px; min-height: var(--tap); }
+.add-to-scene select { width: auto; min-width: 180px; }

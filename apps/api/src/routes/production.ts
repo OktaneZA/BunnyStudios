@@ -51,7 +51,8 @@ const videoBody = z.object({
   purpose: z.enum(['preview', 'final']),
   /** Use the approved looks of the characters in this shot. False = a quick text draft, no promise. */
   continuity: z.boolean().default(true),
-  duration_seconds: z.number().int().min(1).max(60),
+  /** Optional only when finishing a preview: the preview's length is reused. */
+  duration_seconds: z.number().int().min(1).max(60).optional(),
   use_start_frame: z.boolean().default(false),
   use_end_frame: z.boolean().default(false),
   audio: z.boolean().default(false),
@@ -220,7 +221,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     }
 
     // Candidate endpoints for this task, before references are counted.
-    const nativeSeconds = body.duration_seconds;
+    const nativeSeconds = body.duration_seconds ?? base?.output.durationSeconds;
+    if (!nativeSeconds) throw ApiError.validation('Choose how long the clip should be.');
     const requirements = {
       task, startFrame: Boolean(startFrame), endFrame: Boolean(endFrame), audio: body.audio,
       ...(task === 'text-to-video' ? {} : { nativeDurationSeconds: nativeSeconds }),
@@ -367,7 +369,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
         modelId: p.model.id, provider: p.model.provider, request: p.jobRequest, task: p.snapshot.task, intent: p.snapshot.intent,
         snapshotVersion: CREATIVE_SNAPSHOT_VERSION, generationGroupId: p.parent?.generationGroupId ?? randomUUID(), parentJobId: p.parent?.id ?? null,
       }).returning();
-      await reserve(tx, { accountId: request.accountId, projectId: c.scene.projectId, jobId: job!.id, model: p.model, durationSeconds: body.duration_seconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length });
+      await reserve(tx, { accountId: request.accountId, projectId: c.scene.projectId, jobId: job!.id, model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length });
       return { job: job!, fresh: true, planned: presentPlan(p, c.advanced) };
     });
     if (created.fresh) void runner.tick().catch(() => {});

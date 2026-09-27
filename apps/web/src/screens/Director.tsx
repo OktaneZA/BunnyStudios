@@ -17,6 +17,7 @@ import { JobProgress } from '../components/JobProgress';
 import { ART_STYLE } from '@storyboard/vocabularies';
 import { DirectorPanel } from '../components/DirectorPanel';
 import { VideoModelPicker } from '../components/VideoModelPicker';
+import { SceneProduction } from '../components/SceneProduction';
 
 const DESIGNS = [
   { id: 'film-strip', name: 'Film Strip' },
@@ -43,6 +44,8 @@ export function Director({ account }: { account: Account }) {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [media, setMedia] = useState<Asset[]>([]);
   const [sheet, setSheet] = useState<'cast' | null>(null);
+  const [studioFor, setStudioFor] = useState<string | null>(null);
+  const openStudio = useCallback((characterId: string) => { setStudioFor(characterId); setSheet('cast'); }, []);
   const [error, setError] = useState<unknown>(null);
   const [design, setDesign] = useState(() => {
     try { return localStorage.getItem('director.design') === 'scene-board' ? 'scene-board' : 'film-strip'; } catch { return 'film-strip'; }
@@ -116,8 +119,8 @@ export function Director({ account }: { account: Account }) {
   if (error && !project) return <ProblemBox error={error} />;
   if (!project || !scenes) return <p className="muted">Loading…</p>;
 
-  const needPictures = (cast?.data ?? []).filter((c) => !c.main_reference).length;
-  const castWords = !cast ? '…' : cast.never_found ? 'Find your cast' : cast.data.length === 0 ? 'Nobody yet' : needPictures === 0 ? 'All have pictures' : `${needPictures} ${needPictures === 1 ? 'needs' : 'need'} a picture`;
+  const needPictures = (cast?.data ?? []).filter((c) => c.look_status === 'none').length;
+  const castWords = !cast ? '…' : cast.data.length === 0 ? (cast.never_found ? 'Find your cast' : 'Nobody yet') : needPictures === 0 ? 'All have a look' : `${needPictures} ${needPictures === 1 ? 'needs' : 'need'} a look`;
 
   return (
     <div className={`director-page design-${design}`}>
@@ -153,13 +156,14 @@ export function Director({ account }: { account: Account }) {
           projectId={project.id} jobsLoaded={jobsLoaded} shot={shots.get(selected.id)} settings={settings}
           tiers={tiers} jobs={jobs} assetsById={assetsById} addJob={addJob}
           onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
-          afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} />
+          afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} openStudio={openStudio}
+          castList={(cast?.data ?? []).map((c) => ({ id: c.id, name: c.name, lookId: c.look?.id ?? null }))} />
           : <p className="notice">Add a scene in <Link to={`/projects/${project.id}`}>Write</Link> first.</p>}
       </div>
 
       {sheet === 'cast' && (
         <CastSheet projectId={project.id} cast={cast} models={models} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
-          onClose={() => setSheet(null)} advanced={advanced} settingsMessage={settings?.message ?? null} />
+          onClose={() => { setSheet(null); setStudioFor(null); }} advanced={advanced} settingsMessage={settings?.message ?? null} initialCharacterId={studioFor} />
       )}
     </div>
   );
@@ -183,12 +187,14 @@ interface WorkProps {
   onShot: (shot: Shot) => void;
   afterHero: () => void;
   refreshSettings: () => Promise<void>;
+  openStudio: (characterId: string) => void;
+  castList: { id: string; name: string; lookId: string | null }[];
 }
 
 const TIER_ORDER: ModelTier[] = ['low', 'medium', 'high'];
 const TIER_WORDS: Record<ModelTier, string> = { low: 'Low cost', medium: 'Medium', high: 'High' };
 
-function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, assetsById, addJob, onShot, afterHero, refreshSettings, onScene, movable, layoutReset }: WorkProps) {
+function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, assetsById, addJob, onShot, afterHero, refreshSettings, onScene, movable, layoutReset, openStudio, castList }: WorkProps) {
   const [tier, setTier] = useState<ModelTier>('low');
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
@@ -335,6 +341,7 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
 
           </div>
           <div className="scene-controls">
+          <h4 className="quick-clip-title">Quick clip from the words</h4>
           <div className="field">
             <span className="label-text">How much to spend?</span>
             {tiers.length === 0 ? (
@@ -409,6 +416,9 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
           </div>}
           </div>
         </section>
+        {shot && <SceneProduction shot={shot} sceneId={scene.id} jobs={jobs} duration={duration ?? 5} audio={audio}
+          disabled={!enabled || !jobsLoaded || Boolean(blocked)} addJob={addJob} onShot={onShot} openStudio={openStudio} refreshSettings={refreshSettings}
+          allCharacters={castList} />}
       </DirectorPanel>
 
       <DirectorPanel key={`clips-${layoutReset}`} title="Your clips" className="director-right" movable={movable}>
@@ -430,6 +440,7 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
                       <button key={a.id} type="button" className={`take-tile${isHero ? ' hero' : ''}${isPlaying ? ' picked' : ''}`} onClick={() => setPickedClip(a.id)} aria-pressed={isPlaying} aria-label={isHero ? 'The clip in your cartoon' : 'A clip'}>
                         <TakeImage asset={a} alt="" />
                         {isHero && <span className="take-tag">In your cartoon</span>}
+                        {job.intent && <span className="take-kind">{job.intent === 'draft' ? 'Preview' : 'Final'}</span>}
                         {a.duration_ms ? <span className="take-secs">{seconds(a.duration_ms)}</span> : null}
                       </button>
                     );

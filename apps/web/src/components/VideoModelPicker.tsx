@@ -17,6 +17,7 @@ export function VideoModelPicker({ models, value, onChange }: { models: ModelInf
       {candidates.filter((m) => m.video?.categories.includes(active!)).map((m) => <button key={m.id} type="button" className="secondary video-model-option" aria-pressed={m.id === value} onClick={() => onChange(m.id)}>
         <strong>{m.label ?? m.friendly_label}</strong><span>{m.help}</span>
         <small>{m.duration_seconds?.min}–{m.duration_seconds?.max}s per take · {m.video?.audio_mode === 'always' ? 'Sound included' : m.capabilities.audio ? 'Optional sound' : 'Silent'}</small>
+        {m.unverified && <small className="unverified">Not tried by us yet: check the first clip and its price.</small>}
       </button>)}
     </div>
   </details>;

@@ -11,8 +11,10 @@ export type ModelTier = 'low' | 'medium' | 'high';
 export type Transition = 'cut' | 'fade' | 'slide';
 
 export interface ModelInfo {
-  video?: { family: string; categories: string[]; audio_mode?: 'optional' | 'always' | 'none'; final_model_id?: string; documentation: string } | null;
+  video?: { family: string; categories: string[]; audio_mode?: 'optional' | 'always' | 'none'; final_model_id?: string; documentation: string; rollout?: 'production' | 'advanced'; verified_live?: boolean } | null;
   configuration_pricing?: boolean;
+  /** Not yet checked by us with a real request and bill (Advanced only). */
+  unverified?: boolean;
   id: string;
   kind: ModelKind;
   tier: ModelTier | null;
@@ -75,6 +77,9 @@ export interface Shot {
   camera_angle: string | null;
   hero_asset_id: string | null;
   hero_video_asset_id: string | null;
+  start_frame_asset_id?: string | null;
+  end_frame_asset_id?: string | null;
+  cast_saved?: boolean;
   generated_asset_ids: string[];
   version: number;
   updated_at: string;
@@ -113,6 +118,10 @@ export interface Job {
   target_entity_type: string;
   target_entity_id: string;
   model_id: string;
+  task?: string | null;
+  /** A quick preview or a final video (production clips only). */
+  intent?: 'draft' | 'final' | null;
+  parent_job_id?: string | null;
   attempt: number;
   error: string | null;
   results: Asset[];
@@ -139,18 +148,120 @@ export interface JobRequestBody {
   note?: string;
 }
 
+export type ViewRole = 'main' | 'front' | 'three_quarter' | 'side' | 'back' | 'full_body' | 'expression';
+
+/** An approved, unchangeable look (Character Studio CS-09). */
+export interface Look {
+  id: string;
+  visual_version: number;
+  approved_at: string;
+  art_style: string;
+  references: { role: ViewRole; position: number; is_main: boolean; content_sha256: string; asset: Asset }[];
+  current?: boolean;
+}
+
 export interface Character {
   id: string;
   name: string;
+  version: number;
   description: string;
+  species: string;
+  build: string;
+  colours: string;
+  features: string;
   costume: string | null;
+  outfits: { label: string; description: string }[];
+  personality: string;
   background_story: string | null;
   source: 'story' | 'manual';
   scene_numbers: number[];
+  /** The approved main picture. A picture that is only a candidate never appears here. */
   main_reference: Asset | null;
+  look: Look | null;
+  /** none: no look chosen; approved; changed: traits edited since, the old look still in use. */
+  look_status: 'none' | 'approved' | 'changed';
+  story_suggestion: string | null;
   references: Asset[];
   pictures_stale: boolean;
   deleted_at: string | null;
+}
+
+export interface Candidate {
+  id: string;
+  view_role: ViewRole;
+  source: 'generated' | 'upload' | 'refinement' | 'legacy';
+  created_at: string;
+  from_look_id?: string | null;
+  parent_candidate_id?: string | null;
+  job_id?: string | null;
+  /** Passed review: may be chosen. Approval and review are separate gates (CS-11). */
+  can_approve: boolean;
+  asset: Asset;
+}
+
+export interface Studio {
+  character: Character;
+  candidates: Candidate[];
+  looks: Look[];
+  views: { value: ViewRole; label: string; help: string }[];
+}
+
+export type CharacterTraits = Partial<Pick<Character, 'name' | 'description' | 'species' | 'build' | 'colours' | 'features' | 'personality'>> & { costume?: string; dismiss_story_suggestion?: true };
+
+export interface StudioJobBody { intent: 'portrait' | 'view' | 'refine'; count?: number; view?: ViewRole; candidate_id?: string; note?: string }
+
+export interface ShotCastCharacter {
+  character_id: string;
+  name: string;
+  proposed: boolean;
+  look_id: string | null;
+  look_version: number | null;
+  current_look_id: string | null;
+  newer_look_available: boolean;
+  look_status: 'approved' | 'none';
+  main_picture: Asset | null;
+  outfit_label: string | null;
+  outfits: string[];
+}
+export interface ShotCast { shot_id: string; version: number; saved: boolean; characters: ShotCastCharacter[] }
+
+export interface VideoBody {
+  purpose: 'preview' | 'final';
+  continuity: boolean;
+  /** Leave out when finishing a preview to keep its length. */
+  duration_seconds?: number;
+  use_start_frame?: boolean;
+  use_end_frame?: boolean;
+  audio?: boolean;
+  model_id?: string;
+  from_job_id?: string;
+  use_latest?: boolean;
+}
+
+export interface VideoPlan {
+  pence: number;
+  words: string;
+  task: 'text-to-video' | 'image-to-video' | 'reference-to-video';
+  intent: 'draft' | 'final';
+  model_id: string | null;
+  model_label: string | null;
+  parts: number[] | null;
+  generated_seconds: number;
+  characters: { character_id: string; name: string; look_version: number | null }[];
+  reference_count: number;
+  new_render: boolean;
+  native_completion: 'unavailable';
+  estimate_only: boolean;
+}
+
+/** What a 422 "choose something first" carries, so the screen can offer the next step. */
+export interface NeedsChoice {
+  missing?: 'cast' | 'looks' | 'compatible_model' | 'start_frame' | 'end_frame' | 'resolution';
+  characters?: { character_id: string; name: string }[];
+  proposed?: { character_id: string; name: string }[];
+  quick_draft_available?: boolean;
+  supported_durations?: number[];
+  can_use_latest?: boolean;
 }
 
 export interface CastList {
@@ -275,13 +386,34 @@ export const director = {
     }),
   addCharacter: (projectId: string, body: { name: string; description: string }) =>
     request<Character>(`/projects/${projectId}/cast`, { method: 'POST', body: JSON.stringify(body) }),
-  updateCharacter: (id: string, body: { name?: string; description?: string; main_reference_asset_id?: string | null }) =>
-    request<Character>(`/characters/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  updateCharacter: (id: string, body: CharacterTraits, version?: number) =>
+    request<Character>(`/characters/${id}`, { method: 'PATCH', body: JSON.stringify(body), ...(version ? { headers: { 'If-Match': String(version) } } : {}) }),
   deleteCharacter: (id: string) => request<void>(`/characters/${id}`, { method: 'DELETE' }),
-  uploadReference: (characterId: string, file: File) =>
-    request<Asset>(`/characters/${characterId}/references`, { method: 'POST', body: upload(file, file.name) }),
-  drawCharacter: (characterId: string, body: { intent: 'portrait' | 'angles'; model_id: string; count?: number }, requestId: string) =>
+
+  // Character Studio
+  studio: (characterId: string) => request<Studio>(`/characters/${characterId}/studio`),
+  uploadCandidate: (characterId: string, file: File, view: ViewRole = 'main') =>
+    request<Candidate>(`/characters/${characterId}/references?view=${view}`, { method: 'POST', body: upload(file, file.name) }),
+  removeCandidate: (characterId: string, candidateId: string) => request<void>(`/characters/${characterId}/candidates/${candidateId}`, { method: 'DELETE' }),
+  approveLook: (characterId: string, body: { main_asset_id: string; pictures: { asset_id: string; role: ViewRole }[] }, version: number) =>
+    request<Character>(`/characters/${characterId}/looks`, { method: 'POST', body: JSON.stringify(body), headers: { 'If-Match': String(version) } }),
+  selectLook: (characterId: string, lookId: string, version: number) =>
+    request<Character>(`/characters/${characterId}/looks/${lookId}/select`, { method: 'POST', headers: { 'If-Match': String(version) } }),
+  quoteCharacterJob: (characterId: string, body: StudioJobBody) =>
+    request<{ pence: number; words: string; count: number; keeps_look: boolean }>(`/characters/${characterId}/jobs/quote`, { method: 'POST', body: JSON.stringify(body) }),
+  drawCharacter: (characterId: string, body: StudioJobBody, requestId: string) =>
     request<Job>(`/characters/${characterId}/jobs`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
+
+  // Characters in a scene, starting pictures and production clips
+  shotCast: (shotId: string) => request<ShotCast>(`/shots/${shotId}/cast`),
+  saveShotCast: (shotId: string, characters: { character_id: string; look?: 'current' | 'none' | string; outfit_label?: string | null }[], version: number) =>
+    request<ShotCast>(`/shots/${shotId}/cast`, { method: 'PUT', body: JSON.stringify({ characters }), headers: { 'If-Match': String(version) } }),
+  uploadFrame: (shotId: string, file: File) => request<Asset>(`/shots/${shotId}/frames`, { method: 'POST', body: upload(file, file.name) }),
+  setFrames: (shotId: string, body: { start_asset_id?: string | null; end_asset_id?: string | null }, version: number) =>
+    request<Shot>(`/shots/${shotId}/frames`, { method: 'PUT', body: JSON.stringify(body), headers: { 'If-Match': String(version) } }),
+  quoteVideo: (shotId: string, body: VideoBody) => request<VideoPlan>(`/shots/${shotId}/videos/quote`, { method: 'POST', body: JSON.stringify(body) }),
+  startVideo: (shotId: string, body: VideoBody, requestId: string) =>
+    request<Job & { plan: VideoPlan | null }>(`/shots/${shotId}/videos`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
 
   // Timeline (D36, D40)
   timeline: (projectId: string) => request<Timeline>(`/projects/${projectId}/timeline`),
