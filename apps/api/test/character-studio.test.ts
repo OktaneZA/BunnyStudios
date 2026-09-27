@@ -360,10 +360,10 @@ test('start and end pictures map to their fields; a sketch cannot start a clip; 
 });
 
 // ── DF-01–DF-05: draft → final ─────────────────────────────────────────────
-test('a draft and a separately accepted final keep lineage, their own quotes and the recorded recipe', async () => {
+test('a draft and a separately accepted final keep lineage, sound, their own quotes and the recorded recipe', async () => {
   const bunny = await characterWithLook('Bunny', false);
   await saveCast(0, [{ character_id: bunny.id }]);
-  const draft = await video(0, { purpose: 'preview', duration_seconds: 5 });
+  const draft = await video(0, { purpose: 'preview', duration_seconds: 5, audio: true });
   assert.equal(draft.statusCode, 202, draft.body);
   await runner.drain();
   const draftRow = await jobRow(draft.json().id);
@@ -385,6 +385,7 @@ test('a draft and a separately accepted final keep lineage, their own quotes and
   assert.equal(finalRow.parentJobId, draftRow.id);
   assert.equal(finalRow.generationGroupId, draftRow.generationGroupId);
   assert.equal(finalRow.intent, 'final');
+  assert.equal((finalRow.request as JobRequest).audio, true, 'omitted audio preserves the preview soundtrack setting');
   assert.equal((finalRow.request as JobRequest).creative!.prompt, (draftRow.request as JobRequest).creative!.prompt);
   assert.doesNotMatch((finalRow.request as JobRequest).prompt, /every carrot/);
   const ledgers = await db.select().from(schema.generationLedger).where(inArray(schema.generationLedger.jobId, [draftRow.id, finalRow.id]));
@@ -423,5 +424,36 @@ test('models not yet checked live are Advanced-only and never chosen for Simple 
   assert.notEqual((await jobRow(job.json().id)).modelId, 'ltx_25_fast', 'the cheaper gated maker was not used');
   const pick = await video(0, { purpose: 'preview', duration_seconds: 5, model_id: 'ltx_25_fast' });
   assert.equal(pick.statusCode, 422, 'the teen cannot pick it by id either');
+  await runner.drain();
+});
+
+test('production refuses an unsupported project shape instead of silently changing it', async () => {
+  const bunny = await characterWithLook('Bunny', false);
+  await saveCast(0, [{ character_id: bunny.id }]);
+  await db.update(schema.seriesBibles).set({ aspectRatio: '1:1' }).where(eq(schema.seriesBibles.projectId, projectId));
+  const submittedBefore = provider.submitted.length;
+  const shot = await shotOf(0);
+  const quoted = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5 } });
+  assert.equal(quoted.statusCode, 422, 'the reference test endpoints cannot produce square video');
+  const started = await video(0, { purpose: 'final', duration_seconds: 5 });
+  assert.equal(started.statusCode, 422);
+  assert.equal(provider.submitted.length, submittedBefore);
+});
+
+test('an old displayed quote cannot spend after the creative request changes', async () => {
+  const bunny = await characterWithLook('Bunny', false);
+  await saveCast(0, [{ character_id: bunny.id }]);
+  const shot = await shotOf(0);
+  const payload = { purpose: 'final', duration_seconds: 5 };
+  const quoted = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/videos/quote`, headers: token(), payload });
+  assert.equal(quoted.statusCode, 200, quoted.body);
+  const key = quoted.json().quote_key;
+  assert.match(key, /^[a-f0-9]{64}$/);
+  const before = provider.submitted.length;
+  const changed = await video(0, { ...payload, duration_seconds: 10, expected_quote_key: key });
+  assert.equal(changed.statusCode, 409);
+  assert.equal(provider.submitted.length, before);
+  const accepted = await video(0, { ...payload, expected_quote_key: key });
+  assert.equal(accepted.statusCode, 202, accepted.body);
   await runner.drain();
 });

@@ -17,7 +17,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { promptBudget, TEMPLATE_VERSION } from '@storyboard/compiler';
 import { CLIP_LENGTHS, durationOptions, quoteGeneration, type VideoModelDefinition, type VideoTask } from '@storyboard/models';
@@ -47,6 +47,7 @@ function needs(detail: string, state: Record<string, unknown>): ApiError {
 }
 
 const videoBody = z.object({
+  expected_quote_key: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   /** DF-01: a purpose, never a model name, in Simple mode. */
   purpose: z.enum(['preview', 'final']),
   /** Use the approved looks of the characters in this shot. False = a quick text draft, no promise. */
@@ -55,7 +56,7 @@ const videoBody = z.object({
   duration_seconds: z.number().int().min(1).max(60).optional(),
   use_start_frame: z.boolean().default(false),
   use_end_frame: z.boolean().default(false),
-  audio: z.boolean().default(false),
+  audio: z.boolean().optional(),
   /** Advanced only: a specific endpoint and size. */
   model_id: z.string().min(1).max(60).optional(),
   resolution: z.string().max(20).optional(),
@@ -223,8 +224,10 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     // Candidate endpoints for this task, before references are counted.
     const nativeSeconds = body.duration_seconds ?? base?.output.durationSeconds;
     if (!nativeSeconds) throw ApiError.validation('Choose how long the clip should be.');
+    const requestedAudio = body.audio ?? base?.output.audio ?? false;
+    const requestedAspect = base?.output.aspectRatio ?? ((await isConstrained(database as typeof db, accountId, scene.projectId)).aspectRatio as '16:9' | '9:16' | '1:1');
     const requirements = {
-      task, startFrame: Boolean(startFrame), endFrame: Boolean(endFrame), audio: body.audio,
+      task, startFrame: Boolean(startFrame), endFrame: Boolean(endFrame), audio: requestedAudio, aspectRatio: requestedAspect,
       ...(task === 'text-to-video' ? {} : { nativeDurationSeconds: nativeSeconds }),
     };
 
@@ -286,9 +289,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
 
     const resolution = body.resolution ?? base?.output.resolution ?? model.resolutions[0]!;
     if (!model.resolutions.includes(resolution)) throw needs('That size is not available for this clip maker.', { missing: 'resolution', resolutions: model.resolutions });
-    const aspect = base?.output.aspectRatio ?? ((await isConstrained(database as typeof db, accountId, scene.projectId)).aspectRatio as '16:9' | '9:16' | '1:1');
-    const aspectRatio = model.aspect_ratios.includes(aspect) ? aspect : model.aspect_ratios[0]!;
-    const audio = model.video?.audio_mode === 'always' || (body.audio && model.capabilities.audio);
+    const aspectRatio = requestedAspect;
+    const audio = model.video?.audio_mode === 'always' || (requestedAudio && model.capabilities.audio);
     const native = task !== 'text-to-video';
     const references = manifest?.references ?? [];
     const prompt = base?.prompt ?? shot.compiledPrompt;
@@ -314,8 +316,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     };
     return {
       model, quote, snapshot, jobRequest, parent,
-      // DF-03: a final on another endpoint is a new render that may change what you saw.
-      newRender: Boolean(parent && parent.modelId !== model.id),
+      // DF-03: generating a final is a new render, even on the same endpoint.
+      newRender: Boolean(parent),
       parts: native ? [nativeSeconds] : quote.parts,
       gated: isGated(model),
     };
@@ -324,6 +326,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
   function presentPlan(p: Awaited<ReturnType<typeof plan>>, advanced: boolean) {
     const generated = (p.parts ?? []).reduce((a, b) => a + b, 0);
     return {
+      quote_key: createHash('sha256').update(JSON.stringify({ creative: p.snapshot, pricing: p.quote.snapshot })).digest('hex'),
       pence: p.quote.pence, words: `about ${pence(p.quote.pence)}`,
       task: p.snapshot.task, intent: p.snapshot.intent,
       model_id: advanced ? p.model.id : null, model_label: advanced ? p.model.label : null,
@@ -364,13 +367,17 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       const c = await context(tx, request.accountId, id, true);
       if (c.constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so clips cannot be made on this account yet. Ask a grown-up.');
       const p = await plan(tx, request.accountId, c.shot, c.scene, body, c.advanced, c.constrained);
+      const presented = presentPlan(p, c.advanced);
+      if (body.expected_quote_key && body.expected_quote_key !== presented.quote_key) {
+        throw ApiError.conflict('The clip or its price changed. Check the new quote before making it.', presented);
+      }
       const [job] = await tx.insert(schema.generationJobs).values({
         accountId: request.accountId, projectId: c.scene.projectId, requestKey, kind: 'video', targetEntityType: 'shot', targetEntityId: c.shot.id,
         modelId: p.model.id, provider: p.model.provider, request: p.jobRequest, task: p.snapshot.task, intent: p.snapshot.intent,
         snapshotVersion: CREATIVE_SNAPSHOT_VERSION, generationGroupId: p.parent?.generationGroupId ?? randomUUID(), parentJobId: p.parent?.id ?? null,
       }).returning();
       await reserve(tx, { accountId: request.accountId, projectId: c.scene.projectId, jobId: job!.id, model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length });
-      return { job: job!, fresh: true, planned: presentPlan(p, c.advanced) };
+      return { job: job!, fresh: true, planned: presented };
     });
     if (created.fresh) void runner.tick().catch(() => {});
     reply.header('Cache-Control', 'no-store');

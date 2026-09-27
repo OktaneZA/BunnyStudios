@@ -226,6 +226,7 @@ export interface ShotCastCharacter {
 export interface ShotCast { shot_id: string; version: number; saved: boolean; characters: ShotCastCharacter[] }
 
 export interface VideoBody {
+  expected_quote_key?: string;
   purpose: 'preview' | 'final';
   continuity: boolean;
   /** Leave out when finishing a preview to keep its length. */
@@ -239,6 +240,7 @@ export interface VideoBody {
 }
 
 export interface VideoPlan {
+  quote_key: string;
   pence: number;
   words: string;
   task: 'text-to-video' | 'image-to-video' | 'reference-to-video';

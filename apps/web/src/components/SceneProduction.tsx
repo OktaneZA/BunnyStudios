@@ -37,6 +37,7 @@ export function SceneProduction({ shot, sceneId, jobs, duration, audio, disabled
   const [useStart, setUseStart] = useState(false);
   const [useEnd, setUseEnd] = useState(false);
   const [quotes, setQuotes] = useState<{ preview?: Quote; final?: Quote; fromDraft?: Quote }>({});
+  const [quoteRevision, setQuoteRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const starting = useRef(false);
@@ -87,7 +88,7 @@ export function SceneProduction({ shot, sceneId, jobs, duration, audio, disabled
       .then(([preview, final, fromDraft]) => { if (on) setQuotes({ preview, final, ...(fromDraft ? { fromDraft } : {}) }); })
       .catch((err) => { if (on) setError(err); });
     return () => { on = false; };
-  }, [shot.id, shot.version, body, unsaved, useLooks, draft]);
+  }, [shot.id, shot.version, body, unsaved, useLooks, draft, quoteRevision]);
 
   async function refreshShot() {
     const fresh = (await director.shots(sceneId)).data[0];
@@ -133,9 +134,17 @@ export function SceneProduction({ shot, sceneId, jobs, duration, audio, disabled
     starting.current = true;
     setBusy(true); setError(null);
     try {
-      addJob(await director.startVideo(shot.id, b, uuid()));
+      const shown = b.from_job_id ? quotes.fromDraft?.plan : quotes[b.purpose]?.plan;
+      if (!shown) return;
+      addJob(await director.startVideo(shot.id, { ...b, expected_quote_key: shown.quote_key }, uuid()));
       void refreshSettings();
-    } catch (err) { setError(err); }
+    } catch (err) {
+      setError(err);
+      if (err instanceof ApiProblem && err.problem.status === 409) {
+        setQuotes({});
+        setQuoteRevision((value) => value + 1);
+      }
+    }
     finally { starting.current = false; setBusy(false); }
   }
 
