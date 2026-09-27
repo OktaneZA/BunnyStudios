@@ -7,6 +7,35 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+- Clip log: every clip, picture and render keeps a step trail (sending, waiting, fetching,
+  joining, checking), shown to the child as a live step and to the adult on Grown-ups → Clip log
+  with raw errors; also written to `logs/generation.log`. Long clips no longer stall: running
+  jobs heartbeat every 10 s, a dead server's job is picked up within a minute and resumes from
+  the parts already made, and every provider call has its own time limit.
+
+- Clearer switching between writing and making: every cartoon screen shows the same three
+  steps (Write · Make clips · Put it together) beside the title; scenes show the same clip state
+  and words in both steps; a scene opened from Make clips goes back there; a scene page keeps
+  "Scene 2 of 4", arrows and "Make this scene's clip" in a bar that stays on screen; the sketch
+  is now an optional closed section.
+
+- Director layout refinement: Film Strip and Scene Board replace the initial four designs.
+  Both have independent White/Black modes, remembered per browser, with matching header and
+  dialog colours. Scene thumbnails and status lead the workspace; movable panels remain optional.
+
+- Director: five saved clip styles; 5/10/15/30-second clips at every cost level using
+  supported shorter parts and exact-length assembly, with full generated-time pricing.
+  Removed the extra-instructions field. Added Studio, Cinema, Storyboard and Floating Desk
+  layouts, responsive panels, draggable/keyboard-movable windows and a reset action.
+
+- Teen and tablet usability: contextual Story handoffs, save before opening Director,
+  scene text ahead of expandable generation instructions, price retry and duplicate-generation
+  protection, links to missing scenes before assembly, wider tablet controls, and keyboard focus
+  handling in sheets. See `docs/usability-review.md` for findings and verification limits.
+- Playwright MCP verification: enlarged the apply-to-all transition shortcut to 44px and
+  removed duplicate, outdated picture-step guidance from assembly. All 14 browser regressions
+  pass against the built app with fake generation; desktop/tablet screenshots are recorded.
+
 - Director Mode (docs/director-mode-plan-v1.md, docs/director-mode.md): a second tab on every
   cartoon. The cast is found from the scene text by a Claude proposal; each scene gets one
   compiled shot; "Make a picture" and "Make it move" run through fal.ai picture makers listed in

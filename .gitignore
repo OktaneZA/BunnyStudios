@@ -38,3 +38,8 @@ apps/web/public/downloads/
 # Browser test output
 .playwright-results/
 apps/api/storage/
+apps/api/logs/
+
+# Stray output from test runs started outside their workspace
+logs/
+test-results/

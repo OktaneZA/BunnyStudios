@@ -77,13 +77,13 @@ export function CartoonStrip({ projectId, timeline, onTimeline }: StripProps) {
         <div className="strip-items">
           {items.map((item, i) => (
             <div key={item.id} className="strip-item-wrap">
-              <div className={`strip-item${item.duration_ms === 0 ? ' skipped' : ''}`}>
+              <Link to={`/projects/${projectId}/director?scene=${item.scene_id}`} className={`strip-item${item.duration_ms === 0 ? ' skipped' : ''}`} aria-label={`Scene ${item.scene_number}: ${item.scene_title}${item.duration_ms === 0 ? ', needs a clip' : ', edit clip'}`}>
                 <ItemStill item={item} />
                 <span className="strip-caption">
                   <span className="strip-title">{item.scene_number}. {item.scene_title}</span>
-                  <span className="strip-secs">{item.duration_ms > 0 ? seconds(item.duration_ms) : 'skipped'}</span>
+                  <span className="strip-secs">{item.duration_ms > 0 ? seconds(item.duration_ms) : 'needs a clip'}</span>
                 </span>
-              </div>
+              </Link>
               {i < items.length - 1 && <TransitionChip value={item.transition_out} onClick={() => setJoin(i)} disabled={busy} />}
             </div>
           ))}
@@ -91,6 +91,7 @@ export function CartoonStrip({ projectId, timeline, onTimeline }: StripProps) {
         {timeline && items.length > 0 && <Lanes timeline={timeline} />}
       </div>
       <div className="strip-foot">
+        {items.some((item) => item.duration_ms === 0) && <p className="hint">Scenes marked “needs a clip” will be left out. Tap one to make it.</p>}
         <Link className="btn" to={`/projects/${projectId}/together`}>Put it together →</Link>
       </div>
       {joinItem && join !== null && (

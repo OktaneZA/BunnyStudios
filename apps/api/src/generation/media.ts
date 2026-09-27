@@ -163,3 +163,21 @@ export async function render(plan: RenderPlan): Promise<Buffer> {
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+/** Normalise and join generated parts, trimming the final part without slowing the action. */
+export async function joinClipParts(parts: { bytes: Buffer; seconds: number }[], seconds: number, portrait = false): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), 'clip-parts-'));
+  try {
+    let remaining = seconds;
+    const items: RenderItem[] = [];
+    for (const [index, part] of parts.entries()) {
+      if (remaining <= 0) break;
+      const path = join(dir, `${index}.mp4`);
+      await writeFile(path, part.bytes);
+      const hold = Math.min(remaining, part.seconds);
+      items.push({ path, isVideo: true, hasAudio: await probeHasAudio(path), holdMs: hold * 1000, transitionOut: 'cut' });
+      remaining -= hold;
+    }
+    return await render({ items, music: null, voiceovers: [], width: portrait ? 720 : 1280, height: portrait ? 1280 : 720 });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}

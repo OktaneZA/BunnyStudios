@@ -338,7 +338,7 @@
       "tier": "medium",
       "label": "Hailuo 02 Standard (text to video)",
       "friendlyLabel": "Medium",
-      "help": "Better motion and detail. No sounds. 6 or 10 seconds.",
+      "help": "Better motion and detail. No sounds.",
       "icon": "model-video",
       "capabilities": {
         "reference_images": false,

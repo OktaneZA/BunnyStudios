@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, Link, Navigate, useMatch } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, useMatch, useLocation } from 'react-router-dom';
 import { BunnyLogo } from './components/BunnyLogo';
 import { api, auth, type Account } from './api';
 import { Login } from './screens/Login';
@@ -15,6 +15,9 @@ export default function App() {
   const sceneRoute = useMatch('/projects/:projectId/scenes/:sceneId');
   const togetherRoute = useMatch('/projects/:projectId/together');
   const directorRoute = useMatch('/projects/:projectId/director');
+  const storyRoute = useMatch('/projects/:projectId');
+  const location = useLocation();
+  const fromMake = new URLSearchParams(location.search).get('from') === 'make';
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -71,10 +74,12 @@ export default function App() {
 
       <main>
         <nav className="crumbs" aria-label="Back navigation">
-          {sceneRoute && <Link to={`/projects/${sceneRoute.params.projectId}`}>← Back to scenes</Link>}
-          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Director</Link>}
-          {!directorRoute && !togetherRoute && <Link to="/">← Back to Cartoons</Link>}
-          {directorRoute && <Link to="/">← All cartoons</Link>}
+          {/* One back link per screen. A scene opened from Make clips goes back to that scene's clip. */}
+          {sceneRoute && (fromMake
+            ? <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to making clips</Link>
+            : <Link to={`/projects/${sceneRoute.params.projectId}`}>← All scenes</Link>)}
+          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Make clips</Link>}
+          {(directorRoute || (storyRoute && storyRoute.params.projectId !== 'new')) && <Link to="/">← All cartoons</Link>}
         </nav>
         <Routes>
           <Route path="/" element={<ProjectList />} />

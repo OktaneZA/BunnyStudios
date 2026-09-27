@@ -579,6 +579,12 @@ export const generationJobs = pgTable(
     /** Always user-safe. Upstream bodies are never stored here. */
     errorDetail: text('error_detail'),
     resultAssetIds: uuid('result_asset_ids').array().notNull().default([]),
+    /**
+     * The job's step trail: [{at, step, detail?, part?, parts?, raw?}]. What the runner did and
+     * when, so a slow or stuck clip says where it got to. `raw` is server-side error text: it is
+     * only ever shown to the adult account.
+     */
+    events: jsonb('events').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),

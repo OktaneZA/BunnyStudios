@@ -115,7 +115,7 @@ export function CastSheet({ projectId, cast, models, jobs, onJob, refreshCast, o
   const drawCost = drawModel ? `About ${formatPence(drawModel.unit_cost_pence * 2)} a go.` : settingsMessage ?? 'Picture makers are not set up yet.';
 
   return (
-    <Sheet title="Your cast" lede="Found in your story. Give each one a picture so they look the same in every scene." onClose={onClose}>
+    <Sheet title="Your cast" lede="Found in your story. Pictures help you plan their look. Clips use your written descriptions, so describe each character the same way in every scene." onClose={onClose}>
       <ProblemBox error={error} />
 
       {needsFinding && !proposal && (

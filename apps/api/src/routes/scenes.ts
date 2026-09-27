@@ -3,7 +3,7 @@ import { and, eq, asc, desc, inArray, sql as raw, isNull, isNotNull } from 'driz
 import { z } from 'zod';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
-import { values } from '@storyboard/vocabularies';
+import { values, ART_STYLE, promptPhrase } from '@storyboard/vocabularies';
 import { sceneThumbnailMetadata, sceneThumbnailPreviews } from '../thumbnails/context.ts';
 import { sceneDescription } from '../scenes/description.ts';
 
@@ -34,6 +34,7 @@ const createBody = z.object({
  * no default, so an absent key stays absent and is never patched.
  */
 const updateBody = z.object({
+  art_style: z.enum(values('art_style') as [string, ...string[]]).optional(),
   description: z.string().max(12000).optional(),
   camera_angle: z.enum(CAMERA_ANGLES).nullable().optional(),
   title: z.string().min(1).max(200).optional(),
@@ -72,6 +73,7 @@ function present(s: typeof schema.scenes.$inferSelect) {
     slugline: s.slugline,
     title: s.title,
     description: sceneDescription(s),
+    art_style: ART_STYLE.find((style) => style.prompt_phrase === s.styleOverride)?.value ?? null,
     camera_angle: s.cameraAngle,
     location_id: s.locationId,
     time_of_day: s.timeOfDay,
@@ -258,6 +260,7 @@ export async function sceneRoutes(app: FastifyInstance): Promise<void> {
       version: current.version + 1,
     };
     if (body.title !== undefined) patch.title = body.title;
+    if (body.art_style !== undefined) patch.styleOverride = promptPhrase('art_style', body.art_style);
     if (body.description !== undefined) patch.description = body.description;
     if (body.camera_angle !== undefined) patch.cameraAngle = body.camera_angle;
     if (body.scene_intent !== undefined) patch.sceneIntent = body.scene_intent;

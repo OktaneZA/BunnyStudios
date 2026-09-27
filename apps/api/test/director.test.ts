@@ -12,7 +12,8 @@ import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_HIGH
 import { createMemoryStore } from '../src/storage/objectStore.ts';
 import type { ReviewProvider } from '../src/generation/review.ts';
 import type { CastFinder } from '../src/cast/finder.ts';
-import { ffmpegAvailable } from '../src/generation/media.ts';
+import { ffmpegAvailable, makeTestClip } from '../src/generation/media.ts';
+import { providerError } from '../src/generation/provider.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -87,6 +88,33 @@ async function job(id: string, account = 0) {
 async function ledger(jobId: string) {
   return db.select().from(schema.generationLedger).where(eq(schema.generationLedger.jobId, jobId));
 }
+
+test('a joined clip resumes after a transient second-part failure without buying the first part again', async (t) => {
+  if (!(await ffmpegAvailable())) { t.skip('requires ffmpeg'); return; }
+  const originalSubmit = provider.submit;
+  const originalDownload = provider.download;
+  let attempts = 0;
+  provider.submit = async (...args) => {
+    if (++attempts === 2) throw providerError('unavailable', 'Temporary test failure');
+    return originalSubmit(...args);
+  };
+  provider.download = async (file) => (await makeTestClip((file.durationMs ?? 5000) / 1000))!;
+  try {
+    const shot = await shotFor(sceneIds[0]!);
+    const started = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 15 });
+    assert.equal(started.statusCode, 202, started.body);
+    await runner.drain();
+    const done = await job(started.json().id);
+    assert.equal(done.status, 'ready', JSON.stringify(done));
+    assert.deepEqual(provider.submitted.map((request) => request.durationSeconds), [10, 5]);
+    assert.equal(done.results.length, 1);
+    assert.ok(Math.abs(done.results[0].duration_ms - 15000) < 100);
+    const [bill] = await ledger(done.id);
+    assert.equal(bill!.estimatedPence, 30);
+    assert.equal(bill!.status, 'settled');
+    assert.equal(reviewCalls.filter((call) => call === 'image').length, 4);
+  } finally { provider.submit = originalSubmit; provider.download = originalDownload; }
+});
 
 test('settings list the enabled models, the allowance and plain words', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/v1/settings/generation', headers: token() });
@@ -412,4 +440,41 @@ test('adults can set the teen budget; the teen cannot see the page', async () =>
   assert.equal((await app.inject({ method: 'GET', url: '/api/v1/accounts', headers: token() })).statusCode, 404);
   await db.update(schema.accounts).set({ dailyBudgetPence: 1000 }).where(eq(schema.accounts.id, ids[0]!));
   await db.delete(schema.generationLedger).where(and(eq(schema.generationLedger.accountId, ids[0]!)));
+});
+
+test('every job keeps a step trail; the teen sees the current step, the adult sees everything', async () => {
+  const shot = await shotFor(sceneIds[0]!);
+  const started = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
+  await runner.drain();
+  const teenView = await job(started.json().id);
+  assert.equal(teenView.status, 'ready');
+  assert.equal(teenView.progress.say, 'Ready');
+  assert.equal(teenView.events, undefined, 'the teen never sees the raw trail');
+  const log = await app.inject({ method: 'GET', url: `/api/v1/accounts/${ids[0]}/jobs`, headers: token(1) });
+  assert.equal(log.statusCode, 200, log.body);
+  const entry = log.json().data.find((j: { id: string }) => j.id === started.json().id);
+  const says = entry.events.map((e: { say: string }) => e.say);
+  for (const step of ['Started', 'Checking the words', 'Sending your picture to the picture maker', 'Made your picture', 'Fetched your picture', 'Checking your picture is OK', 'Ready']) {
+    assert.ok(says.includes(step), `trail has "${step}": ${says.join(' → ')}`);
+  }
+  assert.equal((await app.inject({ method: 'GET', url: `/api/v1/accounts/${ids[0]}/jobs`, headers: token() })).statusCode, 404, 'the clip log is adult-only');
+});
+
+test('a job whose server died is picked up within a minute and carries on without paying again', async () => {
+  const shot = await shotFor(sceneIds[0]!);
+  const started = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
+  const id = started.json().id;
+  // Pretend another process sent it to the provider, then died without a heartbeat for two minutes.
+  const submitted = await provider.submit({ model: FAKE_IMAGE_MODEL, prompt: 'x', negativePrompt: '', referenceImages: [], startFrame: null, aspectRatio: '16:9', count: 1, durationSeconds: null, audio: false, resolution: '1024', strictSafety: true }, AbortSignal.timeout(1000));
+  const before = provider.submitted.length;
+  await db.update(schema.generationJobs).set({ status: 'submitted', providerJobId: submitted.providerJobId, claimedBy: 'runner-dead', claimedAt: new Date(Date.now() - 120_000), attempt: 1 })
+    .where(eq(schema.generationJobs.id, id));
+  await runner.drain();
+  const done = await job(id, 1 - 1);
+  assert.equal(done.status, 'ready');
+  assert.equal(provider.submitted.length, before, 'nothing was sent to the provider twice');
+  const [row] = await db.select().from(schema.generationJobs).where(eq(schema.generationJobs.id, id));
+  const says = (row!.events as { say: string }[]).map((e) => e.say);
+  assert.ok(says.includes('Picked up again'), says.join(' → '));
+  assert.ok(says.includes('Carrying on with your picture'), says.join(' → '));
 });

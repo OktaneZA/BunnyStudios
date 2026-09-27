@@ -101,6 +101,7 @@ export interface Project {
 }
 
 export interface Scene {
+  art_style?: string | null;
   id: string;
   scene_number: number;
   sort_order: number;

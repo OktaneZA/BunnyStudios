@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CartoonHeader } from '../components/ProjectTabs';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiProblem, type Project } from '../api';
 import { director, isActiveJob, laneSpan, seconds, type Timeline, type Transition } from '../director-api';
@@ -101,11 +102,16 @@ export function Together() {
 
   return (
     <>
-      <header className="project-head">
-        <p className="muted">{project.title}</p>
-        <h2>Put it together</h2>
-      </header>
+      <CartoonHeader projectId={project.id} title={project.title} step="together" />
       <ProblemBox error={error} />
+      {skipped.length > 0 && (
+        <section className="notice" aria-label="Scenes missing from your cartoon">
+          <b>{skipped.length === 1 ? 'One scene is' : `${skipped.length} scenes are`} missing from the finished cartoon.</b>
+          <p>Make clips for them, or continue with the scenes that are ready.</p>
+          <div className="row">{skipped.map((item) => <Link className="btn secondary" key={item.id}
+            to={`/projects/${projectId}/director?scene=${item.scene_id}`}>Make scene {item.scene_number}</Link>)}</div>
+        </section>
+      )}
 
       <div className="together">
         <div className="together-main stack">
@@ -155,7 +161,7 @@ export function Together() {
                     </div>
                   );
                 })}
-                {playing.length === 0 && <span className="lane-empty">Nothing plays yet. Make a picture for a scene in Director.</span>}
+                {playing.length === 0 && <span className="lane-empty">Nothing plays yet. Make a clip for a scene in Director.</span>}
               </div>
             </div>
 
@@ -219,14 +225,6 @@ export function Together() {
               {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? 'Make my cartoon again' : 'Make my cartoon'}
             </button>
           </section>
-          {skipped.length > 0 && (
-            <section className="card">
-              <h3>Could be better</h3>
-              {skipped.map((i) => (
-                <p key={i.id} className="hint">Scene {i.scene_number} has nothing yet, so it is skipped. <Link to={`/projects/${projectId}/director?scene=${i.scene_id}`}>Make a picture</Link> for it and it joins in.</p>
-              ))}
-            </section>
-          )}
           {timeline.renders.length > 1 && (
             <section className="card">
               <h3>Earlier versions</h3>

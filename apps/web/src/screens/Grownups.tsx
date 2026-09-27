@@ -3,6 +3,7 @@ import { api, type Project, type Scene } from '../api';
 import { director, formatPence, type AccountBudget, type Asset, type GenerationSettings } from '../director-api';
 import { ProblemBox } from '../components/ProblemBox';
 import { AssetImage } from '../components/AssetMedia';
+import { ClipLog } from '../components/ClipLog';
 
 /**
  * Grown-ups (plan §6): adult-only. Budgets per account, which picture makers are on, and
@@ -102,6 +103,7 @@ export function Grownups() {
         </div>
 
         <div className="stack">
+          {accounts && accounts.length > 0 && <ClipLog accounts={accounts} />}
           <section className="card stack">
             <h3>Held back</h3>
             <p className="hint">Pictures the checker didn't allow. The child never sees these.</p>

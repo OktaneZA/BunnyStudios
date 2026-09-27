@@ -5,7 +5,7 @@
 import type { FastifyInstance } from 'fastify';
 import { and, asc, desc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
-import { estimatePence, type GenerationModel } from '@storyboard/models';
+import { estimatePence, clipPlan, CLIP_LENGTHS, type GenerationModel } from '@storyboard/models';
 import { promptBudget } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
@@ -85,7 +85,17 @@ export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
     held_back: heldBack,
     created_at: j.createdAt.toISOString(),
     finished_at: j.finishedAt ? j.finishedAt.toISOString() : null,
+    // The latest child-safe step ("Making part 2 of 3"), and when it began.
+    progress: lastStep(j.events),
+    // The full trail, raw errors included, only for the adult account.
+    ...(hideRejected ? {} : { events: Array.isArray(j.events) ? j.events : [] }),
   };
+}
+
+function lastStep(events: unknown) {
+  const list = Array.isArray(events) ? events as { at: string; say: string; part?: number; parts?: number }[] : [];
+  const last = list[list.length - 1];
+  return last ? { say: last.say, at: last.at, part: last.part ?? null, parts: last.parts ?? null } : null;
 }
 
 export async function isConstrained(database: typeof db, accountId: string, projectId: string) {
@@ -107,7 +117,7 @@ export function resolveOptions(model: GenerationModel, body: z.infer<typeof jobB
   if (model.kind === 'video') {
     const d = model.duration_seconds!;
     durationSeconds = body.duration_seconds ?? d.min;
-    if (durationSeconds < d.min || durationSeconds > d.max || (durationSeconds - d.min) % d.step !== 0) {
+    if (!(model.capabilities.text_to_video && CLIP_LENGTHS.includes(durationSeconds)) && (durationSeconds < d.min || durationSeconds > d.max || (durationSeconds - d.min) % d.step !== 0)) {
       throw ApiError.validation(`${model.friendlyLabel} makes clips between ${d.min} and ${d.max} seconds.`);
     }
   }
@@ -363,6 +373,22 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     return { data: ['low', 'medium', 'high'].map((tier) => enabled.find((m) => m.tier === tier)).filter(Boolean).map((m) => presentModel(m!, false)) };
   });
 
+  /** The adult's clip log: recent jobs for any account, each with its full step trail. */
+  app.get('/accounts/:id/jobs', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    if (!me || me.isMinor) throw ApiError.notFound('Page');
+    const rows = await db.select({ job: schema.generationJobs, title: schema.projects.title }).from(schema.generationJobs)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.generationJobs.projectId))
+      .where(eq(schema.generationJobs.accountId, id)).orderBy(desc(schema.generationJobs.createdAt)).limit(30);
+    reply.header('Cache-Control', 'no-store');
+    return { data: rows.map(({ job, title }) => ({
+      ...presentJob(job, [], false), project_title: title,
+      duration_seconds: (job.request as { durationSeconds?: number } | null)?.durationSeconds ?? null,
+      error_code: job.errorCode,
+    })) };
+  });
+
   /** Adult-only budget settings (DM-26). */
   app.get('/accounts', async (request) => {
     const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
@@ -391,6 +417,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const model = catalogue.find(q.model_id);
     if (!model) throw ApiError.notFound('Picture maker');
     const p = estimatePence(model, { ...(q.count ? { count: q.count } : {}), ...(q.duration_seconds ? { durationSeconds: q.duration_seconds } : {}) });
-    return { pence: p, words: `about ${pence(p)}` };
+      const parts = model.kind === 'video' && model.capabilities.text_to_video && q.duration_seconds && CLIP_LENGTHS.includes(q.duration_seconds) ? clipPlan(model, q.duration_seconds) : null;
+      return { pence: p, words: `about ${pence(p)}`, parts };
   });
 }

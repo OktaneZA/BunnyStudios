@@ -58,11 +58,8 @@ export function TransitionPopover({ fromNumber, toNumber, value, busy, onPick, o
           </button>
         ))}
       </div>
-      <p className="hint">
-        Tap one.{' '}
-        <button type="button" className="linkish" disabled={busy} onClick={() => onPickAll(value)}>Use this for every scene</button>
-        {' '}sets them all the same.
-      </p>
+      <p className="hint">Tap a transition to change this join, or apply the chosen transition to every scene.</p>
+      <button type="button" className="secondary" disabled={busy} onClick={() => onPickAll(value)}>Use this for every scene</button>
     </Sheet>
   );
 }

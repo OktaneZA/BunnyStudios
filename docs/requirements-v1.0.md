@@ -10,6 +10,11 @@
 > artwork/video generation stays external, and importing finished pictures is optional. See
 > the plan's TH-1–TH-6 for the thumbnail workflow and revised first visual milestone.
 
+> **Later scope:** [Director Mode decisions](director-mode-plan-v1.md), especially D38–D41,
+> supersede the original external-generation-only workflow below: Story → Director clips →
+> Put it together → download. [The usability review](usability-review.md) records the current
+> teen/tablet screen flow and acceptance checks. This document remains the historical specification.
+
 ---
 
 ## 1. Product Summary

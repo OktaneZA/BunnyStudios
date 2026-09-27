@@ -23,6 +23,12 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const { account } = await isConstrained(db, accountId, projectId);
     const timeline = await ensureTimeline(accountId, projectId);
     const items = await resolveItems(accountId, projectId, account.isMinor);
+    // Which scenes have a clip being made right now, so Write and Make clips show the same state.
+    const activeShots = await db.select({ sceneId: schema.shots.sceneId }).from(schema.generationJobs)
+      .innerJoin(schema.shots, eq(schema.shots.id, schema.generationJobs.targetEntityId))
+      .where(and(eq(schema.generationJobs.projectId, projectId), eq(schema.generationJobs.accountId, accountId), eq(schema.generationJobs.kind, 'video'),
+        inArray(schema.generationJobs.status, ['queued', 'submitted', 'running', 'reviewing'])));
+    const makingScenes = new Set(activeShots.map((r) => r.sceneId));
     const [music] = timeline.musicAssetId ? await db.select().from(schema.assets).where(and(eq(schema.assets.id, timeline.musicAssetId), eq(schema.assets.accountId, accountId), isNull(schema.assets.deletedAt))) : [];
     const voiceRows = await db.select().from(schema.timelineVoiceovers).where(and(eq(schema.timelineVoiceovers.timelineId, timeline.id), isNull(schema.timelineVoiceovers.deletedAt))).orderBy(asc(schema.timelineVoiceovers.startMs));
     const voiceAssets = voiceRows.length ? await db.select().from(schema.assets).where(and(inArray(schema.assets.id, voiceRows.map((v) => v.assetId)), isNull(schema.assets.deletedAt))) : [];
@@ -54,6 +60,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
           id: i.itemId, scene_id: i.sceneId, scene_number: i.sceneNumber, scene_title: i.sceneTitle,
           source: i.source, duration_ms: i.durationMs, start_ms: i.durationMs > 0 ? start : null,
           has_sound: i.source === 'video' && Boolean(i.asset?.durationMs),
+          making: makingScenes.has(i.sceneId),
           asset: i.asset ? presentAsset(i.asset) : null, transition_out: i.transitionOut,
         };
       }),

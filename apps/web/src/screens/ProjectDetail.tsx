@@ -18,11 +18,12 @@ import {
 } from '@dnd-kit/sortable';
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { api, type Project, type Scene } from '../api';
+import { director, type Timeline } from '../director-api';
 import { ProblemBox } from '../components/ProblemBox';
 import { SceneRow } from '../components/SceneRow';
 import { CopyButton } from '../components/CopyButton';
 import { storyText } from '../sceneExport';
-import { ProjectTabs } from '../components/ProjectTabs';
+import { CartoonHeader } from '../components/ProjectTabs';
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +36,8 @@ export function ProjectDetail() {
   const [title, setTitle] = useState('');
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The same clip state Make clips shows, so a scene reads the same in both steps.
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
 
   const sensors = useSensors(
     // A small distance threshold stops a stray click registering as a drag.
@@ -55,6 +58,7 @@ export function ProjectDetail() {
       })
       .catch(setError);
     api.listDeletedScenes(id).then((r) => setBinned(r.data)).catch(() => { /* the bin is optional */ });
+    director.timeline(id).then(setTimeline).catch(() => { /* clip state is optional here */ });
   }, [id]);
 
   async function addScene(e: FormEvent) {
@@ -165,21 +169,32 @@ export function ProjectDetail() {
 
   if (error && !project) return <ProblemBox error={error} />;
   if (!project || !scenes) return <p className="muted">Loading…</p>;
+  const nextToDescribe = scenes.find((s) => !s.description.trim());
 
   return (
     <>
 
 
-      <header className="project-head">
-        <h2>{project.title}</h2>
+      <CartoonHeader projectId={project.id} title={project.title} step="write">
         {project.logline && <p className="lede">{project.logline}</p>}
-        <p className="hint">Plan your cartoon here. When the scenes are ready, go to <b>Director</b> to make it.</p>
-        <ProjectTabs projectId={project.id} />
-        <CopyButton label="Copy all scenes" disabled={saving || scenes.length === 0} text={() => storyText(project.title, project.logline, scenes)} />
-        <p className="hint">Copies scene descriptions, camera, time, mood and your notes as text.</p>
-      </header>
+        <p className="hint">Write what happens in each scene. Then go to <b>Make clips</b>.</p>
+      </CartoonHeader>
 
       <ProblemBox error={error} />
+
+      {scenes.length > 0 && (
+        <section className="next-step card" aria-label="Next step">
+          <div>
+            <h3>{nextToDescribe ? 'Write your scenes' : 'Your story is ready'}</h3>
+            <p className="hint">{nextToDescribe
+              ? 'Give each scene a description: who is there, where they are, and what happens.'
+              : 'Every scene has words. Make a clip for each one. You can come back and change the words any time.'}</p>
+          </div>
+          {nextToDescribe ? (
+            <Link className="btn" to={`/projects/${project.id}/scenes/${nextToDescribe.id}`}>Write the next scene</Link>
+          ) : <Link className="btn" to={`/projects/${project.id}/director`}>Make clips →</Link>}
+        </section>
+      )}
 
       <div className="section-head">
         <h3>Scenes {saving && <span className="muted">· saving order…</span>}</h3>
@@ -236,6 +251,7 @@ export function ProjectDetail() {
                     index={i}
                     count={scenes.length}
                     busy={saving}
+                    item={timeline?.items.find((item) => item.scene_id === scene.id) ?? null}
                     onMove={move}
                     onDelete={removeScene}
                   />
@@ -246,11 +262,10 @@ export function ProjectDetail() {
         </>
       )}
 
-      {scenes.length > 0 && (
-        <div className="row go-director">
-          <Link className="btn" to={`/projects/${project.id}/director`}>Ready? Go to Director →</Link>
-        </div>
-      )}
+      <div className="row copy-row">
+        <CopyButton label="Copy all scenes" disabled={saving || scenes.length === 0} text={() => storyText(project.title, project.logline, scenes)} />
+        <span className="hint">Copies scene descriptions, camera, time, mood and your notes as text.</span>
+      </div>
 
       <form className="card add-scene" onSubmit={addScene}>
         <label htmlFor="scene-title">Add a scene</label>

@@ -95,7 +95,29 @@ export function modelsOfKind(kind: ModelKind): GenerationModel[] {
 /** Units a request will consume: images for an image model, seconds for a video model. */
 export function unitsFor(model: GenerationModel, options: { count?: number; durationSeconds?: number }): number {
   if (model.kind === 'image') return Math.max(1, options.count ?? 1);
+  if (model.capabilities.text_to_video && options.durationSeconds && CLIP_LENGTHS.includes(options.durationSeconds)) {
+    return clipPlan(model, options.durationSeconds).reduce((sum, seconds) => sum + seconds, 0);
+  }
   return Math.max(model.duration_seconds?.min ?? 1, options.durationSeconds ?? model.duration_seconds?.min ?? 1);
+}
+
+export const CLIP_LENGTHS: readonly number[] = [5, 10, 15, 30];
+
+/** Minimise paid seconds, then cuts; trim only the final part to the requested length. */
+export function clipPlan(model: GenerationModel, target: number): number[] {
+  const choices = durationOptions(model);
+  if (!choices.length || !Number.isInteger(target) || target < 1 || target > 60) throw new Error('Invalid clip length');
+  const limit = target + Math.max(...choices);
+  const plans: (number[] | undefined)[] = Array(limit + 1);
+  plans[0] = [];
+  for (let total = 1; total <= limit; total++) {
+    for (const seconds of choices) {
+      const previous = plans[total - seconds];
+      if (previous && (!plans[total] || previous.length + 1 < plans[total]!.length)) plans[total] = [...previous, seconds];
+    }
+  }
+  for (let total = target; total <= limit; total++) if (plans[total]) return plans[total]!.sort((a, b) => b - a);
+  throw new Error('No supported clip length');
 }
 
 /** Estimated cost in whole pence, rounded up so the estimate is never below the bill. */

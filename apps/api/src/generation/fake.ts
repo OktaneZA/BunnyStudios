@@ -94,6 +94,11 @@ export const FAKE_VIDEO_HIGH_MODEL: GenerationModel = {
   aspect_ratios: ['16:9', '9:16'], resolutions: ['720p'], duration_seconds: { min: 4, max: 8, step: 2 }, max_reference_images: 0, max_prompt_length: 2000,
   unit: 'second', unit_cost_pence: 20, request_shape: { prompt: 'prompt', duration: 'duration', duration_format: 'string_seconds_suffix', audio: 'generate_audio' }, result_shape: { files: 'video' }, enabled: true,
 };
+export const FAKE_VIDEO_MEDIUM_MODEL: GenerationModel = {
+  ...FAKE_VIDEO_MODEL, id: 'clip_medium', provider_model: 'fake/video-medium', tier: 'medium',
+  label: 'Fake video medium', friendlyLabel: 'Medium', unit_cost_pence: 4,
+  duration_seconds: { min: 6, max: 10, step: 4 },
+};
 /** An image-to-video model kept for the Advanced path, so the start-frame code still has a test. */
 export const FAKE_I2V_MODEL: GenerationModel = {
   id: 'move_maker', provider: 'fake', provider_model: 'fake/video', kind: 'video', tier: 'medium', label: 'Fake i2v', friendlyLabel: 'Move Maker', help: '', icon: 'model-video',

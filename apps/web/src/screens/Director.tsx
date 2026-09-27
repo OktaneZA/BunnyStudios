@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiProblem, type Account, type Project, type Scene } from '../api';
 import {
@@ -8,25 +8,27 @@ import {
 import { useJobs } from '../useJobs';
 import { uuid } from '../uuid';
 import { ProblemBox } from '../components/ProblemBox';
-import { ProjectTabs } from '../components/ProjectTabs';
-import { AssetImage, AssetVideo, TakeImage } from '../components/AssetMedia';
+import { CartoonHeader } from '../components/ProjectTabs';
+import { sceneLink } from '../sceneState';
+import { AssetVideo, TakeImage } from '../components/AssetMedia';
 import { CastSheet } from '../components/CastSheet';
-import { CartoonStrip } from '../components/CartoonStrip';
+import { DirectorScenes } from '../components/DirectorScenes';
 import { JobProgress } from '../components/JobProgress';
+import { ART_STYLE } from '@storyboard/vocabularies';
+import { DirectorPanel } from '../components/DirectorPanel';
 
-type SceneState = 'nothing' | 'making' | 'done';
-const STATE_WORDS: Record<SceneState, string> = { nothing: 'Nothing yet', making: 'Making…', done: 'In the cartoon' };
-
-function sceneState(shot: Shot | undefined, jobs: Job[]): SceneState {
-  if (shot && jobs.some((j) => j.target_entity_type === 'shot' && j.target_entity_id === shot.id && isActiveJob(j))) return 'making';
-  if (shot?.hero_video_asset_id) return 'done';
-  return 'nothing';
-}
+const DESIGNS = [
+  { id: 'film-strip', name: 'Film Strip' },
+  { id: 'scene-board', name: 'Scene Board' },
+] as const;
+const CLIP_STYLES = [
+  ['2d_flat_vector', '2D cartoon'], ['3d_pixar_style', 'Pixar-like 3D'],
+  ['anime_ghibli_soft', 'Soft anime'], ['watercolour_storybook', 'Watercolour'], ['claymation_look', 'Clay animation'],
+] as const;
 
 /**
- * Director (plan D38, §6): one screen. Scenes down the left, the clip settings in the
- * middle, clips on the right, the whole cartoon along the bottom. A scene goes straight
- * from its words to a clip. Nothing here edits the story; it only reads it.
+ * Director: scenes first, in a film strip or board. The selected scene's style and clip
+ * settings sit below. Layout and page colour are independent of the generated art style.
  */
 export function Director({ account }: { account: Account }) {
   const { projectId } = useParams<{ projectId: string }>();
@@ -41,6 +43,19 @@ export function Director({ account }: { account: Account }) {
   const [media, setMedia] = useState<Asset[]>([]);
   const [sheet, setSheet] = useState<'cast' | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [design, setDesign] = useState(() => {
+    try { return localStorage.getItem('director.design') === 'scene-board' ? 'scene-board' : 'film-strip'; } catch { return 'film-strip'; }
+  });
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('director.theme') === 'white' ? 'white' : 'black'; } catch { return 'black'; }
+  });
+  const [movable, setMovable] = useState(false);
+  useEffect(() => {
+    document.documentElement.dataset.directorTheme = theme;
+    try { localStorage.setItem('director.theme', theme); } catch { /* Private browsing. */ }
+    return () => { delete document.documentElement.dataset.directorTheme; };
+  }, [theme]);
+  const [layoutReset, setLayoutReset] = useState(0);
 
   const advanced = (project?.editor_mode ?? account.default_editor_mode) === 'advanced';
 
@@ -67,7 +82,7 @@ export function Director({ account }: { account: Account }) {
     void refreshSettings();
   }, [shots, refreshShot, refreshCast, refreshTimeline, refreshMedia, refreshSettings]);
 
-  const { jobs, add: addJob } = useJobs(projectId, onSettled);
+  const { jobs, loaded: jobsLoaded, add: addJob } = useJobs(projectId, onSettled);
 
   useEffect(() => {
     if (!projectId) return;
@@ -104,82 +119,60 @@ export function Director({ account }: { account: Account }) {
   const castWords = !cast ? '…' : cast.never_found ? 'Find your cast' : cast.data.length === 0 ? 'Nobody yet' : needPictures === 0 ? 'All have pictures' : `${needPictures} ${needPictures === 1 ? 'needs' : 'need'} a picture`;
 
   return (
-    <>
-      <header className="project-head director-head">
-        <div>
-          <h2>{project.title}</h2>
-          <p className="hint">Makes your storyboard into a cartoon, one scene at a time.</p>
-        </div>
-        <ProjectTabs projectId={project.id} />
-      </header>
+    <div className={`director-page design-${design}`}>
+      <CartoonHeader projectId={project.id} title={project.title} step="make">
+        <div className="director-progress"><span>{scenes.filter((scene) => shots.get(scene.id)?.hero_video_asset_id).length} of {scenes.length} scenes in your cartoon</span><progress aria-label="Scenes with clips" value={scenes.filter((scene) => shots.get(scene.id)?.hero_video_asset_id).length} max={Math.max(1, scenes.length)} /></div>
+      </CartoonHeader>
       <ProblemBox error={error} />
 
-      <div className="director">
-        <aside className="director-left">
-          <button type="button" className="cast-button" onClick={() => setSheet('cast')}>
-            <span className="cast-pile" aria-hidden="true">
-              {(cast?.data ?? []).slice(0, 3).map((c) => c.main_reference
-                ? <AssetImage key={c.id} url={c.main_reference.url} alt="" className="cast-face" />
-                : <span key={c.id} className="cast-face none">?</span>)}
-              {(cast?.data.length ?? 0) === 0 && <span className="cast-face none">?</span>}
-            </span>
-            <span className="cast-label">Cast</span>
-            <span className="hint">{castWords}</span>
-          </button>
-          <p className="eyebrow">Scenes</p>
-          {scenes.length === 0 && <p className="hint">No scenes yet. Add some in Story.</p>}
-          <ul className="scene-buttons">
-            {scenes.map((scene) => {
-              const state = sceneState(shots.get(scene.id), jobs);
-              const active = selected?.id === scene.id;
-              return (
-                <li key={scene.id}>
-                  <button type="button" className={`scene-button${active ? ' active' : ''}`} onClick={() => setSearch({ scene: scene.id })} aria-current={active ? 'true' : undefined}>
-                    <span className="scene-number">{scene.scene_number}</span>
-                    <span className="scene-button-text">
-                      <span className="scene-button-title">{scene.title}</span>
-                      <span className={`scene-state ${state}`}><span className="state-dot" aria-hidden="true" />{STATE_WORDS[state]}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
+      <section className="director-view-controls" aria-label="Director appearance">
+        <div className="segmented" role="group" aria-label="Layout">
+          {DESIGNS.map((item) => <button key={item.id} type="button" className={design === item.id ? 'on' : ''} aria-pressed={design === item.id} onClick={() => {
+            setDesign(item.id);
+            try { localStorage.setItem('director.design', item.id); } catch { /* Private browsing. */ }
+          }}>{item.name}</button>)}
+        </div>
+        <div className="segmented theme-picker" role="group" aria-label="Colour mode">
+          <button type="button" className={theme === 'white' ? 'on' : ''} aria-pressed={theme === 'white'} onClick={() => setTheme('white')}>☀ White</button>
+          <button type="button" className={theme === 'black' ? 'on' : ''} aria-pressed={theme === 'black'} onClick={() => setTheme('black')}>☾ Black</button>
+        </div>
+        <button type="button" className="secondary movable-toggle" aria-pressed={movable} onClick={() => setMovable((value) => !value)}>Movable panels</button>
+        {movable && <button type="button" className="secondary" onClick={() => setLayoutReset((n) => n + 1)}>Reset windows</button>}
+        <button type="button" className="cast-button compact-cast" onClick={() => setSheet('cast')}>Cast · {castWords} ›</button>
+      </section>
 
-        {selected ? (
-          <SceneWork
-            key={selected.id}
-            scene={selected}
-            shot={shots.get(selected.id)}
-            settings={settings}
-            tiers={tiers}
-            jobs={jobs}
-            assetsById={assetsById}
-            addJob={addJob}
-            onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
-            afterHero={() => { void refreshTimeline().catch(() => {}); }}
-            refreshSettings={refreshSettings}
-          />
-        ) : (
-          <div className="director-main card"><p className="muted">Add a scene in <Link to={`/projects/${project.id}`}>Story</Link> first, then come back here to make it.</p></div>
-        )}
+      <DirectorPanel key={`scenes-${layoutReset}`} title="Scenes" className="director-overview" movable={movable}>
+        <DirectorScenes layout={design} scenes={scenes} shots={shots} jobs={jobs} assets={assetsById}
+          selectedId={selected?.id} projectId={project.id} timeline={timeline} onTimeline={setTimeline}
+          onSelect={(sceneId) => setSearch({ scene: sceneId })} />
+      </DirectorPanel>
+      <div id="director-scene-work">
+        {selected ? <SceneWork key={selected.id} scene={selected} movable={movable} layoutReset={layoutReset}
+          onScene={(updated) => setScenes((prev) => prev?.map((s) => s.id === updated.id ? updated : s) ?? null)}
+          projectId={project.id} jobsLoaded={jobsLoaded} shot={shots.get(selected.id)} settings={settings}
+          tiers={tiers} jobs={jobs} assetsById={assetsById} addJob={addJob}
+          onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
+          afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} />
+          : <p className="notice">Add a scene in <Link to={`/projects/${project.id}`}>Write</Link> first.</p>}
       </div>
-
-      <CartoonStrip projectId={project.id} timeline={timeline} onTimeline={setTimeline} />
 
       {sheet === 'cast' && (
         <CastSheet projectId={project.id} cast={cast} models={models} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
           onClose={() => setSheet(null)} advanced={advanced} settingsMessage={settings?.message ?? null} />
       )}
-    </>
+    </div>
   );
 }
 
 // ── The middle and right columns for one scene ────────────────────────────────
 
 interface WorkProps {
+  movable: boolean;
+  layoutReset: number;
+  onScene: (scene: Scene) => void;
   scene: Scene;
+  projectId: string;
+  jobsLoaded: boolean;
   shot: Shot | undefined;
   settings: GenerationSettings | null;
   tiers: ModelInfo[];
@@ -194,12 +187,14 @@ interface WorkProps {
 const TIER_ORDER: ModelTier[] = ['low', 'medium', 'high'];
 const TIER_WORDS: Record<ModelTier, string> = { low: 'Low cost', medium: 'Medium', high: 'High' };
 
-function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onShot, afterHero, refreshSettings }: WorkProps) {
+function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, assetsById, addJob, onShot, afterHero, refreshSettings, onScene, movable, layoutReset }: WorkProps) {
   const [tier, setTier] = useState<ModelTier>('low');
-  const [addendum, setAddendum] = useState(shot?.user_prompt_addendum ?? '');
-  const [duration, setDuration] = useState<number | null>(null);
+  const [duration, setDuration] = useState<number | null>(5);
   const [audio, setAudio] = useState(false);
-  const [estimate, setEstimate] = useState<string | null>(null);
+  const [quote, setQuote] = useState<{ key: string; text: string; parts: number[] | null } | null>(null);
+  const [estimateFailed, setEstimateFailed] = useState(false);
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
+  const starting = useRef(false);
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -208,30 +203,33 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
   const [note, setNote] = useState('');
   const [pickedClip, setPickedClip] = useState<string | null>(null);
 
-  useEffect(() => { setAddendum(shot?.user_prompt_addendum ?? ''); }, [shot?.id, shot?.user_prompt_addendum]);
 
   // The clip maker for the chosen cost level. Low is the default; if it is missing, the cheapest there is.
   const available = useMemo(() => TIER_ORDER.filter((t) => tiers.some((m) => m.tier === t)), [tiers]);
   const model = useMemo(() => tiers.find((m) => m.tier === tier) ?? tiers.find((m) => m.tier === available[0]) ?? null, [tiers, tier, available]);
+  const quoteKey = `${model?.id}:${duration}`;
+  const estimate = quote?.key === quoteKey ? quote.text : null;
   useEffect(() => { const first = available[0]; if (first && !available.includes(tier)) setTier(first); }, [available, tier]);
 
   // Keep the duration inside what the chosen clip maker can do (DM-4).
   useEffect(() => {
     const d = model?.duration_seconds;
     if (!d) { setDuration(null); return; }
-    setDuration((prev) => (prev !== null && prev >= d.min && prev <= d.max && (prev - d.min) % d.step === 0 ? prev : Math.min(d.max, Math.max(d.min, 5 - ((5 - d.min) % d.step)))));
+    setDuration((prev) => prev !== null && [5, 10, 15, 30].includes(prev) ? prev : 5);
     if (!model?.capabilities.audio) setAudio(false);
   }, [model]);
 
   // The estimate comes from the server so it always matches what will be reserved (DM-14).
   useEffect(() => {
-    if (!model) { setEstimate(null); return; }
+    setQuote(null);
+    setEstimateFailed(false);
+    if (!model) return;
     let alive = true;
     director.estimate(model.id, { duration_seconds: duration ?? undefined })
-      .then((r) => { if (alive) setEstimate(formatPence(r.pence)); })
-      .catch(() => { if (alive) setEstimate(null); });
+      .then((r) => { if (alive) setQuote({ key: quoteKey, text: formatPence(r.pence), parts: r.parts }); })
+      .catch(() => { if (alive) setEstimateFailed(true); });
     return () => { alive = false; };
-  }, [model, duration]);
+  }, [model, duration, quoteKey, quoteAttempt]);
 
   // After a 402, keep the button off until the allowance shows money again.
   useEffect(() => {
@@ -246,23 +244,26 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
   const videoJobs = shot ? jobs.filter((j) => j.target_entity_type === 'shot' && j.target_entity_id === shot.id && j.kind === 'video') : [];
   const enabled = Boolean(settings?.enabled);
 
-  async function saveAddendum() {
-    if (!shot || addendum === shot.user_prompt_addendum) return;
+  async function chooseStyle(style: string) {
+    if (!shot || busy) return;
+    setBusy(true);
     setSaveNote('Saving…'); setError(null);
     try {
-      onShot(await director.updateShot(shot.id, { user_prompt_addendum: addendum }, shot.version));
-      setSaveNote('Saved');
+      const updated = await api.updateScene(scene.id, { art_style: style }, scene.version);
+      onScene(updated);
+      const result = await director.shots(scene.id);
+      if (result.data[0]) onShot(result.data[0]);
+      setSaveNote('Style saved for this scene');
     } catch (err) {
       setSaveNote('');
-      if (err instanceof ApiProblem && err.problem.status === 409 && err.problem.current_state) {
-        onShot(err.problem.current_state as Shot);
-      }
+      if (err instanceof ApiProblem && err.problem.status === 409 && err.problem.current_state) onScene(err.problem.current_state as Scene);
       setError(err);
-    }
+    } finally { setBusy(false); }
   }
 
   async function start(withNote?: string) {
-    if (!shot || !model) return;
+    if (!shot || !model || !canMake || starting.current) return;
+    starting.current = true;
     setBusy(true); setError(null);
     try {
       const job = await director.startJob(shot.id, {
@@ -275,7 +276,7 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
     } catch (err) {
       if (err instanceof ApiProblem && err.problem.status === 402) setBlocked(err.problem.detail);
       setError(err);
-    } finally { setBusy(false); }
+    } finally { starting.current = false; setBusy(false); }
   }
 
   async function useInstead(asset: Asset) {
@@ -293,12 +294,12 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
   const hero = heroId ? assetsById.get(heroId) ?? clips.find((a) => a.id === heroId) ?? null : null;
   const playing = clips.find((a) => a.id === pickedClip) ?? hero ?? clips[0] ?? null;
   const anyActive = videoJobs.some(isActiveJob);
-  const notReady = !shot || !enabled || busy || Boolean(blocked);
-  const canMake = !notReady && Boolean(model) && Boolean(shot?.compiled_prompt);
+  const notReady = !shot || !enabled || busy || Boolean(blocked) || anyActive || !jobsLoaded;
+  const canMake = !notReady && Boolean(model) && Boolean(shot?.compiled_prompt) && Boolean(scene.description.trim()) && estimate !== null;
 
   return (
     <div className="director-work">
-      <div className="director-main">
+      <DirectorPanel key={`settings-${layoutReset}`} title="Clip settings" className="director-main" movable={movable}>
         <header className="work-head">
           <h3>Scene {scene.scene_number} · {scene.title}</h3>
         </header>
@@ -307,13 +308,29 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
         <ProblemBox error={error} />
 
         <section className="card step-card">
-          <h4>What the clip maker will be told</h4>
-          <p className="hint">Made from your scene and your cast. To change it, edit the scene in <b>Story</b>.</p>
-          <p className="prompt-box">{shot?.compiled_prompt || 'Write what happens in this scene first, in Story.'}</p>
-          <label htmlFor="addendum">Anything to add?</label>
-          <input id="addendum" value={addendum} maxLength={400} onChange={(e) => { setAddendum(e.target.value); setSaveNote(''); }} onBlur={() => void saveAddendum()} placeholder="Example: make the ball really big" disabled={!shot} />
-          <p className="save-state" aria-live="polite">{saveNote}</p>
+          <div className="scene-story">
+          <h4>Your scene</h4>
+          <p className="scene-summary">{scene.description || 'Describe what happens before making a clip.'}</p>
+          <Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>← Write this scene</Link>
+          <div className="field">
+            <span className="label-text">Choose a clip style</span>
+            <div className="clip-styles" role="group" aria-label="Clip style">
+              {CLIP_STYLES.map(([value, label]) => <button key={value} type="button"
+                className={`style-card style-${value}`} aria-pressed={scene.art_style === value || (!scene.art_style && shot?.compiled_prompt.startsWith(ART_STYLE.find((s) => s.value === value)!.prompt_phrase))}
+                disabled={!shot || busy || anyActive || shot.prompt_locked} onClick={() => void chooseStyle(value)}>
+                <span className="style-swatch" aria-hidden="true">●</span><span>{label}</span>
+              </button>)}
+            </div>
+            {shot?.prompt_locked && <p className="hint">Unlock this scene’s instructions before changing its style.</p>}
+            <p className="save-state" aria-live="polite">{saveNote}</p>
+          </div>
+          <details className="prompt-details">
+            <summary>See the clip instructions</summary>
+            <p className="prompt-box">{shot?.compiled_prompt || 'Write what happens in this scene first.'}</p>
+          </details>
 
+          </div>
+          <div className="scene-controls">
           <div className="field">
             <span className="label-text">How much to spend?</span>
             {tiers.length === 0 ? (
@@ -342,10 +359,14 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
               <span className="label-text">How long?</span>
               <p className="hint">Longer clips cost more.</p>
               <div className="segmented" role="group" aria-label="How long?">
-                {durations(model.duration_seconds).map((n) => (
+                {[5, 10, 15, 30].map((n) => (
                   <button key={n} type="button" className={duration === n ? 'on' : ''} aria-pressed={duration === n} onClick={() => setDuration(n)}>{n} seconds</button>
                 ))}
               </div>
+              {quote?.key === quoteKey && quote.parts && <p className="hint">
+                {quote.parts.length > 1 ? `${quote.parts.length} shorter clips joined together; cuts may be visible. ` : ''}
+                {quote.parts.reduce((sum, n) => sum + n, 0) !== duration ? `The price includes ${quote.parts.reduce((sum, n) => sum + n, 0)} generated seconds, trimmed to ${duration} seconds.` : ''}
+              </p>}
             </div>
           )}
 
@@ -363,16 +384,21 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
 
           <div className="go-row">
             <button type="button" onClick={() => void start()} disabled={!canMake}>
-              {busy && <span className="ai-spinner" aria-hidden="true" />}Make it move
+              {busy && <span className="ai-spinner" aria-hidden="true" />}{anyActive ? 'Making your clip…' : 'Make it move'}
             </button>
             <p className="hint go-cost">
               {blocked ? blocked : <>{estimate && duration && <>About {estimate} for {duration} seconds. </>}{settings?.allowance_words}</>}
             </p>
           </div>
+          {anyActive && <p className="hint" role="status">You can work on another scene while this clip is being made.</p>}
+          {enabled && model && estimate === null && <div className="hint" role="status">
+            {estimateFailed ? <>We could not check the price. <button type="button" className="secondary" onClick={() => setQuoteAttempt((n) => n + 1)}>Check price again</button></> : 'Checking the price…'}
+          </div>}
+          </div>
         </section>
-      </div>
+      </DirectorPanel>
 
-      <aside className="director-right">
+      <DirectorPanel key={`clips-${layoutReset}`} title="Your clips" className="director-right" movable={movable}>
         <h4>Your clips</h4>
         {videoJobs.length === 0 && <p className="hint">No clips yet. Press Make it move.</p>}
         <div className="takes">
@@ -414,18 +440,12 @@ function SceneWork({ scene, shot, settings, tiers, jobs, assetsById, addJob, onS
             <label htmlFor="try-note">What should be different this time?</label>
             <input id="try-note" value={note} maxLength={400} onChange={(e) => setNote(e.target.value)} placeholder="Example: closer to the sea" />
             <div className="row">
-              <button type="button" disabled={!canMake} onClick={() => void start(note)}>Go</button>
+              <button type="button" disabled={!canMake} onClick={() => void start(note)}>Make another clip{estimate ? ` · about ${estimate}` : ''}</button>
               <button type="button" className="secondary" onClick={() => setAskingNote(false)}>Cancel</button>
             </div>
           </div>
         )}
-      </aside>
+      </DirectorPanel>
     </div>
   );
-}
-
-function durations(d: { min: number; max: number; step: number }) {
-  const out: number[] = [];
-  for (let n = d.min; n <= d.max; n += Math.max(1, d.step)) out.push(n);
-  return out;
 }

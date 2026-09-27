@@ -1,9 +1,9 @@
 # Bunny Studios
 
-A storyboard planner for a young cartoon maker. A cartoon is a story; inside it are scenes,
-each with a description, a camera angle, a time of day and a mood. Optional AI helps in two
-ways: it can improve a scene description, and it can draw a small sketch for the board. It
-never changes anything without the user pressing "Use this".
+A cartoon studio for a young creator. Write scenes in Story, make moving clips in Director,
+then put them together into a downloadable cartoon. Optional writing suggestions and scene
+sketches are proposals the creator chooses to accept. Director starts generation only when
+the creator asks, with a price shown first; finished clips join the cartoon in story order.
 
 Designed for a 10–15 year old on a tablet, with an Advanced mode for an adult. Runs as one
 container on a Synology NAS against an existing Postgres server.
@@ -12,6 +12,7 @@ container on a Synology NAS against an existing Postgres server.
 
 | Document | What it is |
 |---|---|
+| [docs/usability-review.md](docs/usability-review.md) | Teen and tablet review, revised screen flow, changes and verification limits |
 | [docs/architecture.md](docs/architecture.md) | Current architecture, an honest review, and the target design |
 | [docs/working-in-this-repo.md](docs/working-in-this-repo.md) | Rules, conventions and the gotchas found the hard way |
 | [docs/build-plan-v1.1.md](docs/build-plan-v1.1.md) | Approved plan: decisions D1–D18, build sequence, spec defects fixed |

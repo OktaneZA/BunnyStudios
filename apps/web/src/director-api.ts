@@ -117,7 +117,14 @@ export interface Job {
   held_back: number;
   created_at: string;
   finished_at: string | null;
+  /** The latest child-safe step, e.g. "Making part 2 of 3", and when it began. */
+  progress?: { say: string; at: string; part: number | null; parts: number | null } | null;
+  /** The full step trail; only present for the adult account. */
+  events?: JobEvent[];
 }
+
+export interface JobEvent { at: string; say: string; detail?: string; raw?: string; part?: number; parts?: number }
+export interface LoggedJob extends Job { events: JobEvent[]; project_title: string; duration_seconds: number | null; error_code: string | null }
 
 export interface JobRequestBody {
   kind: ModelKind;
@@ -172,6 +179,8 @@ export interface TimelineItem {
   duration_ms: number;
   start_ms: number | null;
   has_sound: boolean;
+  /** A clip for this scene is being made right now. */
+  making: boolean;
   asset: Asset | null;
   transition_out: Transition;
 }
@@ -221,7 +230,7 @@ export const director = {
     const q = new URLSearchParams({ model_id: modelId });
     if (opts.count) q.set('count', String(opts.count));
     if (opts.duration_seconds) q.set('duration_seconds', String(opts.duration_seconds));
-    return request<{ pence: number; words: string }>(`/settings/estimate?${q.toString()}`);
+    return request<{ pence: number; words: string; parts: number[] | null }>(`/settings/estimate?${q.toString()}`);
   },
 
   shots: (sceneId: string) => request<{ data: Shot[] }>(`/scenes/${sceneId}/shots`),
@@ -248,6 +257,7 @@ export const director = {
   restoreAsset: (id: string) => request<Asset>(`/assets/${id}/restore`, { method: 'POST' }),
 
   accounts: () => request<{ data: AccountBudget[] }>('/accounts'),
+  accountJobs: (accountId: string) => request<{ data: LoggedJob[] }>(`/accounts/${accountId}/jobs`),
   setBudget: (accountId: string, body: { daily_budget_pence?: number; monthly_budget_pence?: number }) =>
     request<AccountBudget>(`/accounts/${accountId}/budget`, { method: 'PATCH', body: JSON.stringify(body) }),
 
