@@ -86,7 +86,7 @@ export const detectorEnum = pgEnum('detector', [
 export const severityEnum = pgEnum('severity', ['info', 'warning', 'error']);
 export const assetKindEnum = pgEnum('asset_kind', [
   'style_ref', 'character_ref', 'location_ref', 'prop_ref', 'generated_output', 'cover', 'scene_thumbnail',
-  'final_render', 'music', 'voiceover', 'poster',
+  'final_render', 'music', 'voiceover', 'poster', 'frame_ref',
 ]);
 export const proposalStatusEnum = pgEnum('proposal_status', [
   'pending', 'accepted', 'rejected', 'cancelled', 'expired',
@@ -108,6 +108,27 @@ export const ledgerStatusEnum = pgEnum('ledger_status', ['reserved', 'settled', 
 export const reviewStatusEnum = pgEnum('review_status', ['not_required', 'pending', 'allowed', 'rejected']);
 export const characterSourceEnum = pgEnum('character_source', ['manual', 'story']);
 export const transitionOutEnum = pgEnum('transition_out', ['cut', 'fade', 'slide']);
+
+// ── Character Studio (docs/character-studio-requirements.md) ────────────────
+/** The views a reference pack can hold (CS-05). `main` is the identity anchor. */
+export const referenceViewEnum = pgEnum('reference_view', [
+  'main', 'front', 'three_quarter', 'side', 'back', 'full_body', 'expression',
+]);
+/** Where a candidate picture came from. `legacy` = a pre-Studio picture awaiting confirmation (CS-12). */
+export const candidateSourceEnum = pgEnum('candidate_source', ['generated', 'upload', 'refinement', 'legacy']);
+export const candidateStatusEnum = pgEnum('candidate_status', ['candidate', 'removed']);
+/**
+ * MG-07: where a paid submission got to. `submitting` is written before the provider call, so a
+ * crash inside that window is visible afterwards as `uncertain` instead of being retried blind.
+ */
+export const submissionStateEnum = pgEnum('submission_state', ['not_submitted', 'submitting', 'accepted', 'uncertain']);
+export const generationIntentEnum = pgEnum('generation_intent', ['draft', 'final']);
+/**
+ * MB-04: what we know about the real bill. `estimated` = our quote stands in for it; `actual` =
+ * the provider reported it; `unknown` = work was submitted and may be billed, amount unconfirmed;
+ * `not_incurred` = nothing reached the provider.
+ */
+export const costStateEnum = pgEnum('cost_state', ['estimated', 'actual', 'unknown', 'not_incurred']);
 
 // ── §3.2 Account ────────────────────────────────────────────────────────────
 export const accounts = pgTable('accounts', {
@@ -224,8 +245,76 @@ export const characters = pgTable(
     mainReferenceAssetId: uuid('main_reference_asset_id'),
     backgroundStory: text('background_story').notNull().default(''),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    /** Optimistic edit version for Studio writes (CS-09). */
+    version: integer('version').notNull().default(1),
+    /** The selected approved look. Null until someone says "This looks like <name>". */
+    currentVisualVersionId: uuid('current_visual_version_id'),
+    /** CS-02 optional visual traits. Personality lives in its own fields, never here. */
+    species: text('species').notNull().default(''),
+    colours: text('colours').notNull().default(''),
+    /** CS-08: traits were edited after the look was approved; the approved look stays in use. */
+    lookOutdated: boolean('look_outdated').notNull().default(false),
+    /** CS-08: what story rediscovery would have written, kept as a suggestion when a look is approved. */
+    storySuggestion: text('story_suggestion'),
   },
   (t) => [index('characters_project_idx').on(t.projectId)],
+);
+
+/**
+ * CS-09: an approved look. Rows are immutable once written; approving again inserts a new row
+ * and moves characters.current_visual_version_id. Going back selects an older row.
+ */
+export const characterVisualVersions = pgTable(
+  'character_visual_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    characterId: uuid('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+    visualVersion: integer('visual_version').notNull(),
+    /** The traits and style that were true when this look was approved. */
+    traits: jsonb('traits').notNull(),
+    artStyle: text('art_style').notNull().default(''),
+    approvedBy: uuid('approved_by').notNull(),
+    approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('character_visual_versions_unique').on(t.characterId, t.visualVersion)],
+);
+
+/** CS-04: a picture that might become part of a look. Being a candidate never changes identity. */
+export const characterReferenceCandidates = pgTable(
+  'character_reference_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    characterId: uuid('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+    assetId: uuid('asset_id').notNull().references(() => assets.id, { onDelete: 'cascade' }),
+    viewRole: referenceViewEnum('view_role').notNull().default('main'),
+    source: candidateSourceEnum('source').notNull(),
+    /** The approved look this was generated from, when it was generated from one (CS-06). */
+    sourceVisualVersionId: uuid('source_visual_version_id'),
+    /** "Change this picture" makes a new candidate pointing at the one it changed. */
+    parentCandidateId: uuid('parent_candidate_id'),
+    generationJobId: uuid('generation_job_id'),
+    status: candidateStatusEnum('status').notNull().default('candidate'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('character_reference_candidates_character_idx').on(t.characterId, t.createdAt), uniqueIndex('character_reference_candidates_asset_unique').on(t.characterId, t.assetId)],
+);
+
+/** CS-10: the exact pictures of an approved look, pinned by content hash and order. */
+export const characterVisualReferences = pgTable(
+  'character_visual_references',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    visualVersionId: uuid('visual_version_id').notNull().references(() => characterVisualVersions.id, { onDelete: 'cascade' }),
+    assetId: uuid('asset_id').notNull().references(() => assets.id),
+    contentSha256: text('content_sha256').notNull(),
+    role: referenceViewEnum('role').notNull(),
+    position: integer('position').notNull(),
+    isMain: boolean('is_main').notNull().default(false),
+  },
+  (t) => [uniqueIndex('character_visual_references_position').on(t.visualVersionId, t.position)],
 );
 
 // ── §3.6 Location ───────────────────────────────────────────────────────────
@@ -398,6 +487,9 @@ export const shots = pgTable(
     userPromptAddendum: text('user_prompt_addendum').notNull().default(''),
     promptLocked: boolean('prompt_locked').notNull().default(false),
     aiDefaultUnreviewed: boolean('ai_default_unreviewed').notNull().default(false),
+    /** CR-06: chosen production pictures a clip starts / ends on. Never a rough sketch. */
+    startFrameAssetId: uuid('start_frame_asset_id'),
+    endFrameAssetId: uuid('end_frame_asset_id'),
     version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -407,6 +499,25 @@ export const shots = pgTable(
     uniqueIndex('shots_export_key_unique').on(t.projectId, t.exportKey),
     index('shots_subject_character_ids_idx').using('gin', t.subjectCharacterIds),
   ],
+);
+
+/**
+ * CR-01: "Characters in this shot". An explicit, accepted binding of a character and the look
+ * it uses. A null look means the character is in the shot by words only (no continuity promise).
+ */
+export const shotCharacterBindings = pgTable(
+  'shot_character_bindings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    shotId: uuid('shot_id').notNull().references(() => shots.id, { onDelete: 'cascade' }),
+    characterId: uuid('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+    visualVersionId: uuid('visual_version_id').references(() => characterVisualVersions.id),
+    outfitLabel: text('outfit_label'),
+    position: integer('position').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('shot_character_bindings_unique').on(t.shotId, t.characterId), index('shot_character_bindings_shot_idx').on(t.shotId, t.position)],
 );
 
 // ── §3.13 Asset ─────────────────────────────────────────────────────────────
@@ -438,6 +549,8 @@ export const assets = pgTable(
     generationJobId: uuid('generation_job_id'),
     /** The model that made it, for the adult's view and the ledger. */
     modelId: text('model_id'),
+    /** sha256 of the stored bytes (CS-10). Null only for rows written before it was recorded. */
+    contentSha256: text('content_sha256'),
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
@@ -585,11 +698,26 @@ export const generationJobs = pgTable(
      * only ever shown to the adult account.
      */
     events: jsonb('events').notNull().default([]),
+    /** MG-05: the task the request asked for ('text-to-video' | 'image-to-video' | 'reference-to-video' | image intents). */
+    task: text('task'),
+    /** DF-01: a quick preview or a final video. Null for older jobs and pictures. */
+    intent: generationIntentEnum('intent'),
+    /** Drafts and finals of one idea share a group; each still has its own quote and reservation. */
+    generationGroupId: uuid('generation_group_id'),
+    parentJobId: uuid('parent_job_id'),
+    /** Version of the creative snapshot inside `request.creative`; null = legacy request shape. */
+    snapshotVersion: integer('snapshot_version'),
+    submissionState: submissionStateEnum('submission_state').notNull().default('not_submitted'),
+    /** Durable poll scheduling: a released job is not claimed again before this. */
+    nextPollAt: timestamp('next_poll_at', { withTimezone: true }),
+    /** Provider metadata kept for lineage: seed, native draft id and its expiry (DF-04). */
+    providerResult: jsonb('provider_result'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
   (t) => [
+    index('generation_jobs_group_idx').on(t.generationGroupId),
     uniqueIndex('generation_jobs_request_key').on(t.accountId, t.requestKey),
     index('generation_jobs_status_idx').on(t.status, t.createdAt),
     index('generation_jobs_target_idx').on(t.targetEntityType, t.targetEntityId),
@@ -611,6 +739,13 @@ export const generationLedger = pgTable(
     actualPence: integer('actual_pence'),
     currency: varchar('currency', { length: 3 }).notNull().default('GBP'),
     status: ledgerStatusEnum('status').notNull().default('reserved'),
+    /** MB-04: what we know about the real bill. */
+    costState: costStateEnum('cost_state').notNull().default('estimated'),
+    /**
+     * MB-02: how the estimate was made: strategy, provider rate and currency, the dated price
+     * source, and the budget conversion policy (labelled a policy, not a live exchange rate).
+     */
+    pricingSnapshot: jsonb('pricing_snapshot'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('generation_ledger_account_day_idx').on(t.accountId, t.createdAt)],

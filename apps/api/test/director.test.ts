@@ -95,7 +95,7 @@ test('a joined clip resumes after a transient second-part failure without buying
   const originalDownload = provider.download;
   let attempts = 0;
   provider.submit = async (...args) => {
-    if (++attempts === 2) throw providerError('unavailable', 'Temporary test failure');
+    if (++attempts === 2) throw providerError('unavailable', 'Temporary test failure', true);
     return originalSubmit(...args);
   };
   provider.download = async (file) => (await makeTestClip((file.durationMs ?? 5000) / 1000))!;
@@ -311,7 +311,7 @@ test('cancel refunds and stops the job', async () => {
 });
 
 test('a provider outage retries and then fails with a refund; a content rejection never retries', async () => {
-  const flaky = createFakeProvider({ onSubmit() { throw Object.assign(new Error('The picture maker is busy. Please try again in a minute.'), { name: 'ProviderError', code: 'unavailable' }); } });
+  const flaky = createFakeProvider({ onSubmit() { throw Object.assign(new Error('The picture maker is busy. Please try again in a minute.'), { name: 'ProviderError', code: 'unavailable', notAccepted: true }); } });
   const app2 = await buildApp({ director: { providers: [flaky], models: [FAKE_IMAGE_MODEL], store, review, finder, pollMs: 5 } });
   try {
     const shot = (await app2.inject({ method: 'GET', url: `/api/v1/scenes/${sceneIds[0]}/shots`, headers: { authorization: `Bearer ${app2.jwt.sign({ sub: ids[0] })}` } })).json().data[0];

@@ -1,27 +1,44 @@
 /**
- * The generation job runner (plan D30, DM-20).
+ * The generation job runner (plan D30, DM-20; Character Studio MG-06–MG-08).
  *
  * `generation_jobs` is the queue. A runner claims rows with UPDATE … RETURNING and
  * heartbeats `claimed_at` while it works, so a claim that goes silent (a container that
  * died mid-job) is free again after the timeout and the next runner carries on from the
  * stored `provider_job_id` rather than paying for the work twice.
  *
- * Money rules (D31): a job retries at most twice, only on a provider error, never on a
- * content rejection; anything that ends without a result refunds the reservation.
+ * Every state change is fenced to the current claim and to an active status, so a stale
+ * worker can never settle, refund or revive a job another worker (or a cancel) now owns.
+ *
+ * Money rules (D31, MB-04, MG-08):
+ *   - nothing reached the provider             → refund (not incurred)
+ *   - a result came back                       → settle (estimate, or the actual when known)
+ *   - work was submitted but no usable result  → keep the estimate, marked unknown
+ *   - the submit itself was ambiguous          → no automatic retry; marked uncertain (MG-07)
+ * A job retries at most twice, only on a transient provider error, never on a rejection.
  */
-import { and, eq, inArray, isNull, lt, notInArray, or, sql as raw } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, notInArray, or, sql as raw } from 'drizzle-orm';
+import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { clipPlan, CLIP_LENGTHS, type GenerationModel } from '@storyboard/models';
 import { db, schema } from '../db/client.ts';
 import { config } from '../config.ts';
 import type { Catalogue } from '../generation/catalogue.ts';
-import { isProviderError, type BinaryImage, type GenerationRequest } from '../generation/provider.ts';
+import { isProviderError, providerError, type BinaryImage, type GenerationRequest, type ProviderResultMeta } from '../generation/provider.ts';
 import type { ReviewProvider } from '../generation/review.ts';
-import { refund, settle } from '../generation/budget.ts';
+import { keepAsUnknown, reachedProvider, refund, settle } from '../generation/budget.ts';
 import { posterFrame, probeDurationMs, joinClipParts, ffmpegAvailable } from '../generation/media.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
+import type { CreativeVideoSnapshot } from '../video/creativeVideoRequest.ts';
 
 export type Job = typeof schema.generationJobs.$inferSelect;
+
+/** What a new character picture becomes when it comes back (CS-04): always a candidate. */
+export interface CandidateIntent {
+  viewRole: 'main' | 'front' | 'three_quarter' | 'side' | 'back' | 'full_body' | 'expression';
+  source: 'generated' | 'refinement';
+  sourceVisualVersionId: string | null;
+  parentCandidateId: string | null;
+}
 
 /** What a route stores on a job. Asset ids only; the runner loads bytes when it runs. */
 export interface JobRequest {
@@ -31,16 +48,25 @@ export interface JobRequest {
   negativePrompt: string;
   referenceAssetIds: string[];
   referenceNames?: string[];
+  /** CS-10/CR-03: the hash each reference had when the request was made. Checked before use. */
+  referenceHashes?: string[];
   startFrameAssetId: string | null;
+  endFrameAssetId?: string | null;
   aspectRatio: '16:9' | '9:16' | '1:1';
   count: number;
   durationSeconds: number | null;
   audio: boolean;
   resolution: string;
+  /** One native generation of exactly this length: never planned as joined parts. */
+  native?: boolean;
   /** Teen policy (D16/D32): gate 1 and gate 3 are mandatory and fail closed. */
   constrained: boolean;
   /** Which kind of asset the results become. */
   assetKind: 'generated_output' | 'character_ref';
+  /** Character pictures only: how results enter Studio. */
+  candidate?: CandidateIntent;
+  /** Production video only: the immutable creative snapshot (MG-01, MG-05). */
+  creative?: CreativeVideoSnapshot;
 }
 
 export interface RunnerDeps {
@@ -59,8 +85,12 @@ const MAX_ATTEMPTS = 3;
 /** Time limits for single network calls, so a hung connection becomes a logged timeout, not silence. */
 const CALL_MS = { submit: 60_000, poll: 30_000, result: 60_000, download: 5 * 60_000, review: 90_000 };
 const HEARTBEAT_MS = 10_000;
+/** Native drafts can be completed for this long (fal: "within seven days"). */
+const DRAFT_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+const SHUTDOWN = 'runner-shutdown';
 const limit = (signal: AbortSignal, ms: number) => AbortSignal.any([signal, AbortSignal.timeout(ms)]);
 const secs = (ms: number) => { const s = Math.round(ms / 1000); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; };
+const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 /**
  * One step in a job's trail. `say` is child-safe and shown on the clip card; `detail` and `raw`
@@ -70,7 +100,15 @@ export interface JobEvent { at: string; say: string; detail?: string; raw?: stri
 const RETRYABLE = new Set(['unavailable', 'timeout']);
 const ACTIVE: Job['status'][] = ['queued', 'submitted', 'running', 'reviewing'];
 
+/** MG-07: the submit may have been accepted (and billed) even though we got no answer. */
+function uncertainSubmission(): Error {
+  return Object.assign(new Error('The clip maker did not answer while taking the request, so it may or may not have started.'), { name: 'ProviderError', code: 'uncertain' });
+}
+
 export function userSafeError(error: unknown): { code: string; detail: string } {
+  if ((error as { code?: string }).code === 'uncertain') {
+    return { code: 'uncertain', detail: 'We could not tell if the clip maker got your request. Ask a grown-up to check the clip log before you try again.' };
+  }
   if (isProviderError(error)) return { code: error.code, detail: error.message };
   if (error instanceof Error && error.message === 'review-auth') {
     return { code: 'review_unavailable', detail: 'The safety checker’s Claude key was rejected, so nothing was made. A grown-up needs to check ANTHROPIC_API_KEY.' };
@@ -83,7 +121,8 @@ export function userSafeError(error: unknown): { code: string; detail: string } 
 }
 
 export function createRunner(deps: RunnerDeps) {
-  const instanceId = deps.instanceId ?? `runner-${process.pid}`;
+  // pid alone repeats across containers; the suffix keeps claim fencing meaningful between them.
+  const instanceId = deps.instanceId ?? `runner-${process.pid}-${randomUUID().slice(0, 8)}`;
   const log = deps.log ?? { info: () => {}, error: () => {} };
   const pollMs = deps.pollMs ?? config.GENERATION_POLL_MS;
   const running = new Map<string, { controller: AbortController; promise: Promise<void> }>();
@@ -102,44 +141,55 @@ export function createRunner(deps: RunnerDeps) {
       .where(eq(schema.generationJobs.id, jobId)).catch(() => {});
   }
 
+  /** Fence: only the claim holder, and only while the job is still active. */
+  const mine = (jobId: string) => and(eq(schema.generationJobs.id, jobId), eq(schema.generationJobs.claimedBy, instanceId), inArray(schema.generationJobs.status, ACTIVE));
+
   async function heartbeat(jobId: string) {
-    await db.update(schema.generationJobs).set({ claimedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(schema.generationJobs.id, jobId), eq(schema.generationJobs.claimedBy, instanceId)));
+    await db.update(schema.generationJobs).set({ claimedAt: new Date(), updatedAt: new Date() }).where(mine(jobId));
   }
 
   /** Re-read the job; null when it was cancelled or taken over. */
   async function current(jobId: string): Promise<Job | null> {
     const [job] = await db.select().from(schema.generationJobs).where(eq(schema.generationJobs.id, jobId));
-    if (!job || job.status === 'cancelled' || job.claimedBy !== instanceId) return null;
+    if (!job || !ACTIVE.includes(job.status) || job.claimedBy !== instanceId) return null;
     return job;
   }
 
-  async function setStatus(jobId: string, patch: Partial<typeof schema.generationJobs.$inferInsert>) {
-    await db.update(schema.generationJobs).set({ ...patch, updatedAt: new Date() })
-      .where(and(eq(schema.generationJobs.id, jobId), eq(schema.generationJobs.claimedBy, instanceId), inArray(schema.generationJobs.status, ACTIVE)));
+  /** Returns false when the fence did not match (cancelled, or another worker owns it now). */
+  async function setStatus(jobId: string, patch: Partial<typeof schema.generationJobs.$inferInsert>): Promise<boolean> {
+    const rows = await db.update(schema.generationJobs).set({ ...patch, updatedAt: new Date() }).where(mine(jobId)).returning({ id: schema.generationJobs.id });
+    return rows.length > 0;
   }
 
-  async function loadImage(assetId: string, accountId: string): Promise<BinaryImage | null> {
-    const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, assetId), eq(schema.assets.accountId, accountId), isNull(schema.assets.deletedAt)));
-    if (!asset || !asset.mimeType.startsWith('image/')) return null;
-    if (asset.thumbnailSvg) return { bytes: Buffer.from(asset.thumbnailSvg), mimeType: 'image/svg+xml' };
-    return { bytes: await deps.store.get(asset.storageKey), mimeType: asset.mimeType };
+  /**
+   * Load an owned image for a provider. With an expected hash (a pinned reference or frame), the
+   * bytes must still be exactly the ones that were approved (CS-10). A rejected picture is never
+   * sent; on a constrained account the picture must have passed review (MB-05).
+   */
+  async function loadImage(assetId: string, accountId: string, constrained: boolean, expectedHash?: string): Promise<BinaryImage> {
+    const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, assetId), eq(schema.assets.accountId, accountId)));
+    if (!asset || !asset.mimeType.startsWith('image/') || asset.thumbnailSvg) throw providerError('invalid', 'A picture for this clip is no longer available.', true);
+    if (asset.reviewStatus === 'rejected' || (constrained && asset.reviewStatus !== 'allowed')) throw providerError('invalid', 'A picture for this clip has not passed the safety check.', true);
+    const bytes = await deps.store.get(asset.storageKey);
+    if (expectedHash && sha256(bytes) !== expectedHash) throw providerError('invalid', 'A picture for this clip has changed since it was chosen.', true);
+    return { bytes, mimeType: asset.mimeType };
   }
 
   async function buildRequest(job: Job, model: GenerationModel): Promise<GenerationRequest> {
     const r = job.request as JobRequest;
+    // MG-03: a request never loses a required input. A model that cannot take one is an error,
+    // never a quiet drop to a text-only generation.
+    if (r.referenceAssetIds.length && !model.capabilities.reference_images) throw providerError('invalid', 'This maker cannot use character pictures.', true);
+    if (r.referenceAssetIds.length > model.max_reference_images) throw providerError('invalid', 'Too many character pictures for this maker.', true);
+    if (r.startFrameAssetId && !model.capabilities.start_frame) throw providerError('invalid', 'This maker cannot start from a picture.', true);
+    if (r.endFrameAssetId && !model.capabilities.end_frame) throw providerError('invalid', 'This maker cannot end on a picture.', true);
     const references: BinaryImage[] = [];
-    if (model.capabilities.reference_images) {
-      if (r.referenceAssetIds.length > model.max_reference_images) throw new Error('Too many character pictures for this model');
-      for (const id of r.referenceAssetIds) {
-        const image = await loadImage(id, job.accountId);
-        if (!image || image.mimeType === 'image/svg+xml') throw new Error('A character picture is no longer available');
-        references.push(image);
-      }
-    }
-    const startFrame = model.capabilities.start_frame && r.startFrameAssetId ? await loadImage(r.startFrameAssetId, job.accountId) : null;
+    for (const [i, id] of r.referenceAssetIds.entries()) references.push(await loadImage(id, job.accountId, r.constrained, r.referenceHashes?.[i]));
+    const creative = r.creative;
+    const startFrame = r.startFrameAssetId ? await loadImage(r.startFrameAssetId, job.accountId, r.constrained, creative?.startFrame?.contentHash) : null;
+    const endFrame = r.endFrameAssetId ? await loadImage(r.endFrameAssetId, job.accountId, r.constrained, creative?.endFrame?.contentHash) : null;
     return {
-      model, prompt: r.prompt, negativePrompt: r.negativePrompt, referenceImages: references, ...(r.referenceNames ? { referenceNames: r.referenceNames } : {}), startFrame,
+      model, prompt: r.prompt, negativePrompt: r.negativePrompt, referenceImages: references, ...(r.referenceNames ? { referenceNames: r.referenceNames } : {}), startFrame, endFrame,
       aspectRatio: r.aspectRatio, count: r.count, durationSeconds: r.durationSeconds, audio: r.audio && model.capabilities.audio,
       resolution: r.resolution, strictSafety: r.constrained,
     };
@@ -154,16 +204,18 @@ export function createRunner(deps: RunnerDeps) {
   async function generate(job: Job, signal: AbortSignal) {
     const model = deps.catalogue.find(job.modelId);
     const provider = model && deps.catalogue.providerFor(model);
-    if (!model || !provider) throw Object.assign(new Error('That picture maker is not available any more.'), { name: 'ProviderError', code: 'invalid' });
+    if (!model || !provider) throw providerError('invalid', 'That picture maker is not available any more.', true);
     const r = job.request as JobRequest;
+    // Safety gate policy is a property of the account, never of the model (MB-05).
+    if (r.constrained && !deps.review.enabled) throw new Error('review-unavailable');
 
-    const lengths = model.kind === 'video' && model.capabilities.text_to_video && r.durationSeconds && CLIP_LENGTHS.includes(r.durationSeconds)
+    const lengths = !r.native && model.kind === 'video' && model.capabilities.text_to_video && r.durationSeconds && CLIP_LENGTHS.includes(r.durationSeconds)
       ? clipPlan(model, r.durationSeconds) : [r.durationSeconds];
     const assembling = lengths.length > 1 || lengths[0] !== r.durationSeconds;
     if (assembling && !(await ffmpegAvailable())) throw new Error('Video tools are required to join clips');
     const partJobIds = r.partJobIds ?? (job.providerJobId ? [job.providerJobId] : []);
     if (!partJobIds.length) {
-      // Gate 1: the prompt, before any money leaves.
+      // Gate 1: the prompt and the names the adapter will add, before any money leaves (MB-06).
       if (r.constrained || deps.review.enabled) {
         await note(job.id, 'Checking the words');
         const verdict = await deps.review.reviewPrompt(`${r.prompt}\n${(r.referenceNames ?? []).join('\n')}\n\nNegative: ${r.negativePrompt}`, r.constrained, limit(signal, CALL_MS.review));
@@ -172,6 +224,7 @@ export function createRunner(deps: RunnerDeps) {
     }
     const downloaded: { file: Awaited<ReturnType<typeof provider.fetchResult>>[number]; bytes: Buffer }[] = [];
     const reviewFrames: number[] = [];
+    let meta: ProviderResultMeta | undefined;
     let elapsed = 0;
     const parts = lengths.length;
     const what = model.kind === 'video' ? 'clip' : 'picture';
@@ -184,11 +237,23 @@ export function createRunner(deps: RunnerDeps) {
         const request = await buildRequest(job, model);
         request.durationSeconds = length;
         await note(job.id, `Sending ${partWords(partIndex)} to the ${what} maker`, { ...tag, detail: `${model.id}${length ? `, ${length} s` : ''}` });
-        const submitted = await provider.submit(request, limit(signal, CALL_MS.submit));
-        providerJobId = submitted.providerJobId;
+        // Written before the call, so a crash inside the call is visible afterwards (MG-07).
+        if (!(await setStatus(job.id, { submissionState: 'submitting' }))) return;
+        try {
+          const submitted = await provider.submit(request, limit(signal, CALL_MS.submit));
+          providerJobId = submitted.providerJobId;
+        } catch (error) {
+          if (isProviderError(error) && error.notAccepted) {
+            await setStatus(job.id, { submissionState: partJobIds.length ? 'accepted' : 'not_submitted' });
+            throw error;
+          }
+          // No answer, a timeout or a 5xx: fal may have taken it. Never resubmit blind.
+          await setStatus(job.id, { submissionState: 'uncertain' });
+          throw Object.assign(uncertainSubmission(), { raw: error instanceof Error ? error.message : String(error) });
+        }
         partJobIds.push(providerJobId);
         r.partJobIds = partJobIds;
-        await setStatus(job.id, { providerJobId, request: r, status: 'submitted' });
+        await setStatus(job.id, { providerJobId, request: r, status: 'submitted', submissionState: 'accepted' });
         await note(job.id, `Waiting for ${partWords(partIndex)}`, { ...tag, detail: `provider request ${providerJobId}` });
       } else {
         await note(job.id, `Carrying on with ${partWords(partIndex)}`, { ...tag, detail: `provider request ${providerJobId}, already paid for` });
@@ -207,6 +272,7 @@ export function createRunner(deps: RunnerDeps) {
         if (status.state === 'completed') break;
         if (status.state === 'failed') throw Object.assign(new Error(status.message), { name: 'ProviderError', code: 'invalid' });
         if (status.state === 'running') await setStatus(job.id, { status: 'running' });
+        await setStatus(job.id, { nextPollAt: new Date(Date.now() + pollMs) });
         await heartbeat(job.id);
         if (!(await current(job.id))) { await provider.cancel(providerJobId, model, limit(signal, CALL_MS.poll)).catch(() => {}); return; }
         if (Date.now() > deadline) throw Object.assign(new Error(`${partWords(partIndex)} was not ready after ${secs(Date.now() - partStarted)}`), { name: 'ProviderError', code: 'timeout' });
@@ -216,6 +282,7 @@ export function createRunner(deps: RunnerDeps) {
 
       const results = await provider.fetchResult(providerJobId, model, limit(signal, CALL_MS.result));
       if (!results.length) throw new Error('Clip maker returned no files');
+      meta ??= results[0]?.meta;
       for (const file of results) {
         const t0 = Date.now();
         await note(job.id, `Fetching ${partWords(partIndex)}`, tag);
@@ -238,14 +305,18 @@ export function createRunner(deps: RunnerDeps) {
       await note(job.id, 'Joined the parts', { detail: `${(bytes.length / 1_048_576).toFixed(1)} MB in ${secs(Date.now() - t0)}` });
       downloaded.splice(0, downloaded.length, { bytes, file: { url: '', mimeType: 'video/mp4', width: portrait ? 720 : 1280, height: portrait ? 1280 : 720, durationMs: r.durationSeconds! * 1000 } });
     }
-    await setStatus(job.id, { status: 'reviewing' });
+    if (!(await setStatus(job.id, { status: 'reviewing' }))) return;
     await note(job.id, r.constrained || deps.review.enabled ? `Checking your ${what} is OK` : `Saving your ${what}`);
-    const assetIds: string[] = [];
+    // Stored and reviewed first, attached in one transaction at the end: a retry after a failure
+    // here re-downloads rather than duplicating takes in the media bin.
+    const pending: (typeof schema.assets.$inferInsert)[] = [];
+    const posters: (typeof schema.assets.$inferInsert)[] = [];
     const scope = { accountId: job.accountId, projectId: job.projectId };
     for (const [index, { file, bytes }] of downloaded.entries()) {
       const isVideo = file.mimeType.startsWith('video/');
       const extension = isVideo ? 'mp4' : file.mimeType === 'image/jpeg' ? 'jpg' : file.mimeType === 'image/webp' ? 'webp' : 'png';
       const stored = await deps.store.put(bytes, extension, scope);
+      const assetId = randomUUID();
       let posterAssetId: string | null = null;
       let review: { status: 'not_required' | 'allowed' | 'rejected'; reason: string | null };
       let durationMs = file.durationMs ?? null;
@@ -253,55 +324,68 @@ export function createRunner(deps: RunnerDeps) {
         durationMs = (await probeDurationMs(bytes)) ?? durationMs ?? (r.durationSeconds ? r.durationSeconds * 1000 : null);
         const frames = assembling ? reviewFrames : [0, durationMs ? Math.floor(durationMs / 2) : 0];
         review = { status: r.constrained || deps.review.enabled ? 'allowed' : 'not_required', reason: null };
+        let poster: Buffer | null = null;
         for (const at of frames) {
           const frame = await posterFrame(bytes, at);
           if (!frame) {
-            // No ffmpeg: a constrained account cannot be shown an unreviewed clip.
-            if (r.constrained) review = { status: 'rejected', reason: 'The clip could not be checked because the video tools are missing on the server.' };
+            // No ffmpeg: nothing unreviewed is shown to a constrained account, or marked checked.
+            review = r.constrained ? { status: 'rejected', reason: 'The clip could not be checked because the video tools are missing on the server.' } : { status: 'not_required', reason: null };
             break;
           }
-          if (at === 0) {
-            const poster = await deps.store.put(frame, 'jpg', scope);
-            const [row] = await db.insert(schema.assets).values({
-              accountId: job.accountId, projectId: job.projectId, ownerEntityType: job.targetEntityType, ownerEntityId: job.targetEntityId,
-              kind: 'poster', filename: `poster-${index}.jpg`, mimeType: 'image/jpeg', sizeBytes: poster.sizeBytes, storageKey: poster.key,
-              width: file.width ?? null, height: file.height ?? null, generationJobId: job.id, modelId: model.id, reviewStatus: 'not_required',
-            }).returning({ id: schema.assets.id });
-            posterAssetId = row!.id;
-          }
+          if (at === 0) poster = frame;
           const verdict = await reviewBytes(frame, 'image/jpeg', r.constrained, limit(signal, CALL_MS.review));
           if (verdict.status === 'rejected') { review = verdict; break; }
+        }
+        if (poster) {
+          // The poster carries the clip's verdict, so a held-back clip never has a visible poster.
+          const saved = await deps.store.put(poster, 'jpg', scope);
+          posterAssetId = randomUUID();
+          posters.push({
+            id: posterAssetId, accountId: job.accountId, projectId: job.projectId, ownerEntityType: job.targetEntityType, ownerEntityId: job.targetEntityId,
+            kind: 'poster', filename: `poster-${index}.jpg`, mimeType: 'image/jpeg', sizeBytes: saved.sizeBytes, storageKey: saved.key, contentSha256: saved.sha256,
+            width: file.width ?? null, height: file.height ?? null, generationJobId: job.id, modelId: model.id, reviewStatus: review.status, reviewReason: review.reason,
+          });
         }
       } else {
         review = await reviewBytes(bytes, file.mimeType, r.constrained, limit(signal, CALL_MS.review));
       }
-      const [asset] = await db.insert(schema.assets).values({
-        accountId: job.accountId, projectId: job.projectId, ownerEntityType: job.targetEntityType, ownerEntityId: job.targetEntityId,
-        kind: r.assetKind, filename: `${job.id}-${index}.${extension}`, mimeType: file.mimeType, sizeBytes: stored.sizeBytes, storageKey: stored.key,
+      pending.push({
+        id: assetId, accountId: job.accountId, projectId: job.projectId, ownerEntityType: job.targetEntityType, ownerEntityId: job.targetEntityId,
+        kind: r.assetKind, filename: `${job.id}-${index}.${extension}`, mimeType: file.mimeType, sizeBytes: stored.sizeBytes, storageKey: stored.key, contentSha256: stored.sha256,
         width: file.width ?? null, height: file.height ?? null, durationMs, posterAssetId,
         generationJobId: job.id, modelId: model.id, reviewStatus: review.status, reviewReason: review.reason,
-      }).returning({ id: schema.assets.id });
-      assetIds.push(asset!.id);
+      });
     }
-    if (!(await current(job.id))) return;
-    await note(job.id, 'Ready', { detail: `${secs(Date.now() - job.createdAt.getTime())} from asking to ready` });
-    await db.transaction(async (tx) => {
-      await tx.update(schema.generationJobs).set({ status: 'ready', resultAssetIds: assetIds, finishedAt: new Date(), updatedAt: new Date(), claimedBy: null })
-        .where(and(eq(schema.generationJobs.id, job.id), eq(schema.generationJobs.claimedBy, instanceId)));
+    const assetIds = pending.map((a) => a.id!);
+    const providerResult = meta ? { ...(meta.seed !== undefined ? { seed: meta.seed } : {}), ...(meta.draftId ? { draft_id: meta.draftId, draft_expires_at: new Date(Date.now() + DRAFT_LIFETIME_MS).toISOString() } : {}) } : null;
+    const done = await db.transaction(async (tx) => {
+      // Fenced: a job cancelled or taken over in the meantime is never turned into "ready".
+      const updated = await tx.update(schema.generationJobs).set({ status: 'ready', resultAssetIds: assetIds, finishedAt: new Date(), updatedAt: new Date(), claimedBy: null, ...(providerResult ? { providerResult } : {}) })
+        .where(mine(job.id)).returning({ id: schema.generationJobs.id });
+      if (!updated.length) return false;
+      if (posters.length) await tx.insert(schema.assets).values(posters);
+      await tx.insert(schema.assets).values(pending);
       await settle(job.id, null, tx);
+      const usable = pending.filter((a) => a.reviewStatus === 'allowed' || a.reviewStatus === 'not_required');
+      if (job.targetEntityType === 'character' && r.assetKind === 'character_ref' && usable.length) {
+        // CS-04: a finished picture is a candidate. Nothing about the approved look changes.
+        const c = r.candidate ?? { viewRole: 'main' as const, source: 'generated' as const, sourceVisualVersionId: null, parentCandidateId: null };
+        await tx.insert(schema.characterReferenceCandidates).values(usable.map((a) => ({
+          accountId: job.accountId, characterId: job.targetEntityId, assetId: a.id!, viewRole: c.viewRole, source: c.source,
+          sourceVisualVersionId: c.sourceVisualVersionId, parentCandidateId: c.parentCandidateId, generationJobId: job.id,
+        })));
+      }
       if (job.targetEntityType === 'shot') {
         await tx.update(schema.shots).set({ generatedAssetIds: raw`array_cat(${schema.shots.generatedAssetIds}, ${raw.raw(`ARRAY[${assetIds.map((id) => `'${id}'`).join(',')}]::uuid[]`)})`, updatedAt: new Date() })
           .where(and(eq(schema.shots.id, job.targetEntityId), eq(schema.shots.accountId, job.accountId)));
-        // A finished clip goes straight into the story order (the timeline reads hero_video_asset_id).
-        // The child can still pick another take; this only fills an empty slot.
-        if (model.kind === 'video') {
-          const [first] = await tx.select({ id: schema.assets.id }).from(schema.assets)
-            .where(and(inArray(schema.assets.id, assetIds), inArray(schema.assets.reviewStatus, ['allowed', 'not_required']))).limit(1);
-          if (first) await tx.update(schema.shots).set({ heroVideoAssetId: first.id, generationStatus: 'generated', version: raw`${schema.shots.version} + 1`, updatedAt: new Date() })
-            .where(and(eq(schema.shots.id, job.targetEntityId), eq(schema.shots.accountId, job.accountId), isNull(schema.shots.heroVideoAssetId)));
-        }
+        // A finished clip fills an empty slot in the story order; it never replaces a chosen clip (DF-02).
+        const first = model.kind === 'video' ? usable[0] : undefined;
+        if (first) await tx.update(schema.shots).set({ heroVideoAssetId: first.id!, generationStatus: 'generated', version: raw`${schema.shots.version} + 1`, updatedAt: new Date() })
+          .where(and(eq(schema.shots.id, job.targetEntityId), eq(schema.shots.accountId, job.accountId), isNull(schema.shots.heroVideoAssetId)));
       }
+      return true;
     });
+    if (done) await note(job.id, 'Ready', { detail: `${secs(Date.now() - job.createdAt.getTime())} from asking to ready` });
   }
 
   async function fail(job: Job, error: unknown) {
@@ -309,23 +393,35 @@ export function createRunner(deps: RunnerDeps) {
     const reason = (error as { reason?: string }).reason;
     const retry = RETRYABLE.has(safe.code) && job.attempt < MAX_ATTEMPTS;
     // The raw error goes to the trail (adult only) and the server log; the child sees the safe detail.
-    const rawText = error instanceof Error ? error.message.slice(0, 600) : String(error);
+    const rawText = [(error as { raw?: string }).raw, error instanceof Error ? error.message : String(error), reason ? `reviewer: ${reason}` : '']
+      .filter(Boolean).join(' · ').slice(0, 800);
     const where = stage.get(job.id);
     log.error(`job ${job.id} ${retry ? 'will retry' : 'failed'}: ${safe.code}: ${rawText}${where ? ` (during: ${where})` : ''}`);
     await note(job.id, retry ? 'Something went wrong, trying again' : 'Stopped: it did not work', {
       detail: `${safe.code}${where ? `, during: ${where}` : ''}`, raw: rawText,
     });
     if (retry) {
-      // Guarded on ACTIVE so a job cancelled while we were waiting is never revived.
-      await db.update(schema.generationJobs).set({ status: job.providerJobId ? 'submitted' : 'queued', claimedBy: null, claimedAt: null, errorCode: safe.code, errorDetail: safe.detail, updatedAt: new Date() })
-        .where(and(eq(schema.generationJobs.id, job.id), eq(schema.generationJobs.claimedBy, instanceId), inArray(schema.generationJobs.status, ACTIVE)));
+      // Back off before the next claim, durably: a restart does not reset the wait.
+      const wait = Math.min(60_000, pollMs * 2 ** job.attempt);
+      await db.update(schema.generationJobs).set({ status: job.providerJobId ? 'submitted' : 'queued', claimedBy: null, claimedAt: null, nextPollAt: new Date(Date.now() + wait), errorCode: safe.code, errorDetail: safe.detail, updatedAt: new Date() })
+        .where(mine(job.id));
       return;
     }
     await db.transaction(async (tx) => {
-      await tx.update(schema.generationJobs).set({ status: 'failed', claimedBy: null, errorCode: safe.code, errorDetail: reason ? `${safe.detail} (${reason})` : safe.detail, finishedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(schema.generationJobs.id, job.id), eq(schema.generationJobs.claimedBy, instanceId), inArray(schema.generationJobs.status, ACTIVE)));
-      await refund(job.id, tx);
+      const [latest] = await tx.update(schema.generationJobs).set({ status: 'failed', claimedBy: null, errorCode: safe.code, errorDetail: safe.detail, finishedAt: new Date(), updatedAt: new Date() })
+        .where(mine(job.id)).returning();
+      // Only the owner that actually ended the job touches the money, exactly once.
+      if (!latest) return;
+      if (reachedProvider(latest)) await keepAsUnknown(job.id, tx);
+      else await refund(job.id, tx);
     });
+  }
+
+  /** A shutdown is not a failed attempt: hand the claim back so the next runner resumes it. */
+  async function release(job: Job) {
+    await db.update(schema.generationJobs).set({ claimedBy: null, claimedAt: null, attempt: raw`GREATEST(${schema.generationJobs.attempt} - 1, 0)`, updatedAt: new Date() })
+      .where(mine(job.id)).catch(() => {});
+    log.info(`job ${job.id.slice(0, 8)} handed back on shutdown`);
   }
 
   async function processJob(job: Job) {
@@ -338,22 +434,28 @@ export function createRunner(deps: RunnerDeps) {
         await note(job.id, job.attempt > 1 ? 'Picked up again' : 'Started', {
           detail: `attempt ${job.attempt} on ${instanceId}${(job.request as JobRequest | null)?.partJobIds?.length ? `, ${(job.request as JobRequest).partJobIds!.length} part(s) already sent` : ''}`,
         });
+        // A previous worker died inside a submit call: the provider may have the request (MG-07).
+        if (job.submissionState === 'submitting') {
+          await db.update(schema.generationJobs).set({ submissionState: 'uncertain' }).where(mine(job.id));
+          throw uncertainSubmission();
+        }
         if (job.kind === 'render') {
           if (!deps.render) throw new Error('render not configured');
           await note(job.id, 'Putting your cartoon together');
           const t0 = Date.now();
           const result = await deps.render(job, deps, controller.signal);
-          await note(job.id, 'Ready', { detail: `rendered in ${secs(Date.now() - t0)}` });
           await db.transaction(async (tx) => {
-            await tx.update(schema.generationJobs).set({ status: 'ready', resultAssetIds: [result.assetId], finishedAt: new Date(), updatedAt: new Date(), claimedBy: null })
-              .where(and(eq(schema.generationJobs.id, job.id), eq(schema.generationJobs.claimedBy, instanceId)));
-            await settle(job.id, 0, tx);
+            const updated = await tx.update(schema.generationJobs).set({ status: 'ready', resultAssetIds: [result.assetId], finishedAt: new Date(), updatedAt: new Date(), claimedBy: null })
+              .where(mine(job.id)).returning({ id: schema.generationJobs.id });
+            if (updated.length) await settle(job.id, 0, tx);
           });
+          await note(job.id, 'Ready', { detail: `rendered in ${secs(Date.now() - t0)}` });
         } else {
           await generate(job, controller.signal);
         }
       } catch (error) {
-        await fail(job, error).catch((e) => log.error(`job ${job.id} could not be marked failed: ${String(e)}`));
+        if (controller.signal.reason === SHUTDOWN) await release(job);
+        else await fail(job, error).catch((e) => log.error(`job ${job.id} could not be marked failed: ${String(e)}`));
       } finally {
         clearInterval(beat);
         stage.delete(job.id);
@@ -374,6 +476,8 @@ export function createRunner(deps: RunnerDeps) {
       const providers = [...deps.catalogue.providers.keys(), ...(deps.render ? ['ffmpeg'] : [])];
       const candidates = await tx.select({ id: schema.generationJobs.id }).from(schema.generationJobs)
         .where(and(inArray(schema.generationJobs.status, ACTIVE), inArray(schema.generationJobs.provider, providers), or(isNull(schema.generationJobs.claimedBy), lt(schema.generationJobs.claimedAt, stale)),
+          // Durable scheduling: a job backing off after a transient failure waits its turn.
+          or(isNull(schema.generationJobs.nextPollAt), lte(schema.generationJobs.nextPollAt, new Date())),
           ...(running.size ? [notInArray(schema.generationJobs.id, [...running.keys()])] : [])))
         .orderBy(schema.generationJobs.createdAt).limit(Math.max(0, limit - running.size)).for('update', { skipLocked: true });
       if (!candidates.length) return [] as Job[];
@@ -400,7 +504,7 @@ export function createRunner(deps: RunnerDeps) {
     stopped = true;
     if (timer) clearInterval(timer);
     timer = null;
-    for (const r of running.values()) r.controller.abort();
+    for (const r of running.values()) r.controller.abort(SHUTDOWN);
     await Promise.allSettled([...running.values()].map((r) => r.promise));
   }
 

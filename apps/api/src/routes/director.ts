@@ -9,7 +9,7 @@ import { estimatePence, clipPlan, CLIP_LENGTHS, type GenerationModel } from '@st
 import { promptBudget } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
-import { allowance, allowanceInWords, pence, refund, reserve } from '../generation/budget.ts';
+import { allowance, allowanceInWords, keepAsUnknown, pence, reachedProvider, refund, reserve } from '../generation/budget.ts';
 import { presentModel, type Catalogue } from '../generation/catalogue.ts';
 import type { ReviewProvider } from '../generation/review.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
@@ -100,7 +100,7 @@ function lastStep(events: unknown) {
 
 export async function isConstrained(database: typeof db, accountId: string, projectId: string) {
   const [account] = await database.select().from(schema.accounts).where(eq(schema.accounts.id, accountId));
-  const [project] = await database.select().from(schema.projects).where(and(eq(schema.projects.id, projectId), eq(schema.projects.accountId, accountId)));
+  const [project] = await database.select().from(schema.projects).where(and(eq(schema.projects.id, projectId), eq(schema.projects.accountId, accountId), isNull(schema.projects.deletedAt)));
   if (!account || !project) throw ApiError.notFound('Project');
   const [bible] = await database.select({ aspectRatio: schema.seriesBibles.aspectRatio }).from(schema.seriesBibles).where(eq(schema.seriesBibles.projectId, project.id));
   return { account, project, aspectRatio: bible?.aspectRatio ?? '16:9', constrained: account.isMinor || ['preschool', 'kids_6_11'].includes(project.targetAudience) };
@@ -246,9 +246,10 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const { id } = idParam.parse(request.params);
     const [job] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, id), eq(schema.generationJobs.accountId, request.accountId)));
     if (!job) throw ApiError.notFound('Request');
-    const { account } = await isConstrained(db, request.accountId, job.projectId);
+    // Not isConstrained: a job still answers after its cartoon went in the bin, so polling ends cleanly.
+    const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     reply.header('Cache-Control', 'no-store');
-    return presentJob(job, await jobAssets([job]), account.isMinor);
+    return presentJob(job, await jobAssets([job]), account?.isMinor ?? true);
   });
 
   app.get('/projects/:id/jobs', async (request, reply) => {
@@ -268,8 +269,10 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       const [job] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, id), eq(schema.generationJobs.accountId, request.accountId))).for('update');
       if (!job) throw ApiError.notFound('Request');
       if (!['queued', 'submitted', 'running', 'reviewing'].includes(job.status)) return job;
-      const [updated] = await tx.update(schema.generationJobs).set({ status: 'cancelled', finishedAt: new Date(), updatedAt: new Date() }).where(eq(schema.generationJobs.id, id)).returning();
-      await refund(id, tx);
+      const [updated] = await tx.update(schema.generationJobs).set({ status: 'cancelled', claimedBy: null, finishedAt: new Date(), updatedAt: new Date() }).where(eq(schema.generationJobs.id, id)).returning();
+      // MG-08: stopping here does not mean the provider refunded work it already started.
+      if (reachedProvider(job)) await keepAsUnknown(id, tx);
+      else await refund(id, tx);
       return updated!;
     });
     runner.abort(id);
