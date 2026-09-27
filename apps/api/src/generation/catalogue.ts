@@ -2,7 +2,7 @@
  * Which models this deployment can actually run: the catalogue filtered by which adapter
  * has a key (DM-3). Tests inject a fake provider and a fake catalogue.
  */
-import { ALL_MODELS, type GenerationModel, type ModelKind } from '@storyboard/models';
+import { ALL_MODELS, createVideoModelRegistry, type VideoModelDefinition, type VideoModelRequirements, type GenerationModel, type ModelKind } from '@storyboard/models';
 import type { GenerationProvider } from './provider.ts';
 
 export interface Catalogue {
@@ -12,6 +12,7 @@ export interface Catalogue {
   find(id: string): GenerationModel | undefined;
   providerFor(model: GenerationModel): GenerationProvider | undefined;
   cheapest(kind: ModelKind): GenerationModel | undefined;
+  videoModels(requirements?: VideoModelRequirements): VideoModelDefinition[];
 }
 
 export function createCatalogue(providers: GenerationProvider[], models: GenerationModel[] = ALL_MODELS as GenerationModel[]): Catalogue {
@@ -23,6 +24,7 @@ export function createCatalogue(providers: GenerationProvider[], models: Generat
     find: (id) => models.find((m) => m.id === id),
     providerFor: (model) => map.get(model.provider),
     cheapest: (kind) => catalogue.enabled().filter((m) => m.kind === kind).sort((a, b) => a.unit_cost_pence - b.unit_cost_pence)[0],
+    videoModels: (requirements) => createVideoModelRegistry(catalogue.enabled()).matching(requirements),
   };
   return catalogue;
 }
@@ -46,5 +48,7 @@ export function presentModel(m: GenerationModel, advanced: boolean) {
     max_prompt_length: m.max_prompt_length,
     unit: m.unit,
     unit_cost_pence: m.unit_cost_pence,
+    video: m.video ?? null,
+    configuration_pricing: Boolean(m.pricing),
   };
 }

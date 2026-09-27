@@ -30,6 +30,7 @@ export interface JobRequest {
   prompt: string;
   negativePrompt: string;
   referenceAssetIds: string[];
+  referenceNames?: string[];
   startFrameAssetId: string | null;
   aspectRatio: '16:9' | '9:16' | '1:1';
   count: number;
@@ -129,14 +130,16 @@ export function createRunner(deps: RunnerDeps) {
     const r = job.request as JobRequest;
     const references: BinaryImage[] = [];
     if (model.capabilities.reference_images) {
-      for (const id of r.referenceAssetIds.slice(0, model.max_reference_images)) {
+      if (r.referenceAssetIds.length > model.max_reference_images) throw new Error('Too many character pictures for this model');
+      for (const id of r.referenceAssetIds) {
         const image = await loadImage(id, job.accountId);
-        if (image && image.mimeType !== 'image/svg+xml') references.push(image);
+        if (!image || image.mimeType === 'image/svg+xml') throw new Error('A character picture is no longer available');
+        references.push(image);
       }
     }
     const startFrame = model.capabilities.start_frame && r.startFrameAssetId ? await loadImage(r.startFrameAssetId, job.accountId) : null;
     return {
-      model, prompt: r.prompt, negativePrompt: r.negativePrompt, referenceImages: references, startFrame,
+      model, prompt: r.prompt, negativePrompt: r.negativePrompt, referenceImages: references, ...(r.referenceNames ? { referenceNames: r.referenceNames } : {}), startFrame,
       aspectRatio: r.aspectRatio, count: r.count, durationSeconds: r.durationSeconds, audio: r.audio && model.capabilities.audio,
       resolution: r.resolution, strictSafety: r.constrained,
     };
@@ -163,7 +166,7 @@ export function createRunner(deps: RunnerDeps) {
       // Gate 1: the prompt, before any money leaves.
       if (r.constrained || deps.review.enabled) {
         await note(job.id, 'Checking the words');
-        const verdict = await deps.review.reviewPrompt(`${r.prompt}\n\nNegative: ${r.negativePrompt}`, r.constrained, limit(signal, CALL_MS.review));
+        const verdict = await deps.review.reviewPrompt(`${r.prompt}\n${(r.referenceNames ?? []).join('\n')}\n\nNegative: ${r.negativePrompt}`, r.constrained, limit(signal, CALL_MS.review));
         if (!verdict.allowed) throw Object.assign(new Error('The safety checker did not allow this wording. Try describing the scene differently.'), { name: 'ProviderError', code: 'rejected', reason: verdict.reason });
       }
     }

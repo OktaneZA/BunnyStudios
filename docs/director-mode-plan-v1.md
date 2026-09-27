@@ -1,5 +1,11 @@
 # Director Mode — Requirements & Build Plan (v1.0)
 
+> **27 September 2026:** [Character Studio requirements](character-studio-requirements.md)
+> and [build plan](character-studio-build-plan.md) supersede conflicting D38/D39 cast-only
+> discovery, D41 text-only production and DM-1 flat-pricing rules. Manual character creation,
+> approved visual revisions and reference/frame workflows are now planned. Quick text drafts
+> remain optional; broader model choice belongs in Advanced mode.
+
 _Drafted 21 September 2026. Clickable screen-flow mockup: https://claude.ai/artifact/12LvycH28LDtQTdZZjC28f (private). Extends [build-plan-v1.1.md](build-plan-v1.1.md) (D1–D18) and
 [architecture.md](architecture.md) (D19–D26). New decisions here are D27 onwards. Where this
 document and the original spec disagree, this document wins for Director Mode; nothing here

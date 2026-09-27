@@ -11,6 +11,8 @@ export type ModelTier = 'low' | 'medium' | 'high';
 export type Transition = 'cut' | 'fade' | 'slide';
 
 export interface ModelInfo {
+  video?: { family: string; categories: string[]; audio_mode?: 'optional' | 'always' | 'none'; final_model_id?: string; documentation: string } | null;
+  configuration_pricing?: boolean;
   id: string;
   kind: ModelKind;
   tier: ModelTier | null;
@@ -127,6 +129,7 @@ export interface JobEvent { at: string; say: string; detail?: string; raw?: stri
 export interface LoggedJob extends Job { events: JobEvent[]; project_title: string; duration_seconds: number | null; error_code: string | null }
 
 export interface JobRequestBody {
+  resolution?: string | undefined;
   kind: ModelKind;
   model_id: string;
   aspect_ratio?: AspectRatio;
@@ -226,10 +229,11 @@ export const director = {
   settings: () => request<GenerationSettings>('/settings/generation'),
   /** The clip maker behind each cost level, low to high. */
   tiers: () => request<{ data: ModelInfo[] }>('/models/tiers'),
-  estimate: (modelId: string, opts: { count?: number; duration_seconds?: number }) => {
+  estimate: (modelId: string, opts: { count?: number; duration_seconds?: number; resolution?: string }) => {
     const q = new URLSearchParams({ model_id: modelId });
     if (opts.count) q.set('count', String(opts.count));
     if (opts.duration_seconds) q.set('duration_seconds', String(opts.duration_seconds));
+    if (opts.resolution) q.set('resolution', opts.resolution);
     return request<{ pence: number; words: string; parts: number[] | null }>(`/settings/estimate?${q.toString()}`);
   },
 

@@ -5,6 +5,11 @@
 **Audience:** Development agent / engineering team
 **Status:** Ready for build
 
+> **27 September 2026 addendum:** [Character Studio requirements](character-studio-requirements.md)
+> govern canonical character approval/versioning, production references, provider-neutral video,
+> draft/final and spending controls. See the [delivery plan](character-studio-build-plan.md).
+> This v1.0 document is historical; its external-generation-only statements are superseded.
+
 > **Current scope:** [build-plan-v1.1.md](build-plan-v1.1.md) decisions D1–D17 override this
 > original specification. D17 permits optional AI-generated rough thumbnails on scenes. Finished
 > artwork/video generation stays external, and importing finished pictures is optional. See

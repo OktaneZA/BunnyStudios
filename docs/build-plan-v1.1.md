@@ -1,5 +1,10 @@
 # Storyboard Studio — Requirements Review & Build Plan (v1.1)
 
+> **Current production-media sequence (27 September 2026):** follow the
+> [Character Studio build plan](character-studio-build-plan.md) and its
+> [requirements](character-studio-requirements.md). Canonical character approval and visual
+> versioning precede the new Seedance production workflows. Existing unrelated decisions remain.
+
 ## Context
 
 `storyboard-app-requirements.md` v1.0 specifies a pre-production tool for planning animated

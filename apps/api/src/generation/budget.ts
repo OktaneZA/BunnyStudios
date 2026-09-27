@@ -80,7 +80,7 @@ export class BudgetError extends ApiError {
  * Reserve the estimated cost of a job. Call inside a transaction that has already locked
  * the account row (`FOR UPDATE`), after the job row exists.
  */
-export async function reserve(tx: Tx, input: { accountId: string; projectId: string; jobId: string; model: GenerationModel; count?: number; durationSeconds?: number }) {
+export async function reserve(tx: Tx, input: { accountId: string; projectId: string; jobId: string; model: GenerationModel; count?: number; durationSeconds?: number; resolution?: string }) {
   const [account] = await tx.select().from(schema.accounts).where(eq(schema.accounts.id, input.accountId));
   if (!account) throw ApiError.notFound('Account');
   const estimated = estimatePence(input.model, input);

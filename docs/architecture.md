@@ -1,5 +1,11 @@
 # Architecture: review and design
 
+> **Current media architecture (27 September 2026):** see
+> [the media-generation contract](media-generation-architecture.md) and
+> [Character Studio delivery plan](character-studio-build-plan.md). The review below is dated
+> 9 September; statements about missing jobs/providers/compiler describe that historical snapshot.
+> Production media now already has a Postgres-backed job/ledger foundation to extend.
+
 _Reviewed 9 September 2026 against the code as deployed to the home NAS._
 
 This document has two halves. The first describes the system as it is and reviews it

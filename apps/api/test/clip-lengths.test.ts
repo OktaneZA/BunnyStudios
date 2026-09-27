@@ -4,7 +4,7 @@ import { ALL_MODELS, CLIP_LENGTHS, clipPlan, durationOptions, estimatePence } fr
 import { resolveOptions } from '../src/routes/director.ts';
 
 test('every cost tier can assemble the four clip lengths and charges all generated seconds', () => {
-  const models = ALL_MODELS.filter((m) => m.enabled && m.tier && m.capabilities.text_to_video);
+  const models = ALL_MODELS.filter((m) => m.enabled && m.tier && m.capabilities.text_to_video && !m.pricing);
   assert.equal(models.length, 3);
   for (const model of models) for (const length of CLIP_LENGTHS) {
     const parts = clipPlan(model, length);

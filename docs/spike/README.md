@@ -1,6 +1,9 @@
 # Phase −1 Spike — Validate the Core Bet
 
-**Status:** blocking. No app code until this is done.
+**Historical experiment.** The current production-continuity gate is
+[continuity-benchmark.md](continuity-benchmark.md), comparing prompt-only, start frames and
+approved references across compatible endpoints. The original prompts below remain useful
+fixtures; the former “no app code” gate is superseded by the Character Studio build plan.
 
 ## What we are testing
 

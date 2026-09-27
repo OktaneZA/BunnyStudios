@@ -16,6 +16,7 @@ import { DirectorScenes } from '../components/DirectorScenes';
 import { JobProgress } from '../components/JobProgress';
 import { ART_STYLE } from '@storyboard/vocabularies';
 import { DirectorPanel } from '../components/DirectorPanel';
+import { VideoModelPicker } from '../components/VideoModelPicker';
 
 const DESIGNS = [
   { id: 'film-strip', name: 'Film Strip' },
@@ -189,6 +190,8 @@ const TIER_WORDS: Record<ModelTier, string> = { low: 'Low cost', medium: 'Medium
 
 function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, assetsById, addJob, onShot, afterHero, refreshSettings, onScene, movable, layoutReset }: WorkProps) {
   const [tier, setTier] = useState<ModelTier>('low');
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(5);
   const [audio, setAudio] = useState(false);
   const [quote, setQuote] = useState<{ key: string; text: string; parts: number[] | null } | null>(null);
@@ -206,8 +209,9 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
 
   // The clip maker for the chosen cost level. Low is the default; if it is missing, the cheapest there is.
   const available = useMemo(() => TIER_ORDER.filter((t) => tiers.some((m) => m.tier === t)), [tiers]);
-  const model = useMemo(() => tiers.find((m) => m.tier === tier) ?? tiers.find((m) => m.tier === available[0]) ?? null, [tiers, tier, available]);
-  const quoteKey = `${model?.id}:${duration}`;
+  const model = useMemo(() => settings?.models.find((m) => m.id === selectedModelId && m.kind === 'video') ?? tiers.find((m) => m.tier === tier) ?? tiers.find((m) => m.tier === available[0]) ?? null, [settings, selectedModelId, tiers, tier, available]);
+  const resolution = selectedResolution && model?.resolutions.includes(selectedResolution) ? selectedResolution : model?.resolutions[0];
+  const quoteKey = `${model?.id}:${duration}:${resolution}`;
   const estimate = quote?.key === quoteKey ? quote.text : null;
   useEffect(() => { const first = available[0]; if (first && !available.includes(tier)) setTier(first); }, [available, tier]);
 
@@ -225,11 +229,11 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
     setEstimateFailed(false);
     if (!model) return;
     let alive = true;
-    director.estimate(model.id, { duration_seconds: duration ?? undefined })
+    director.estimate(model.id, { duration_seconds: duration ?? undefined, resolution })
       .then((r) => { if (alive) setQuote({ key: quoteKey, text: formatPence(r.pence), parts: r.parts }); })
       .catch(() => { if (alive) setEstimateFailed(true); });
     return () => { alive = false; };
-  }, [model, duration, quoteKey, quoteAttempt]);
+  }, [model, duration, resolution, quoteKey, quoteAttempt]);
 
   // After a 402, keep the button off until the allowance shows money again.
   useEffect(() => {
@@ -267,7 +271,7 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
     setBusy(true); setError(null);
     try {
       const job = await director.startJob(shot.id, {
-        kind: 'video', model_id: model.id, duration_seconds: duration ?? undefined, audio,
+        kind: 'video', model_id: model.id, duration_seconds: duration ?? undefined, audio, resolution,
         ...(withNote?.trim() ? { note: withNote.trim() } : {}),
       }, uuid());
       addJob(job);
@@ -340,9 +344,9 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
                 <div className="segmented tiers" role="group" aria-label="How much to spend?">
                   {available.map((t) => {
                     const m = tiers.find((x) => x.tier === t)!;
-                    const on = model?.tier === t;
+                    const on = !selectedModelId && model?.tier === t;
                     return (
-                      <button key={t} type="button" className={on ? 'on' : ''} aria-pressed={on} onClick={() => setTier(t)}>
+                      <button key={t} type="button" className={on ? 'on' : ''} aria-pressed={on} onClick={() => { setTier(t); setSelectedModelId(null); setSelectedResolution(null); }}>
                         <span className="tier-name">{TIER_WORDS[t]}</span>
                         <span className="tier-price">{formatPence(m.unit_cost_pence)} a second</span>
                       </button>
@@ -353,6 +357,14 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
               </>
             )}
           </div>
+
+          <VideoModelPicker models={settings?.models ?? []} value={model?.id} onChange={(id) => { setSelectedModelId(id); setSelectedResolution(null); }} />
+          {selectedModelId && model && <div className="field">
+            <p className="hint">Selected: {model.label ?? model.friendly_label}</p>
+            <label>Picture size<select value={resolution} onChange={(event) => setSelectedResolution(event.target.value)}>
+              {model.resolutions.map((size) => <option key={size} value={size}>{size}</option>)}
+            </select></label>
+          </div>}
 
           {model?.duration_seconds && (
             <div className="field">
@@ -370,7 +382,8 @@ function SceneWork({ scene, projectId, jobsLoaded, shot, settings, tiers, jobs, 
             </div>
           )}
 
-          {model?.capabilities.audio && (
+          {model?.video?.audio_mode === 'always' && <p className="hint">This clip maker always includes sound.</p>}
+          {model?.capabilities.audio && model.video?.audio_mode !== 'always' && (
             <div className="toggle-row">
               <div>
                 <span className="label-text">Add sounds?</span>

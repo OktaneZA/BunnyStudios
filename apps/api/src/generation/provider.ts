@@ -10,6 +10,7 @@
  * stable code the runner uses to decide whether to retry.
  */
 import type { GenerationModel } from '@storyboard/models';
+import { buildVideoPayload } from '../video/adapters/catalogue.ts';
 
 export interface BinaryImage {
   bytes: Buffer;
@@ -22,6 +23,8 @@ export interface GenerationRequest {
   negativePrompt: string;
   /** Main pictures of the cast in the scene, already truncated to the model's limit. */
   referenceImages: BinaryImage[];
+  referenceNames?: string[];
+  endFrame?: BinaryImage | null;
   /** The picked picture a clip starts from (video models with start_frame). */
   startFrame: BinaryImage | null;
   aspectRatio: '16:9' | '9:16' | '1:1';
@@ -80,6 +83,7 @@ export interface GenerationProvider {
 
 /** Convert a request into the provider's input object using the catalogue's request_shape. */
 export function shapeRequest(request: GenerationRequest, toUrl: (image: BinaryImage) => string): Record<string, unknown> {
+  if (request.model.kind === 'video') return buildVideoPayload(request.model, request, toUrl);
   const s = request.model.request_shape;
   const body: Record<string, unknown> = { [s.prompt]: request.prompt };
   if (s.negative_prompt && request.negativePrompt) body[s.negative_prompt] = request.negativePrompt;
