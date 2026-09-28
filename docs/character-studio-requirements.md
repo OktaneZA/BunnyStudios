@@ -1,6 +1,14 @@
 # Character Studio and story-aware video — requirements
 
-Version 1.0 · 27 September 2026 · Product direction requested by the user; implementation acceptance remains pending.
+Version 1.0 · 27 September 2026; status clarified 28 September. Core contracts have implementation
+and fake-provider evidence; live quality, billing and physical-device acceptance remain pending.
+See [implementation status](character-studio-status.md) and [the latest review](review-2026-09-28.md).
+
+[Current product requirements](current-product-requirements.md) govern the tablet/desktop
+interface: Create → Put it together, folded Scene details, and Make preview / Make final clip
+labels. They supersede older screen names and example labels below, not the approval, lineage,
+capability, money or safety invariants. In particular DF-02's explicit use-latest choice remains
+a requirement; the current UI's automatic switch after a scene edit is an open compliance gap.
 
 This is the current requirements addendum for Character Studio, canonical visual references and production video. It supersedes conflicting parts of D38/D39 (cast only discovered from story), D41 (text-to-video as the only Simple workflow), DM-1 (flat pricing) and the original external-generation-only scope. Other existing requirements remain in force. See [build plan](character-studio-build-plan.md), [architecture](media-generation-architecture.md) and [continuity experiment](spike/continuity-benchmark.md).
 

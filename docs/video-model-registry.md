@@ -30,10 +30,14 @@ Keep these responsibilities separate as integrations expand:
 - Job planner/runner: orchestration, retries, safety checks, persistence and assembly.
 - Character domain: approved looks, revisions and reference manifests.
 
-The initial registry change connected simple-mode selection to capability matching. Subsequent
-working-tree work adds six-family metadata, grouped selection, resolution-aware pricing and
-Seedance/Wan cast-image payloads. These are foundations, not completed Character Studio:
-canonical approval/versioning, a frame editor, mixed-media references and draft/final lineage
-remain planned. The new build plan puts canonical characters ahead of production rollout and
-reserves broad model choice for Advanced mode. No model IDs or provider-specific branches
-belong in the runner.
+As of 28 September, canonical look approval/versioning, frame controls, production snapshots
+and draft/final lineage exist. Six-family metadata, grouped Advanced selection and configured
+pricing feed the shared production planner. Mixed video/audio references and native provider
+draft completion remain planned; reference support is currently image-based.
+
+`video.rollout: "advanced"` gates newer endpoints; `verified_live: false` supplies an unverified
+label, not an independent hard gate. `VIDEO_FAMILY_ROLLOUT=all` overrides the rollout restriction.
+Do not equate availability with verified access, billing or visual quality. See
+[implementation status](character-studio-status.md) and [current architecture](architecture.md).
+Simple mode uses purpose-based Make preview / Make final clip actions rather than visible
+cost levels. No model IDs or provider-specific branches belong in the runner.

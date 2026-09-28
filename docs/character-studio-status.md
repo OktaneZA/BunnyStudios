@@ -1,11 +1,25 @@
 # Character Studio — implementation status
 
-27 September 2026. Records what was built against [the requirements](character-studio-requirements.md)
+Updated 28 September 2026. Records what was built against [the requirements](character-studio-requirements.md)
 and [build plan](character-studio-build-plan.md), and what is **verified** versus **pending**. A
 passing test here proves a contract (which pictures, in which order, for what price), not that a
 real model keeps a character consistent.
 
-## How it was checked
+## Current interface and acceptance limits
+
+Character Studio is reached through **Characters** in Create or a scene's missing-look action.
+Its short flow is Describe → Choose a picture → Ready, with **Use this look** and optional
+additional angles/history. One SceneComposer replaces the earlier competing quick-text and
+character-video cards. Approved references are used when compatible; words-only is explicit.
+The current UI targets tablet/desktop and labels generation Make preview / Make final clip.
+
+The latest UI pass passed the web build and 14 targeted browser tests with fake generation
+on an insecure LAN origin; updated Studio/design screenshots were inspected. Those checks
+do not establish live continuity or every DF requirement. In particular the automatic
+current-scene switch after editing a preview's scene differs from DF-02, and returning to the
+saved recipe can fail after that edit. See [the review](review-2026-09-28.md).
+
+## How it was checked on 27 September (historical run)
 
 - API: 131 tests against a real Postgres with a fake provider (`npm test -w @storyboard/api`),
   including `test/character-studio.test.ts` (10 acceptance tests) and
@@ -55,6 +69,6 @@ real model keeps a character consistent.
 - Existing character pictures became legacy candidates (migration 0009); no look was invented.
 - Production requires the scene's cast to be saved ("Yes, these are in this scene"); the story's
   guess is only a proposal (CR-01).
-- The quick text clip ("Quick clip from the words", cost levels) is kept beside the new
-  "Clip with your characters" card. Whether one card is clearer for a 10–15 year old is a
-  question for a real tablet session.
+- The earlier separate quick-text and character-video cards have been replaced by one
+  composer. Words-only generation remains an explicit option under More options. Real
+  tablet and teen sessions are still needed to validate the combined flow.

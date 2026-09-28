@@ -1,55 +1,56 @@
 # Bunny Studios
 
-A cartoon studio for a young creator. Write scenes in Story, make moving clips in Director,
-then put them together into a downloadable cartoon. Optional writing suggestions and scene
-sketches are proposals the creator chooses to accept. Director starts generation only when
-the creator asks, with a price shown first; finished clips join the cartoon in story order.
+A cartoon studio for creators aged 10-15, designed for tablet and desktop with Advanced
+controls for adults. **Create** combines scene writing, characters and clip generation;
+**Put it together** assembles chosen clips into a downloadable cartoon. Phone-specific
+refinements are outside the current product scope.
 
-Designed for a 10–15 year old on a tablet, with an Advanced mode for an adult. Runs as one
-container on a Synology NAS against an existing Postgres server.
+Runs as one application container on a Synology NAS with Postgres and persistent media
+storage. The Android Fire tablet wrapper loads the same web app. This describes local source;
+recent working-tree changes are not a claim about the deployed version.
 
-## Documents
+## Start here
 
-| Document | What it is |
+| Document | Purpose |
 |---|---|
-| [docs/character-studio-requirements.md](docs/character-studio-requirements.md) | Current requirements: approved character packs, visual revisions, story-aware video and draft/final |
-| [docs/character-studio-build-plan.md](docs/character-studio-build-plan.md) | Staged delivery: Character Studio before Seedance production, then drafts and Advanced alternatives |
-| [docs/media-generation-architecture.md](docs/media-generation-architecture.md) | Domain/schema contract, provider-neutral requests, adapters, persistent jobs and pricing |
-| [docs/usability-review.md](docs/usability-review.md) | Teen and tablet review, revised screen flow, changes and verification limits |
-| [docs/architecture.md](docs/architecture.md) | Current architecture, an honest review, and the target design |
-| [docs/working-in-this-repo.md](docs/working-in-this-repo.md) | Rules, conventions and the gotchas found the hard way |
-| [docs/build-plan-v1.1.md](docs/build-plan-v1.1.md) | Approved plan: decisions D1–D18, build sequence, spec defects fixed |
-| [docs/director-mode-plan-v1.md](docs/director-mode-plan-v1.md) | Director Mode: requirements DM-1–DM-30, decisions D27–D37, build stages for pictures, clips and the finished cartoon |
-| [docs/requirements-v1.0.md](docs/requirements-v1.0.md) | The original specification |
-| [docs/scene-thumbnails.md](docs/scene-thumbnails.md) | How AI thumbnails and "Improve for me" work, and their limits |
-| [docs/director-mode.md](docs/director-mode.md) | Director Mode as built: setup, shape, what is verified, limits |
-| [deploy/synology/README.md](deploy/synology/README.md) | Deploying, releasing, backing up and restoring on the NAS |
-| [docs/spike/continuity-benchmark.md](docs/spike/continuity-benchmark.md) | Current continuity experiment; earlier OpenArt fixtures remain available |
+| [Current product requirements](docs/current-product-requirements.md) | Current interface, device scope and acceptance criteria |
+| [Architecture](docs/architecture.md) | Current components/data flow, with the original review retained as history |
+| [Latest code and requirements review](docs/review-2026-09-28.md) | Open findings, requirement gaps and verification limits |
+| [Create workspace](docs/combined-scene-workspace.md) | Editing, autosave, preview/final and clip selection as implemented |
+| [Director implementation](docs/director-mode.md) | Setup, production workflow, runtime boundaries and limits |
+| [Character Studio requirements](docs/character-studio-requirements.md) | Canonical looks, reference contracts, lineage and money |
+| [Character Studio status](docs/character-studio-status.md) | Implemented contracts versus live-provider/physical-device evidence |
+| [Media architecture](docs/media-generation-architecture.md) | Implemented snapshot boundary and remaining target contracts |
+| [Working in this repo](docs/working-in-this-repo.md) | Conventions and operational gotchas |
+| [Deployment guide](deploy/synology/README.md) | Release, backup and restore |
+
+Earlier [build decisions](docs/build-plan-v1.1.md), [Director plan](docs/director-mode-plan-v1.md)
+and [original specification](docs/requirements-v1.0.md) remain historical decision records;
+apply the precedence described in the current requirements.
 
 ## What works today
 
-- Two accounts: an adult (Advanced mode) and a teen (Simple mode, child content policy always on).
-- Cartoons with a series number, drag-to-reorder, and a bin: deleting a cartoon or a scene is
-  logical, and "Put back" restores it with everything intact.
-- Scenes with a description, camera angle, time of day and mood; drag or arrow reordering with
-  server-side numbering; optimistic concurrency so two devices cannot overwrite each other.
-- "Improve for me" rewrites a scene description with story context; "Make a thumbnail" draws an
-  SVG sketch. Both go through a proposal the user accepts or cancels, with per-day limits and an
-  independent content review.
-- Copy a scene, or the whole cartoon, as text.
-- One-command release to the NAS with unit and browser tests, a pre-release database backup,
-  and live verification. Nightly backups on the NAS.
-- An Android app for the Amazon Fire HD 10 (`apps/android`): the same studio in a landscape
-  WebView with an icon, splash and offline screen, downloadable from the sign-in page.
+- Two configured accounts: adult and teen. Teen content policy stays enforced independently
+  of project choices; Advanced UI does not bypass server policy.
+- Cartoons and scenes with ordering, soft deletion and restoration. Create is the main entry;
+  View -> Manage scenes retains the detailed ordering/bin tools.
+- Inline scene writing with serial autosave, retained drafts, save/conflict recovery and
+  optional AI suggestions that require acceptance. Time/mood/camera sit in Scene details.
+- Film Strip/Scene Board and light/dark appearance. On landscape tablet/desktop, the priced
+  Make preview / Make final clip action sits above the player beside the editor.
+- Character Studio: generate/upload/refine candidates, approve immutable looks, pin selected
+  references to scenes, and retain older revisions. Additional reference views are optional.
+- Server-priced generation, durable jobs, safety review and allowance reservations. Frame and
+  character-reference workflows depend on compatible available endpoints and rollout gates.
+- New takes are shown promptly; the first allowed clip can fill an empty scene slot, while
+  replacement clips require selection. Together renders an MP4 with optional music, voice and
+  transitions, and exposes download. Scene/cartoon text copying is also implemented.
+- Release tooling, NAS backups and the Android Fire HD 10 wrapper.
 
-- **Director** (docs/director-mode.md): the cast is found from the story, each scene becomes a
-  picture and then a clip through fal.ai picture makers chosen from a data-driven catalogue,
-  every request is budgeted in real money and passed through three safety gates, and
-  "Put it together" renders the scenes with music, a voice track and three transitions into
-  one MP4 on the server.
-
-Not yet built: exports, continuity checks, the Director chat agent, AI voices. See the build plan
-and the Director Mode plan.
+Remaining work includes export packs, automated continuity checking, the Director chat agent,
+AI voices, mixed-media references and native provider draft completion. Live access/quality/
+billing for newly registered model families and physical tablet/teen usability remain separate
+acceptance work. See the latest review for current recipe-selection and copy issues.
 
 ## Running it locally
 
@@ -99,7 +100,9 @@ daily limit counts attempts, including failed or cancelled ones, and resets at m
 
 ```bash
 npm test -w @storyboard/vocabularies   # vocabulary file is the single authority (CV-1)
-npm test -w @storyboard/api            # 52 tests against the local Postgres
+npm test -w @storyboard/compiler       # pure compiler regressions
+npm test -w @storyboard/models         # catalogue/codegen consistency
+npm test -w @storyboard/api            # API tests against local Postgres
 npm run release -- --dry-run           # plus the browser suite against the built image
 ```
 
@@ -112,6 +115,8 @@ provider; they never spend model credits.
 
 ```
 packages/vocabularies/   vocabularies.json, the single authority for prompt phrases
+packages/compiler/      pure scene and character-sheet prompt compilation
+packages/models/        endpoint catalogue, capabilities and generated registry
 apps/api/                Fastify + Drizzle + Postgres; serves the built web app in production
 apps/web/                React + Vite; relative /api/v1 URLs; e2e/ holds the Playwright suite
 apps/android/            Fire HD 10 app: a WebView shell around the web app

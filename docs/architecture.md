@@ -1,10 +1,91 @@
-# Architecture: review and design
+# Architecture: current implementation and historical design
 
-> **Current media architecture (27 September 2026):** see
-> [the media-generation contract](media-generation-architecture.md) and
-> [Character Studio delivery plan](character-studio-build-plan.md). The review below is dated
-> 9 September; statements about missing jobs/providers/compiler describe that historical snapshot.
-> Production media now already has a Postgres-backed job/ledger foundation to extend.
+Reviewed 28 September 2026 against local source, including the UI changes in `e1a3df3`.
+Deployment state is not asserted. See [requirements](current-product-requirements.md),
+[media contracts](media-generation-architecture.md) and [open review findings](review-2026-09-28.md).
+
+## Current system
+
+One runtime container serves the built React web app, Fastify API and in-process job runner.
+Postgres stores domain data, job state and the allowance ledger. The disk ObjectStore holds
+owned media; ffmpeg/ffprobe prepare and assemble it. The Fire tablet application is a WebView
+wrapper around the same UI. Tablet and desktop are the current product targets.
+
+```mermaid
+flowchart LR
+  UI[Tablet / desktop React app] --> API[Fastify API]
+  API --> DB[(Postgres: scenes, looks, jobs, ledger)]
+  API --> Compiler[Pure prompt compiler]
+  API --> Plan[Capability planner and quote]
+  Plan --> DB
+  DB --> Runner[Claimed and fenced job runner]
+  Runner --> Provider[fal adapter / test fake]
+  Provider --> Review[Output review]
+  Review --> Store[ObjectStore and ffmpeg]
+  Store --> UI
+```
+
+| Responsibility | Current code |
+|---|---|
+| Navigation and UI | `apps/web/src/App.tsx`; Create in `screens/Director.tsx`, finish/download in `screens/Together.tsx` |
+| Scene editing and generation | `components/SceneComposer.tsx`; `useSceneText.ts` owns serial autosave, draft retention and conflict recovery |
+| Character approval | `components/CharacterStudio.tsx`, `routes/cast.ts`, `cast/looks.ts`; candidate assets and immutable approved revisions |
+| Reference binding | `shots/cast.ts`, `routes/production.ts`; saved shot cast and ordered look/asset/hash manifests |
+| Compilation | `packages/compiler`, `packages/vocabularies`, `shots/sync.ts`; server-authoritative instructions |
+| Models and routing | `packages/models/models.json`, generated registry, `generation/catalogue.ts`, `routes/production.ts` |
+| Snapshots and adaptation | `video/creativeVideoRequest.ts`, `video/adapters/catalogue.ts`, `generation/fal.ts` |
+| Durable execution and money | `jobs/runner.ts`, `generation/budget.ts`, `generation_jobs`, `generation_ledger` |
+| Composition and hosting | `director.ts` injects providers/store/review; `app.ts` registers routes, static files and runner lifecycle |
+
+`packages/compiler` and `packages/models` are implemented packages. The placeholder claims in
+this document's September 9 snapshot below are historical.
+
+## Current request and data flow
+
+1. Create selects one scene/shot. Name, action, time, mood and camera autosave with optimistic
+   versions; generation waits for persistence and refreshed shot data. Optional AI writing
+   produces a proposal which the creator must choose to apply.
+2. Production quote planning validates owned scene/shot inputs, cast and approved references,
+   frames and endpoint capabilities. It builds a versioned creative snapshot and quoted plan.
+3. The browser supplies the quote fingerprint and an idempotency key on submission. The server
+   replans inside an account-locked transaction, rejects a changed supplied fingerprint, then
+   creates the job and reserves allowance. The fingerprint is currently optional for legacy
+   API callers; this exception is recorded in the review.
+4. The runner claims persisted work, records submission/part IDs, polls with durable scheduling,
+   reviews outputs and stores results. Terminal writes are fenced to the claim owner. A restart
+   can resume known submitted work; ambiguous submission does not trigger a blind rebuy.
+5. Character results stay candidates until explicit look approval. The first allowed scene
+   video fills an empty hero slot; a new alternative requires **Use this clip** to replace it.
+6. Together resolves chosen clips in story order, reports omitted scenes and renders a
+   downloadable MP4 with optional music/recorded or uploaded voice and transitions.
+
+## Money, policy and history
+
+Reservation and job creation are atomic. Work that never reached a provider can be refunded.
+Successful work settles at a reported actual cost or an estimate. Submitted/ambiguous work
+without a usable result keeps its estimate with `costState: unknown`; local cancellation is
+not evidence of a provider refund. Safety review and user approval remain separate gates.
+
+Owned approved visual revisions and reference hashes preserve historical inputs. A final
+from a preview is a new quoted render, not native draft promotion. Source scene revisions
+support older-clip notices, but old jobs may lack this metadata. See the DF-02 UI mismatch in
+[the review](review-2026-09-28.md); the saved-recipe contract must not be inferred from labels.
+
+## Current limits and next work
+
+Keep the modular monolith. Extract focused frontend state hooks as SceneComposer evolves;
+retain server planning, one catalogue and one job/ledger domain. New queue infrastructure is
+not required by the accepted UI changes. Multi-instance behaviour, live reference continuity,
+actual provider billing and physical tablet interactions require their own evidence.
+Mixed-media reference input, native draft completion, automated continuity checking, export
+packs, the Director chat agent and AI voices remain outside the implemented core. MP4 download
+and text copying already exist and must not be described as unimplemented exports.
+
+## Historical review and target design - 9 September 2026
+
+Everything below records that earlier snapshot, including its unimplemented features and
+proposed decision sequence. It is retained for decision IDs and historical context; use the
+current sections above and linked contracts for implementation work.
 
 _Reviewed 9 September 2026 against the code as deployed to the home NAS._
 
@@ -12,7 +93,7 @@ This document has two halves. The first describes the system as it is and review
 honestly: what holds up, what is fragile, and what is missing. The second is the target
 design, with the changes ordered so each one can ship on its own through `npm run release`.
 
-## 1. The system today
+## 1. The system on 9 September 2026
 
 ### 1.1 Shape
 

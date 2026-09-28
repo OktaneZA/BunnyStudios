@@ -1,5 +1,9 @@
 # Teen and tablet usability review
 
+> Historical review of the 21 September interface. Its Story/Director split, cost levels and
+> 1100px layout recommendation are superseded by the [current requirements](current-product-requirements.md)
+> and [Create workspace](combined-scene-workspace.md). Test counts below remain dated evidence.
+
 Reviewed 21 September 2026 against the original requirements, build-plan decisions D1–D18,
 Director decisions D38–D41, the web implementation and screenshots in `docs/screenshots`.
 The primary audience remains ages 10–15 on desktop and tablet. The Android tablet wrapper

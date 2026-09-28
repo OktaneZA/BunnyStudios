@@ -1,5 +1,11 @@
 # Teen UI and flow review
 
+> Historical review and proposal from 27 September. The current interface uses **Create ->
+> Put it together**, explicit Make preview/Make final clip actions and folded Scene details.
+> Tablet and desktop are supported; phone-specific work is deferred. Use the
+> [current requirements](current-product-requirements.md), [workspace guide](combined-scene-workspace.md)
+> and [latest code review](review-2026-09-28.md) for current behaviour and unresolved gaps.
+
 Date: 27 September 2026. Status: implemented 27 September 2026, except where noted below. Not yet
 checked with teens or on a physical tablet.
 

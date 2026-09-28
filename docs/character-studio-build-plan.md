@@ -2,7 +2,20 @@
 
 Version 1.0 · 27 September 2026. Implements [requirements](character-studio-requirements.md) against the [architecture contract](media-generation-architecture.md).
 
-## 1. Current baseline versus target
+## Current status — 28 September 2026
+
+The staged plan below records the original delivery order. Canonical candidate approval,
+immutable look revisions, pinned shot bindings, frame/reference production planning,
+creative snapshots, lineage and submission-aware recovery now exist. The shared Create UI
+uses those contracts; see [current requirements](current-product-requirements.md),
+[implementation status](character-studio-status.md) and [the code review](review-2026-09-28.md).
+
+Remaining acceptance includes live model access/billing/continuity, physical tablet and teen
+sessions, mixed-media input and native draft completion. DF-02 has a frontend recipe-selection
+gap. Do not interpret an implemented stage or an older test count as completion of the full
+acceptance matrix. Tablet/desktop is the current device scope; phone-specific work is deferred.
+
+## 1. Baseline at the start of the 27 September plan (historical)
 
 This plan reflects local source, not deployed availability. A design document, catalogue entry or passing adapter test is not a completed production integration.
 

@@ -1,5 +1,10 @@
 # Scene thumbnails — implementation and code review
 
+> **Current entry points (28 September 2026):** Create contains **Let AI help** for writing.
+> Its **More options -> Scene sketch -> Open the full scene page** link exposes the optional
+> sketch workflow. Sketches remain separate from approved production references. See
+> [the workspace guide](combined-scene-workspace.md); the implementation history below is retained.
+
 Implemented 8 September 2026, scoped to D17 / TH-1–TH-6. The rest of the production prompt,
 cast editing, shot editing, and AI-writing roadmap remains separate.
 
