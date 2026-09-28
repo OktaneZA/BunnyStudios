@@ -1,7 +1,8 @@
-# Director Mode — how it is built, how to run it, and its limits
+# Director / Create: implementation and operations
 
-_Implemented 21 September 2026 against [director-mode-plan-v1.md](director-mode-plan-v1.md)
-(decisions D27–D40, requirements DM-1–DM-28). The Director agent (DM-29/30) is not built._
+Updated 28 September 2026 against local code. **Director** remains an internal route/module
+name; the main user-facing step is **Create**. See [current requirements](current-product-requirements.md),
+[workspace behaviour](combined-scene-workspace.md) and [code review](review-2026-09-28.md).
 
 ## Setup
 
@@ -15,96 +16,69 @@ _Implemented 21 September 2026 against [director-mode-plan-v1.md](director-mode-
 4. `STORAGE_ROOT` is where pictures, clips and renders are written (`./storage` locally; a NAS
    folder mounted at `/data/storage` in production, see `deploy/synology/docker-compose.yml`
    and `STORAGE_DIR` in its `.env`).
-5. `npm run db:migrate` applies `0006_director_mode`, then `npm run dev:api` and `npm run dev:web`.
+5. `npm run db:migrate` applies all pending migrations, then `npm run dev:api` and `npm run dev:web`.
 
-The model catalogue is `packages/models/models.json`. The six entries there are the ones the
-adult can switch on; their `provider_model` ids and `unit_cost_pence` are best-effort as of
-September 2026 and should be checked against fal.ai's price list when a key is first added.
-Editing the catalogue is a JSON change plus `npm run codegen -w @storyboard/models`; the test
-fails if a model's capabilities do not make sense for its kind.
+The model catalogue is `packages/models/models.json`. Edit the catalogue and run
+`npm run codegen -w @storyboard/models`; validation checks generated definitions and
+capabilities. Prices and availability are configured estimates, not independently verified
+live facts. See [the registry guide](video-model-registry.md) for rollout gates.
 
-## Shape
+## Current workflow
 
-```
-packages/models        the catalogue and its validator (D27)
-packages/compiler      the pure prompt compiler, 100% covered (DM-10)
-apps/api/src/generation  provider interface, fal adapter, fake provider, catalogue, budget,
-                         review (Claude), media (ffmpeg)
-apps/api/src/storage     ObjectStore (disk, memory) and upload sniffing/stripping
-apps/api/src/jobs        the runner (queue) and the timeline renderer
-apps/api/src/shots       one shot per scene, compiled and kept in sync (D34)
-apps/api/src/cast        the cast finder (Claude)
-apps/api/src/routes      director.ts (models, shots, jobs, heroes, media, budgets),
-                         cast.ts, timeline.ts
-apps/api/src/director.ts composition root; tests inject fakes here
-```
+Create combines scene text, accepted characters, style and length. Optional scene details,
+writing help and technical controls expand on request. The action explicitly says Make
+preview or Make final clip and includes the quoted estimate. The adjacent panel shows the
+result, selection state and other takes. Put it together assembles selected clips and offers
+Save video, with missing scenes identified and optional music, voice and timing controls.
 
-A generation request is one row in `generation_jobs`, created inside a transaction that locks
-the account row and reserves its estimated cost in `generation_ledger`. The runner claims rows
-with `UPDATE … RETURNING`, heartbeats while it polls the provider, downloads the results into the
-object store, extracts a poster frame for clips, runs the picture review, and writes `assets`.
-Picking a take (`POST /shots/:id/hero`) is the accept step; nothing becomes the scene's picture
-until then. A job is retried at most twice and only on a provider outage; anything that ends
-without a result refunds the reservation.
+There is one primary production path in SceneComposer; the earlier competing text-only and
+character-conditioned cards and cost-level controls are no longer the Simple-mode interface.
+Words-only, starting/ending pictures and direct-final requests remain explicit options.
+First-time cast confirmation and approval of character looks are separate from generation.
 
-The three safety gates (D32): the prompt is reviewed before submission; the provider's strict
-safety flag is requested for the teen account; every returned picture and two poster frames of
-every clip are reviewed before the child can see them. A rejected take is stored with its reason,
-hidden from the teen (the file route returns 404), and listed for the adult at
-`GET /projects/:id/held-back`. On the teen account all three gates fail closed: no reviewer, no
-generation.
+## Runtime ownership
 
-## What is verified
+| Code | Responsibility |
+|---|---|
+| `packages/compiler`, `packages/vocabularies` | Pure prompts and controlled vocabulary |
+| `packages/models`, `generation/catalogue.ts` | Endpoint metadata, availability and capability matching |
+| `routes/production.ts`, `shots/cast.ts`, `cast/looks.ts` | Quotes, snapshots, approved references and transactional submission |
+| `video/creativeVideoRequest.ts`, `video/adapters/catalogue.ts` | Persisted creative inputs and resolved provider adaptation |
+| `generation/fal.ts`, `generation/review.ts` | Shared queue transport and account-policy review |
+| `jobs/runner.ts`, `generation/budget.ts` | Claims, resumable provider work and allowance settlement |
+| `storage/`, `generation/media.ts`, `jobs/render.ts` | Owned media, posters and final assembly |
+| `director.ts`, `app.ts` | Dependency composition, route registration and runner lifecycle |
 
-- `apps/api/test/director.test.ts` (14 tests, real Postgres, fake provider, memory store, fake
-  reviewer and finder): shot compilation and sync; picture jobs end to end with settlement;
-  idempotent request keys; hero pick, media bin and timeline resolution; clip jobs with a real
-  one-second MP4 when ffmpeg is present (poster extraction and frame review), and the held-back
-  behaviour when it is not; the daily cap inside the reservation; gate 1 and gate 3; cancel with
-  refund; outage retries then failure with refund; cross-account 404s; the cast proposal, accept,
-  stale-story conflict, drawing a character and attaching its picture to scene jobs; upload
-  sniffing; the render job (a real MP4 when ffmpeg is present); adult budget settings.
-- `apps/api/test/generation-provider.test.ts` (31 tests): the provider contract against the fake
-  and the fal adapter with a scripted `fetch`, including every error mapping and that no upstream
-  body text reaches a message.
-- `packages/compiler` (52 tests, 100% coverage): golden files, the five-level lighting fallback,
-  dedupe, determinism over 100 runs, a source scan for impurity.
-- `packages/models`: catalogue validation.
+A production submit replans the request and compares a supplied quote fingerprint before
+reservation. The browser always supplies it; legacy callers may omit it. Account locking and
+an idempotency key protect job creation and spending. Separate paid attempts have separate
+reservations, even when linked through a preview/final generation group.
 
-- **Real fal.ai runs (21 September 2026, adult account, reviewer off):** FLUX Schnell made two
-  1024×576 pictures in 6 s; Nano Banana edit made a picture from a cast reference in 12 s; Wan 2.2
-  made a 3.4 s clip with a poster in 18 s; Kling 2.1 made a 5.0 s clip with a poster in 3 m 43 s.
-  Two catalogue mistakes were found and fixed by fal's validation detail (now logged server-side):
-  Wan wants `580p`/`720p`, Veo 3 wants `4s`/`6s`/`8s` at `720p`/`1080p`. Nano Banana edit refuses
-  a request with no reference pictures, so `requires_reference_images` is a capability and the
-  route says "give someone a picture in Cast" instead of submitting.
+The runner persists provider/part IDs and uses claim fencing. Unsubmitted failures can refund;
+submitted or ambiguous failures/cancellations retain estimated cost marked unknown. A result
+settles at an actual cost when known, otherwise an estimate. Never promise every failure is free.
+Character outputs become candidates; a successful job does not approve a canonical look.
+An allowed video fills an empty hero slot, but never replaces an existing chosen clip.
 
-- **Straight to clip (D41):** `GET /models/tiers` returns one text-to-video model per cost level
-  (low = Wan 2.2 5B, medium = Hailuo 02 Standard, high = Veo 3 Fast with sounds); a video job
-  needs no picture, and when its first allowed clip lands the runner sets the shot's
-  `hero_video_asset_id` so the timeline picks it up with no tap. Tested with fakes for both
-  tiers, the second-clip-does-not-replace rule, and the Advanced image-to-video path.
-- **Real Claude runs (21 September 2026, teen account):** gate 1 and gate 3 allowed two FLUX
-  pictures and a Wan clip (poster frames reviewed); the cast finder read the three beach scenes
-  and returned Timmy and Sister with the right scene numbers; "Draw Timmy" produced two reference
-  sheets; a Cast Picture job for scene 3 then carried Timmy's main picture automatically. One
-  fix: Anthropic's structured outputs reject `maxItems`, so the finder caps the list after parsing.
+## Limits and verification
 
-Not yet verified: Veo 3 and FLUX Dev end to end, and the browser flows on the Fire HD 10.
+- Simple mode edits one shot per scene. Multi-shot authoring is not a completed UI.
+- Character-reference and image-to-video tasks are implemented, but depend on endpoint
+  availability and rollout gates. New catalogue families remain Advanced-gated unless
+  configuration explicitly overrides that gate. Registration is not live verification.
+- A preview-based final is a new render. Native provider draft completion is unavailable;
+  references are images only. Mixed video/audio conditioning is not implemented.
+- Text-to-video may use planned parts and trimming; reference/frame workflows need compatible
+  native lengths. Quote details disclose generated seconds and parts. Neither continuity
+  nor a higher-quality final is guaranteed by the planner.
+- The first allowed preview may already be in the cartoon. A later final still needs
+  **Use this clip** to replace it. Recipe/current-scene selection gaps are in the review.
+- Voice is uploaded or browser-recorded; no AI voices. ffmpeg is required for assembly and
+  video review preparation. The runner remains in-process; multi-instance use is unverified.
+- Current targeted UI evidence: web build plus 14 fake-provider browser regressions on a LAN
+  origin. Earlier live checks on 21 September covered selected legacy FLUX, Nano Banana, Wan
+  and Kling paths, not all newly registered families. See Character Studio status for pending
+  access, billing and continuity work. Physical tablet and teen sessions remain pending.
 
-## Limits and decisions worth knowing
-
-- **One shot per scene in Simple mode.** Advanced mode's multi-shot editing has routes for
-  patching a shot but no UI for adding shots yet.
-- **Clips come straight from the text (D41).** Cast pictures are not passed to the clip makers
-  (none of the three tiers accept references); cast consistency comes from the cast descriptions
-  in the compiled prompt. The picture-first path still exists in the API for Advanced use.
-- **Places have no reference pictures** (DM-8). The scene text describes the place.
-- **Renders need ffmpeg.** Without it the render job fails with a message that says so; picture
-  and clip generation still work, but a clip for the teen account is held back because its frames
-  cannot be checked.
-- **The runner is in-process.** One container, one runner. A second container would also run a
-  runner, and claims are safe across instances, but nothing has been tested at that scale.
-- **The catalogue's fal model ids and prices are unverified until a key is added.** A wrong id
-  surfaces as "The picture maker could not use this request" on the first job; fix the JSON.
-- **Voice is upload or browser recording only** (D33). No AI voices.
+MP4 download exists. Export-pack workflows, automated continuity checking and the Director
+chat agent remain planned. No deployment or new paid-provider verification is implied here.

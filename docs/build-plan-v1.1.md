@@ -1,5 +1,10 @@
 # Storyboard Studio — Requirements Review & Build Plan (v1.1)
 
+> **28 September 2026 interface scope:** [Current product requirements](current-product-requirements.md)
+> govern Create -> Put it together and tablet/desktop support. The remaining phase descriptions
+> below are a historical delivery plan, not the current implementation inventory; see
+> [architecture](architecture.md) and [the latest review](review-2026-09-28.md).
+
 > **Current production-media sequence (27 September 2026):** follow the
 > [Character Studio build plan](character-studio-build-plan.md) and its
 > [requirements](character-studio-requirements.md). Canonical character approval and visual

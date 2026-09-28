@@ -7,6 +7,10 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+- Documentation review: current architecture and tablet/desktop requirements, two-step Create
+  workflow, production/registry status and submission-aware refunds. Preserve older plans as
+  historical records and track remaining preview-recipe, helper-copy and quote-contract gaps.
+
 - Create on tablets and desktops: fold time, mood and camera into Scene details with a
   summary; place the priced make action beside the editor above the player; label previews
   explicitly as "Make preview". Fix Characters contrast in light mode and use 44px detail chips.

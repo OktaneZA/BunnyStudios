@@ -1,6 +1,29 @@
 # Story-aware media generation — architecture contract
 
-27 September 2026. Target architecture for [Character Studio requirements](character-studio-requirements.md). This describes the intended contract, not a claim that every component has shipped.
+Contract established 27 September 2026; implementation map updated 28 September. See
+[current architecture](architecture.md), [requirements](character-studio-requirements.md) and
+[open review findings](review-2026-09-28.md). The implementation map below distinguishes code
+that exists from the broader target contract retained later in this document.
+
+## Implemented boundary as of 28 September
+
+- `db/schema.ts` includes character visual versions, reference candidates/references and
+  shot-character bindings. `cast/looks.ts` handles approved looks; jobs pin ordered asset hashes.
+- `CreativeVideoSnapshot` in `video/creativeVideoRequest.ts` persists prompt/compiler version,
+  optional source-scene revision, cast/look bindings, frames, output, endpoint/adapter and quote.
+  Its references currently support **image / character** only. The broader role/modality union
+  in the target sketch below is not an implemented promise.
+- `CreativeVideoRequest<Image>` is the resolved adapter input, not the stored snapshot type.
+  It contains readable images and output options; ownership/hash validation precedes adaptation.
+- `routes/production.ts` plans text-, image- and reference-to-video requests, returns a quote
+  fingerprint, and replans before job/reservation creation. The browser sends the fingerprint;
+  its optional API field remains a compatibility exception.
+- Runner claims, durable poll scheduling, submission ambiguity state and generation lineage
+  exist. Failed submitted work retains estimated cost as unknown rather than automatically
+  refunding. First allowed clips can fill empty slots; later replacements require selection.
+- A final from a preview is a newly quoted render. Native provider draft completion and mixed
+  video/audio references remain unavailable. Live endpoint/quality/billing verification is
+  independent of these implemented contracts.
 
 ## Preserve the existing domains
 
@@ -24,9 +47,11 @@ flowchart TD
   Takes --> Select[User selects a take]
 ```
 
-## Proposed schema additions
+## Schema contract (core additions implemented)
 
-All new records carry `account_id`; routes check project/shot ownership as well as individual asset ownership. Names below are implementation targets, subject to migration review; responsibilities and invariants are normative.
+New domain records carry `account_id`; routes check project/shot ownership as well as individual
+asset ownership. The table retains design responsibilities, not a field-for-field schema dump;
+`apps/api/src/db/schema.ts` is the source of truth for implemented columns.
 
 | Record | Additions / responsibility |
 |---|---|
@@ -41,7 +66,7 @@ All new records carry `account_id`; routes check project/shot ownership as well 
 
 Migration is additive: create supporting tables/nullable columns, backfill legacy references as awaiting confirmation, deploy compatible reads, then enforce new-write invariants. Old jobs without visual revisions remain readable and are labelled legacy; never fabricate a canonical revision for them. Soft deletion must not remove bytes required by retained job history.
 
-## Request boundary
+## Request boundary and broader target sketch
 
 The application request contains asset IDs. The runner resolves bytes or temporary delivery URLs only after ownership, approval and media validation. Provider field names never become Shot/Character fields.
 
@@ -70,7 +95,11 @@ interface ReferenceBinding {
 }
 ```
 
-This is the target persisted contract; the current `apps/api/src/video/creativeVideoRequest.ts` is a smaller runner-facing foundation. Snapshot serialization, asset resolution and adapter payload types remain distinct. Store endpoint, adapter version, random seed, resolved options and quote alongside the creative snapshot. Reproducibility means preserving inputs and provenance, not guaranteeing identical provider output.
+The example above is a broader target, despite its original `CreativeVideoRequest` name.
+The implemented persisted type is `CreativeVideoSnapshot`, and the resolved adapter type is
+`CreativeVideoRequest<Image>` as described above. Snapshot serialization, asset resolution
+and adapter payload types remain distinct. Provider seed/draft metadata is recorded when
+available. Reproducibility preserves inputs and provenance, not identical provider output.
 
 ## Code ownership
 

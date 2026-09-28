@@ -1,5 +1,10 @@
 # Teen UI follow-up
 
+> This is the earlier 28 September follow-up, before the combined/simplified workspace.
+> Its uncommitted-state descriptions and test counts are historical. New-result visibility,
+> allowance wording and the combined header have since changed. See the
+> [current workspace](combined-scene-workspace.md) and [latest review](review-2026-09-28.md).
+
 Reviewed commits `0689752` and `90b26bb`, the current components, and the committed Studio screenshots. The working tree was clean at the start. The fixes below are uncommitted.
 
 ## Resolved

@@ -1,52 +1,43 @@
-# Director workspace options
+# Create workspace layouts and appearance
 
-24 September 2026. Choose **Film Strip** or **Scene Board** in Director, then independently
-choose **White** or **Black**. Both preferences stay in this browser. The palette includes the
-page header, controls and dialogs; it does not change the generated clip's art style.
+Updated 28 September 2026. **View** chooses **Film Strip** or **Scene Board** and independent
+**White** or **Black** appearance. Preferences stay in the browser; they do not change the
+clip's art style. See [current requirements](current-product-requirements.md).
 
 | Design | Layout |
-| --- | --- |
-| Film Strip | Scene thumbnails in story order across the top, with transition controls between them. Select a scene to work in the split description/settings panel below. |
-| Scene Board | A responsive grid with thumbnails, descriptions, clip status and direct links to write missing descriptions or open clip settings. |
+|---|---|
+| Film Strip | Scene thumbnails in story order with transition shortcuts and Add scene at the end. Selecting a tile opens its editor. |
+| Scene Board | Scene cards in a responsive grid, with descriptions/status and direct access to the selected scene's workspace. |
 
-These replace the four initial design experiments, following the user's preferred references.
-The references guide the layout; they do not restore the removed extra-instructions field or
-the old duration choices. No batch-generation action is introduced by this visual change.
+The supported targets are tablet and computer. From 1000px the scene editor and action/player
+panel sit side by side; below that they stack. Phone-specific work is deferred. The top area
+contains the cartoon title, two-step navigation, progress, Characters and View. Characters
+uses theme colours so its text remains legible in light mode.
 
-**Movable panels** is available in both layouts. Float Scenes, Clip settings or Your clips,
-then drag its title bar or use arrow keys. Dock returns it to the page; Reset windows docks all.
+The editor contains scene text and optional Let AI help. **Scene details** starts folded,
+summarises selected time/mood/camera labels and opens 44px touch chips. Characters, Style and
+Length use short rows. The priced **Make preview** / **Make final clip** action is above the
+player rather than below the complete form. Allowance and price details stay with that action.
 
-Panels wrap on narrow screens. Floating controls disappear below 761px; resizing docks windows
-so controls cannot be left off-screen. Window positions reset on reload or when movement is disabled.
+More options holds sound, words-only, start/end frames, direct-final generation, instructions
+and the scene-sketch link; model/size selection is Advanced-only. This uses one production
+request path, not the former competing cards or visible cost-level choices.
 
-Five clip styles use the existing art vocabulary: 2D cartoon, Pixar-like 3D, soft anime,
-watercolour and clay animation. Selection saves the scene's style override using its version;
-the server recompiles the instructions. Existing clips are unchanged. The extra-instructions
-input is removed; previously saved instructions remain preserved.
+Movable panels can float Scenes, Clip settings or Your clips. Drag a title bar or use its
+arrow keys; Dock and Reset layout restore normal flow. Resizing docks panels. Floating
+controls remain hidden on narrow widths. This does not establish real-tablet drag quality.
 
-Every cost level offers 5, 10, 15 and 30 seconds. Providers still receive only their supported
-native durations. The planner minimises generated seconds and then the number of parts.
-The server joins parts and trims the end to the requested length. For example, Medium's
-15-second option generates 10 + 6 seconds and charges for 16 seconds. The quote explains this.
-Parts use the same scene instructions; motion can repeat or change at cuts. This is not a
-guarantee of continuous motion or character consistency across parts.
+Five clip styles use the existing vocabulary. A scene style change saves with its version
+and recompiles instructions; it does not regenerate an existing clip or approve a new look.
+Desired lengths are 5/10/15/30 seconds, subject to compatible routing. Text-video assembly may
+join/trim parts; reference/frame requests require compatible native lengths. Price details
+show generated seconds and potential cuts. No continuous motion or identity guarantee is made.
 
-Each provider part ID is saved on the job for retry/resume. Budget reservations include all
-generated seconds. Safety review samples the start and middle of each visible part. Generated
-parts are assembled with ffmpeg before being offered as one clip.
+## Evidence
 
-Verification uses fake providers and real ffmpeg; no paid generation was performed. Physical
-tablet dragging and visual continuity with real providers still need hands-on validation.
-Screenshots are in `screenshots/director-designs`.
-
-Current previews: `film-strip-white.png`, `film-strip-black.png`, `scene-board-white.png`,
-`scene-board-black.png`. Earlier screenshots in that folder show the initial design experiments.
-Both palettes and layouts were checked at 390, 768, 1024 and 1440px, including persistence across
-reload, scene selection, floating panels and the existing generation/assembly browser regressions.
-
-Checks passed: full workspace build, vocabulary/model validation, 52 compiler tests, 100 API
-tests and all 15 browser regressions. The five Director regressions passed again after final
-contrast fixes and adding Medium to the development fake catalogue. Layouts were checked at
-390, 768, 1024 and 1440px. Pointer dragging, arrow-key movement, reset and style persistence
-were exercised. A downloaded joined cartoon was verified as exactly 15 seconds, 1280×720,
-H.264/AAC. A transient failure on the second part was tested: the first part was not resubmitted.
+The latest local UI pass passed the web build and 14 targeted browser tests. Updated
+`docs/screenshots/director-designs/` and `docs/screenshots/studio/` captures show the new layout;
+light/dark tablet views were inspected. The existing Director regression also exercises
+multiple widths, theme/layout persistence and floating controls. Historical phone checks do
+not make phones a current acceptance target. Physical tablet, teen and real-model validation
+remain pending. The code review records remaining recipe-selection and helper-copy issues.

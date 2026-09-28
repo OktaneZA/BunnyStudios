@@ -1,5 +1,13 @@
 # Working in this repo
 
+## Current product and documentation authority
+
+Read [current product requirements](current-product-requirements.md) for the accepted **Create -> Put it together** workflow and tablet/
+desktop scope; phone-specific refinement is deferred. [The latest code review](review-2026-09-28.md) records current
+implementation gaps. Older plans are historical where superseded. Do not infer deployment
+or live-provider verification from a local build or catalogue entry.
+
+
 Read [build-plan-v1.1.md](build-plan-v1.1.md) first. Decisions D1–D18 there override the original
 spec wherever they disagree, and several are deliberate deviations rather than oversights.
 [architecture.md](architecture.md) records the current shape, a review, and the target design.
@@ -22,14 +30,15 @@ free. `npm test -w @storyboard/vocabularies` enforces this and fails the release
 **The prompt compiler must stay pure** (Phase 2, PC-1). No clock, no locale, no randomness, no I/O,
 no framework or DB imports. Same inputs, byte-identical output, in Node and in the browser.
 
-**The server is the sole compilation authority.** The client compiles only for live preview and
-never sends a compiled prompt back. This deliberately replaces PC-2b's client/server equality
+**The server is the sole compilation authority.** The current web UI displays server-compiled
+instructions and never sends a compiled prompt back as authority. This deliberately replaces PC-2b's client/server equality
 assertion, which would 409 on every save for anyone holding a stale JS bundle after a deploy.
 
-**AI never writes to a domain record directly** (§6.5, AI-1). Every operation produces an
-`AiProposal` that the user accepts. Scene thumbnails and "Improve for me" implement the
-field-scope lifecycle; the broader writing operations are still planned. The model API key
-lives only in the API environment.
+**AI story edits require acceptance.** Writing suggestions and scene sketches use `AiProposal`
+and apply only when chosen. Production media uses `generation_jobs`: character results remain
+candidates until explicit approval of a visual revision. The first allowed scene clip may fill
+an empty hero slot; subsequent clips require explicit selection. Never silently approve a
+character look or replace an existing selected clip. Provider credentials stay server-side.
 
 **`account_id` on every table, checked on every query** (NF-13). Never trust a client-supplied
 account id. Cross-account access returns 404, not 403; a 403 confirms the record exists.
@@ -101,7 +110,8 @@ against the fake provider. Never let a test reach a real provider or the Claude 
 
 **Money is reserved inside the job's transaction with the account row locked.** A new kind of
 generation must call `reserve()` from `generation/budget.ts` in that same transaction, and
-anything that ends without a result must `refund()`. The three safety gates (D32) fail closed
+refund only when work did not reach the provider. Submitted or ambiguous failures retain
+the estimate with unknown cost (`keepAsUnknown`); local cancellation is not a provider refund. The three safety gates (D32) fail closed
 on the teen account: no reviewer, no generation.
 
 **Windows: ffmpeg from winget is not on the PATH of an already-open shell**, and several

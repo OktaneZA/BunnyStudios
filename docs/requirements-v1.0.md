@@ -3,22 +3,14 @@
 **Version:** 1.0
 **Date:** 7 September 2026
 **Audience:** Development agent / engineering team
-**Status:** Ready for build
+**Status:** Historical baseline; apply the addenda below
 
-> **27 September 2026 addendum:** [Character Studio requirements](character-studio-requirements.md)
-> govern canonical character approval/versioning, production references, provider-neutral video,
-> draft/final and spending controls. See the [delivery plan](character-studio-build-plan.md).
-> This v1.0 document is historical; its external-generation-only statements are superseded.
-
-> **Current scope:** [build-plan-v1.1.md](build-plan-v1.1.md) decisions D1–D17 override this
-> original specification. D17 permits optional AI-generated rough thumbnails on scenes. Finished
-> artwork/video generation stays external, and importing finished pictures is optional. See
-> the plan's TH-1–TH-6 for the thumbnail workflow and revised first visual milestone.
-
-> **Later scope:** [Director Mode decisions](director-mode-plan-v1.md), especially D38–D41,
-> supersede the original external-generation-only workflow below: Story → Director clips →
-> Put it together → download. [The usability review](usability-review.md) records the current
-> teen/tablet screen flow and acceptance checks. This document remains the historical specification.
+> **Historical specification.** The external-generation-only scope and phone-first guidance
+> below are superseded. Use [current product requirements](current-product-requirements.md)
+> for tablet/desktop scope and Create -> Put it together; [Character Studio requirements](character-studio-requirements.md)
+> for canonical looks, production video and spending; and [build-plan decisions](build-plan-v1.1.md)
+> for earlier overrides. [Architecture](architecture.md) describes current implementation.
+> Retained requirement IDs remain applicable where no later decision supersedes them.
 
 ---
 

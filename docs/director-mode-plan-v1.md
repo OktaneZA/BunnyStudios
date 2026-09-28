@@ -1,5 +1,10 @@
 # Director Mode — Requirements & Build Plan (v1.0)
 
+> **28 September 2026:** [Current product requirements](current-product-requirements.md) supersede
+> earlier navigation and device guidance. Character approval, frame/reference requests and
+> draft/final lineage now exist in source; live rollout and quality remain separately gated.
+> See [implementation status](character-studio-status.md), not the future tense below.
+
 > **27 September 2026:** [Character Studio requirements](character-studio-requirements.md)
 > and [build plan](character-studio-build-plan.md) supersede conflicting D38/D39 cast-only
 > discovery, D41 text-only production and DM-1 flat-pricing rules. Manual character creation,
