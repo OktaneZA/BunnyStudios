@@ -5,7 +5,7 @@ import {
   director, formatPence, isActiveJob, seconds,
   type Asset, type GenerationSettings, type Job, type NeedsChoice, type Shot, type ShotCast, type VideoBody, type VideoPlan,
 } from '../director-api';
-import { ART_STYLE } from '@storyboard/vocabularies';
+import { ART_STYLE, PROMPT_VOCABULARIES } from '@storyboard/vocabularies';
 import { uuid } from '../uuid';
 import { sceneLink } from '../sceneState';
 import { ProblemBox } from './ProblemBox';
@@ -129,7 +129,7 @@ export function SceneComposer(props: Props) {
   }, [videoJobs, jobsLoaded]);
   const playing = clips.find((c) => c.asset.id === pickedClip) ?? clips.find((c) => c.asset.id === heroId) ?? (heroAsset ? { asset: heroAsset, job: null } : clips[0] ?? null);
   const playingJob = playing?.job ?? null;
-  // One button (simpler Create): "Make clip" makes a preview; with a finished preview on screen
+  // One button: "Make preview" makes a preview; with a finished preview on screen
   // it becomes "Make final clip" from that preview's recipe. "Use my current scene settings
   // instead" makes a fresh final; "Skip the preview" goes straight to a final.
   const previewOnScreen = playingJob?.intent === 'draft' && playingJob.status === 'ready' ? playingJob : null;
@@ -272,7 +272,15 @@ export function SceneComposer(props: Props) {
   const styleValue = scene.art_style ?? CLIP_STYLES.find(([v]) => shot?.compiled_prompt.startsWith(ART_STYLE.find((s) => s.value === v)!.prompt_phrase))?.[0] ?? null;
   const styleLabel = CLIP_STYLES.find(([v]) => v === styleValue)?.[1] ?? 'Not chosen';
   const plan = quote?.plan ?? null;
-  const actionLabel = purpose === 'preview' ? 'Make clip' : 'Make final clip';
+  const actionLabel = purpose === 'preview' ? 'Make preview' : 'Make final clip';
+  const detailSummary = ([
+    ['time_of_day', sceneText.text.time_of_day],
+    ['mood_atmosphere', sceneText.text.mood_atmosphere],
+    ['camera_angle', sceneText.text.camera_angle ?? 'eye_level'],
+  ] as const).flatMap(([vocabulary, value]) => {
+    const option = PROMPT_VOCABULARIES[vocabulary].find((entry) => entry.value === value);
+    return option && !('emitsNothing' in option && option.emitsNothing) ? [advanced ? option.label : option.friendlyLabel] : [];
+  }).join(' · ');
   // Money in plain words: what is left, next to the price on the button (not "about 9,000 clips").
   const allowance = settings?.allowance;
   const leftWords = allowance
@@ -324,21 +332,23 @@ export function SceneComposer(props: Props) {
                   }} />
               </div>
             </details>
-            {/* Time, mood and camera are part of the scene, so they sit right under it as buttons. */}
-            <div className="composer-rows scene-choices">
-              <span className="label-text" id={`time-${scene.id}`}>Time of day</span>
-              <OptionPicker vocabulary="time_of_day" value={sceneText.text.time_of_day} friendly={!advanced} compact label="Time of day" allowNone toggle
-                allowedValues={['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night']}
-                onChange={(value) => { sceneText.edit('time_of_day', value ?? 'unspecified'); void sceneText.flush(); }} />
-              <span className="label-text">Mood</span>
-              <OptionPicker vocabulary="mood_atmosphere" value={sceneText.text.mood_atmosphere} friendly={!advanced} compact label="Mood" allowNone toggle
-                allowedValues={advanced ? undefined : [...SIMPLE_MOODS, ...(sceneText.text.mood_atmosphere && !SIMPLE_MOODS.includes(sceneText.text.mood_atmosphere) ? [sceneText.text.mood_atmosphere] : [])]}
-                onChange={(value) => { sceneText.edit('mood_atmosphere', value); void sceneText.flush(); }} />
-              <span className="label-text">Camera</span>
-              <OptionPicker vocabulary="camera_angle" value={sceneText.text.camera_angle ?? 'eye_level'} friendly={!advanced} compact label="Camera"
-                allowedValues={['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter']}
-                onChange={(value) => { if (value) { sceneText.edit('camera_angle', value); void sceneText.flush(); } }} />
-            </div>
+            <details className="scene-settings scene-detail-options">
+              <summary><span>Scene details<span className="scene-detail-summary">{detailSummary}</span></span></summary>
+              <div className="composer-rows scene-choices">
+                <span className="label-text" id={`time-${scene.id}`}>Time of day</span>
+                <OptionPicker vocabulary="time_of_day" value={sceneText.text.time_of_day} friendly={!advanced} compact label="Time of day" allowNone toggle
+                  allowedValues={['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night']}
+                  onChange={(value) => { sceneText.edit('time_of_day', value ?? 'unspecified'); void sceneText.flush(); }} />
+                <span className="label-text">Mood</span>
+                <OptionPicker vocabulary="mood_atmosphere" value={sceneText.text.mood_atmosphere} friendly={!advanced} compact label="Mood" allowNone toggle
+                  allowedValues={advanced ? undefined : [...SIMPLE_MOODS, ...(sceneText.text.mood_atmosphere && !SIMPLE_MOODS.includes(sceneText.text.mood_atmosphere) ? [sceneText.text.mood_atmosphere] : [])]}
+                  onChange={(value) => { sceneText.edit('mood_atmosphere', value); void sceneText.flush(); }} />
+                <span className="label-text">Camera</span>
+                <OptionPicker vocabulary="camera_angle" value={sceneText.text.camera_angle ?? 'eye_level'} friendly={!advanced} compact label="Camera"
+                  allowedValues={['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter']}
+                  onChange={(value) => { if (value) { sceneText.edit('camera_angle', value); void sceneText.flush(); } }} />
+              </div>
+            </details>
           </div>
 
           {fromPreview ? (
@@ -503,7 +513,12 @@ export function SceneComposer(props: Props) {
               </details>
             </div>
           </details>
+        </section>
+      </DirectorPanel>
 
+      <DirectorPanel key={`clips-${layoutReset}`} title="Your clips" className="director-right" movable={movable}>
+        <section className="clip-make" aria-label="Make your clip">
+          <h4>Make your clip</h4>
           {quote?.needs && (
             <div className="notice needs" role="status">
               <p>{quote.needs.detail}</p>
@@ -537,11 +552,8 @@ export function SceneComposer(props: Props) {
           </div>
           {activeJob && <JobProgress job={activeJob} what="clip" />}
         </section>
-      </DirectorPanel>
-
-      <DirectorPanel key={`clips-${layoutReset}`} title="Your clips" className="director-right" movable={movable}>
         <h4>Your clip</h4>
-        {!playing && <p className="hint">No clip yet. Press Make clip: it makes a quick preview first.</p>}
+        {!playing && <p className="hint">Your clip will appear here. Start with a preview to try out your scene.</p>}
         {playing && (
           <>
             <div className="clip-stage">

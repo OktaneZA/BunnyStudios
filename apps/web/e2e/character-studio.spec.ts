@@ -38,7 +38,7 @@ test.describe('Character Studio', () => {
     await expect(portrait).toContainText('Using your chosen look');
     await expect(portrait.locator('img')).toBeVisible();
     await expect.poll(() => portrait.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-    await expect(page.getByRole('button', { name: /^Make clip · about/ })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
     await page.reload();
     await expect(portrait).toContainText('Using your chosen look');
     await expect(portrait.locator('img')).toBeVisible();
@@ -95,7 +95,7 @@ test.describe('Character Studio', () => {
     await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
     await page.getByRole('button', { name: 'Save characters' }).click();
     await expect(page.locator('.portrait', { hasText: 'Bunny' })).toContainText('Using your chosen look');
-    const main = page.getByRole('button', { name: /^Make clip · about/ });
+    const main = page.getByRole('button', { name: /^Make preview · about/ });
     await expect(main).toBeEnabled();
     await page.screenshot({ path: `${shots}/03-composer.png`, fullPage: true });
 
@@ -135,9 +135,9 @@ test.describe('Character Studio', () => {
     await page.route('**/api/v1/shots/*/videos/quote', (route) => route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ title: 'Unavailable', status: 503, detail: 'Try again.' }) }));
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Check price again' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Make clip/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
     await page.unroute('**/api/v1/shots/*/videos/quote');
     await page.getByRole('button', { name: 'Check price again' }).click();
-    await expect(page.getByRole('button', { name: /^Make clip · about/ })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
   });
 });

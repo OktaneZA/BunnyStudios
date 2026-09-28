@@ -82,9 +82,9 @@ test.describe('screen walkthrough', () => {
     await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
     await page.getByRole('button', { name: 'Save characters' }).click();
     await expect(page.locator('.portrait', { hasText: 'Bunny' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Make clip · about/ })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
     await shot(page, '10-composer-ready', errors);
-    await page.getByRole('button', { name: /^Make clip · about/ }).click();
+    await page.getByRole('button', { name: /^Make preview · about/ }).click();
     await expect(page.locator('.clip-label')).toContainText('In your cartoon', { timeout: 90_000 });
     await shot(page, '11-after-preview', errors);
 

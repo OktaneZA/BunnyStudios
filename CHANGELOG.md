@@ -7,6 +7,10 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+- Create on tablets and desktops: fold time, mood and camera into Scene details with a
+  summary; place the priced make action beside the editor above the player; label previews
+  explicitly as "Make preview". Fix Characters contrast in light mode and use 44px detail chips.
+
 - Character Studio: make a character, make or upload picture choices, say "This looks like …",
   add views made from that picture and approve the pack. Pictures stay ideas until chosen;
   approved looks never change by themselves, and older clips keep the look they used. Each

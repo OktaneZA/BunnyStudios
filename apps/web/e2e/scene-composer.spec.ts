@@ -14,7 +14,9 @@ test('write and generate in one workspace; later edits keep the clip and flag it
   await workspace(page);
   await page.getByLabel('Scene name', { exact: true }).fill('A leaf falls');
   await page.getByLabel('What happens?').fill('A red leaf lands on a quiet pond.');
-  // Time, mood and camera are buttons right under the scene (no section to open).
+  // Optional choices start folded, with selected values visible in the summary.
+  await expect(page.getByRole('group', { name: 'Time of day' })).toBeHidden();
+  await page.locator('.scene-detail-options > summary').click();
   const time = page.getByRole('group', { name: 'Time of day' });
   const mood = page.getByRole('group', { name: 'Mood' });
   const camera = page.getByRole('group', { name: 'Camera' });
@@ -25,7 +27,7 @@ test('write and generate in one workspace; later edits keep the clip and flag it
   await expect(mood.getByRole('button', { name: 'Tense' })).toHaveAttribute('aria-pressed', 'false');
   await mood.getByRole('button', { name: 'Warm and safe' }).click();
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /^Make clip · about/ }).click();
+  await page.getByRole('button', { name: /^Make preview · about/ }).click();
   await expect(page.locator('.clip-label')).toContainText('In your cartoon', { timeout: 60_000 });
   await page.getByLabel('What happens?').fill('A blue leaf lands on a quiet pond.');
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
@@ -37,6 +39,8 @@ test('write and generate in one workspace; later edits keep the clip and flag it
   await page.reload();
   await expect(page.getByLabel('What happens?')).toHaveValue('A blue leaf lands on a quiet pond.');
   await expect(page.getByLabel('Scene name', { exact: true })).toHaveValue('A leaf falls');
+  await expect(page.locator('.scene-detail-options > summary')).toContainText('Getting dark');
+  await page.locator('.scene-detail-options > summary').click();
   await expect(page.getByRole('group', { name: 'Time of day' }).getByRole('button', { name: 'Getting dark' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('group', { name: 'Camera' }).getByRole('button', { name: 'Looking down at them' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('group', { name: 'Mood' }).getByRole('button', { name: 'Warm and safe' })).toHaveAttribute('aria-pressed', 'true');
@@ -55,10 +59,10 @@ test('typing during a slow save is kept; generation waits; switching scenes save
   await page.getByLabel('What happens?').fill('First idea.');
   await expect.poll(() => captured).toBe(true);
   await page.getByLabel('What happens?').fill('The newest idea stays here.');
-  await expect(page.getByRole('button', { name: /^Make clip/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
   release();
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Make clip · about/ })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
   await page.getByLabel('What happens?').fill('Saved even when I immediately switch scenes.');
   await page.getByRole('button', { name: '+ Add scene', exact: true }).click();
   await expect(page.getByLabel('Scene name', { exact: true })).toHaveValue('Scene 2');
@@ -76,7 +80,7 @@ test('failed and conflicting saves keep text and offer explicit recovery', async
   });
   await page.getByLabel('What happens?').fill('Keep this idea after an error.');
   await expect(page.getByRole('button', { name: 'Retry save' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Make clip/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
   failure = 0;
   await page.getByRole('button', { name: 'Retry save' }).click();
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();

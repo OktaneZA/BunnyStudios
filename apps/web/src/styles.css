@@ -1045,7 +1045,7 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 /* One header row: progress, test-mode pill, Characters, View beside the title and steps. */
 .create-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .create-controls .director-progress { margin-right: auto; }
-.create-controls .cast-button { width: auto; min-height: var(--tap); padding: 0 14px; }
+.create-controls .cast-button { width: auto; min-height: var(--tap); padding: 0 14px; background: var(--selected-surface); color: var(--ink); }
 .create-controls .view-menu[open] { flex-basis: 100%; order: 10; }
 .test-mode-pill { font-size: .75rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid #6b5a2a; color: #f0dfb0; background: #2b2616; cursor: help; }
 /* Add scene is the last tile of the strip; a phone gets a scene drop-down instead. */
@@ -1059,7 +1059,7 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 }
 /* Scene choices as chips, right under the scene words. */
 .picker.compact { gap: 6px; }
-.picker.compact .chip { min-height: 38px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink-soft); font-weight: 650; font-size: .88rem; }
+.picker.compact .chip { min-height: var(--tap); padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink-soft); font-weight: 650; font-size: .88rem; }
 .picker.compact .chip.selected { border-color: var(--accent); background: var(--selected-surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
 .composer-rows { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px 12px; align-items: center; }
 .composer-rows > .label-text { color: var(--ink-soft); font-size: .85rem; font-weight: 700; }
@@ -1072,6 +1072,12 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .let-ai-help > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .let-ai-help[open] > summary { margin-bottom: 10px; }
 .money-left { font-weight: 700; }
+.scene-detail-summary { display: block; color: var(--ink-soft); font-size: .85rem; font-weight: 400; }
+.clip-make { border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 16px; }
+.clip-make .go-row { display: grid; gap: 10px; }
+.clip-make .go-row > p { margin: 0; }
+.clip-make .main-action { min-width: 0; width: 100%; }
+.clip-make .price-details { padding: 0; border: 0; background: transparent; }
 /* Scene and clip side by side from tablet width. */
 @media (min-width: 1000px) { .director-page .director-work { grid-template-columns: minmax(0, 1.45fr) minmax(260px, 1fr); } }
 @media (max-width: 600px) {

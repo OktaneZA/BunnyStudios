@@ -90,7 +90,7 @@ test.describe('Director', () => {
     await expect(page.getByRole('button', { name: /2 Sister wants a go/ })).toBeVisible();
     await expect(page.getByLabel('What happens?')).toHaveValue('');
     await expect(page.getByLabel('What happens?')).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Make clip/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
     await expect(page.getByText('Describe what happens in this scene first.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Your cartoon' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ })).toBeVisible();
@@ -156,7 +156,7 @@ test.describe('Director', () => {
     await page.getByRole('button', { name: '15 seconds', exact: true }).click();
     await page.getByText('Price details').click();
     await expect(page.getByText(/shorter clips joined together/)).toBeVisible();
-    await page.getByRole('button', { name: /^Make clip · about/ }).click();
+    await page.getByRole('button', { name: /^Make preview · about/ }).click();
     await expect(page.getByRole('button', { name: /1 Timmy finds the ball In the cartoon/ })).toBeVisible({ timeout: 90_000 });
 
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ }).click();
