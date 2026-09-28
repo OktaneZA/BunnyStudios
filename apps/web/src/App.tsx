@@ -76,9 +76,9 @@ export default function App() {
         <nav className="crumbs" aria-label="Back navigation">
           {/* One back link per screen. A scene opened from Make clips goes back to that scene's clip. */}
           {sceneRoute && (fromMake
-            ? <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to making clips</Link>
+            ? <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to Create</Link>
             : <Link to={`/projects/${sceneRoute.params.projectId}`}>← All scenes</Link>)}
-          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Make clips</Link>}
+          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Create</Link>}
           {(directorRoute || (storyRoute && storyRoute.params.projectId !== 'new')) && <Link to="/">← All cartoons</Link>}
         </nav>
         <Routes>

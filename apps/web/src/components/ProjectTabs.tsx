@@ -4,21 +4,20 @@ import type { ReactNode } from 'react';
 export type CartoonStep = 'write' | 'make' | 'together';
 
 const STEPS: { id: CartoonStep; n: number; label: string; path: string }[] = [
-  { id: 'write', n: 1, label: 'Write', path: '' },
-  { id: 'make', n: 2, label: 'Make clips', path: '/director' },
-  { id: 'together', n: 3, label: 'Put it together', path: '/together' },
+  { id: 'make', n: 1, label: 'Create', path: '/director' },
+  { id: 'together', n: 2, label: 'Put it together', path: '/together' },
 ];
 
 /**
- * The three steps of a cartoon, in the same place on every cartoon screen (including a
- * scene's own page, which belongs to Write). Two verbs only: Write and Make clips.
+ * Two steps: writing and clips share Create. Legacy writing tools belong to Create too.
  */
 export function ProjectTabs({ projectId, step }: { projectId: string; step: CartoonStep }) {
+  const active = step === 'write' ? 'make' : step;
   return (
     <nav className="tabs steps-nav" aria-label="Cartoon steps">
       {STEPS.map((s) => (
-        <Link key={s.id} to={`/projects/${projectId}${s.path}`} className={`tab${s.id === step ? ' active' : ''}`}
-          aria-current={s.id === step ? 'step' : undefined}>
+        <Link key={s.id} to={`/projects/${projectId}${s.path}`} className={`tab${s.id === active ? ' active' : ''}`}
+          aria-current={s.id === active ? 'step' : undefined}>
           <span className="step-n" aria-hidden="true">{s.n}</span>{s.label}
         </Link>
       ))}

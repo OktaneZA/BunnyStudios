@@ -28,7 +28,7 @@ export function Sheet({ title, lede, onClose, children, size = 'sheet' }: Props)
       if (e.key === 'Escape') { e.preventDefault(); close.current(); }
       if (e.key !== 'Tab') return;
       const targets = Array.from(panel.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]',
+        'button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
       ) ?? []).filter((el) => el.getClientRects().length > 0);
       const first = targets[0];
       const last = targets[targets.length - 1];

@@ -13,6 +13,8 @@ import { AssetImage, AssetVideo, TakeImage } from './AssetMedia';
 import { JobProgress } from './JobProgress';
 import { DirectorPanel } from './DirectorPanel';
 import { VideoModelPicker } from './VideoModelPicker';
+import { useSceneText } from '../useSceneText';
+import { OptionPicker } from './OptionPicker';
 
 const CLIP_STYLES = [
   ['2d_flat_vector', '2D cartoon'], ['3d_pixar_style', 'Pixar-like 3D'],
@@ -69,6 +71,7 @@ export function SceneComposer(props: Props) {
   const [retrying, setRetrying] = useState(false);
   const [retryNote, setRetryNote] = useState('');
   const [quoteRevision, setQuoteRevision] = useState(0);
+  const [quoteFailed, setQuoteFailed] = useState(false);
   const [pickedClip, setPickedClip] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -76,6 +79,12 @@ export function SceneComposer(props: Props) {
   const starting = useRef(false);
   const startInput = useRef<HTMLInputElement>(null);
   const endInput = useRef<HTMLInputElement>(null);
+  const sceneText = useSceneText(scene, async (updated) => {
+    onScene(updated);
+    const next = (await director.shots(updated.id)).data[0];
+    if (next) onShot(next);
+    setQuoteRevision((n) => n + 1);
+  });
 
   // ── Who is in the scene ──────────────────────────────────────────────────
   const loadCast = useCallback(async () => {
@@ -102,6 +111,18 @@ export function SceneComposer(props: Props) {
   const clips = videoJobs.flatMap((j) => j.results.map((a) => ({ asset: a, job: j })));
   const heroId = shot?.hero_video_asset_id ?? null;
   const heroAsset = heroId ? assetsById.get(heroId) ?? clips.find((c) => c.asset.id === heroId)?.asset ?? null : null;
+  // A clip that finishes while this scene is open is shown straight away, marked new, so the
+  // child sees the result (and does not pay again thinking nothing happened). Which clip is in
+  // the cartoon only changes when they press "Use this clip".
+  const seenReady = useRef<Set<string> | null>(null);
+  const [newClip, setNewClip] = useState<string | null>(null);
+  useEffect(() => {
+    const ready = videoJobs.filter((j) => j.status === 'ready' && j.results.length > 0);
+    if (!seenReady.current) { if (jobsLoaded) seenReady.current = new Set(ready.map((j) => j.id)); return; }
+    const fresh = ready.find((j) => !seenReady.current!.has(j.id));
+    for (const j of ready) seenReady.current.add(j.id);
+    if (fresh) { setPickedClip(fresh.results[0]!.id); setNewClip(fresh.results[0]!.id); }
+  }, [videoJobs, jobsLoaded]);
   const playing = clips.find((c) => c.asset.id === pickedClip) ?? clips.find((c) => c.asset.id === heroId) ?? (heroAsset ? { asset: heroAsset, job: null } : clips[0] ?? null);
   const playingJob = playing?.job ?? null;
   // After a preview, the next step is its final (review P0), unless the child starts fresh.
@@ -127,14 +148,15 @@ export function SceneComposer(props: Props) {
   // The price for exactly what the button will do (review P1: lead with the quoted total).
   useEffect(() => {
     setQuote(null);
-    if (!shot || !scene.description.trim() || needsConfirm || castChanged) return;
+    setQuoteFailed(false);
+    if (!shot || sceneText.pending || (!fromPreview && (!scene.description.trim() || needsConfirm || castChanged))) return;
     let on = true;
-    ask(body).then((q) => { if (on) setQuote(q); }).catch((err) => { if (on) setError(err); });
+    ask(body).then((q) => { if (on) setQuote(q); }).catch((err) => { if (on) { setError(err); setQuoteFailed(true); } });
     return () => { on = false; };
-  }, [shot?.id, shot?.version, scene.description, body, needsConfirm, castChanged, ask, quoteRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shot?.id, shot?.version, scene.description, body, needsConfirm, castChanged, ask, quoteRevision, sceneText.pending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabled = Boolean(settings?.enabled);
-  const off = !shot || !enabled || !jobsLoaded || busy || Boolean(activeJob);
+  const off = !shot || !enabled || !jobsLoaded || busy || Boolean(activeJob) || sceneText.pending;
 
   // ── Actions ──────────────────────────────────────────────────────────────
   async function refreshShot() {
@@ -167,7 +189,7 @@ export function SceneComposer(props: Props) {
   }
 
   async function chooseStyle(style: string) {
-    if (!shot || busy) return;
+    if (!shot || busy || sceneText.pending) return;
     setBusy(true); setSaveNote('Saving…'); setError(null);
     try {
       onScene(await api.updateScene(scene.id, { art_style: style }, scene.version));
@@ -193,7 +215,7 @@ export function SceneComposer(props: Props) {
 
   /** Spend: only what was quoted. A changed recipe or price comes back as a fresh quote (409). */
   async function make(q: Quote | null, after?: () => void) {
-    if (!shot || !q?.plan || starting.current) return;
+    if (!shot || !q?.plan || starting.current || sceneText.pending) return;
     starting.current = true;
     setBusy(true); setError(null);
     try {
@@ -240,9 +262,10 @@ export function SceneComposer(props: Props) {
   const plan = quote?.plan ?? null;
   const actionLabel = fromPreview ? 'Make final clip' : purpose === 'preview' ? 'Make preview' : 'Make final clip';
   const blockedReason = !enabled ? (settings?.message ?? 'Generation isn’t connected yet. Ask the account owner to set it up.')
-    : !scene.description.trim() ? 'Describe what happens in this scene first.'
-      : needsConfirm ? 'Check who is in this scene first.'
-        : castChanged ? 'Save the characters first.'
+    : sceneText.pending ? 'Save the scene before making a clip.'
+    : !fromPreview && !scene.description.trim() ? 'Describe what happens in this scene first.'
+      : !fromPreview && needsConfirm ? 'Check who is in this scene first.'
+        : !fromPreview && castChanged ? 'Save the characters first.'
           : activeJob ? 'A clip for this scene is being made. You can work on another scene.'
             : quote && !plan ? null : !quote ? 'Checking the price…' : null;
 
@@ -255,9 +278,47 @@ export function SceneComposer(props: Props) {
           </header>
           <ProblemBox error={error} />
 
-          <div className="composer-row">
-            <p className="scene-summary">{scene.description || 'Describe what happens before making a clip.'}</p>
-            <Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Edit scene</Link>
+          {fromPreview ? (
+            <section className="notice" aria-label="Settings from your preview">
+              <h4>Using the preview’s saved settings</h4>
+              <p>The scene, character looks and pictures are taken from this preview. Later scene edits are not included.</p>
+              {plan && <p>{plan.output.durationSeconds} seconds · {plan.output.audio ? 'Sound on' : 'Sound off'} · {plan.characters.map((c) => c.name).join(', ') || 'No saved characters'}</p>}
+              <button type="button" className="secondary" onClick={() => setFresh(true)}>Use my current scene settings instead</button>
+            </section>
+          ) : <>
+          <div className="scene-writing stack">
+            <label htmlFor={`scene-name-${scene.id}`}>Scene name</label>
+            <input id={`scene-name-${scene.id}`} maxLength={200} value={sceneText.text.title} onChange={(e) => sceneText.edit('title', e.target.value)} onBlur={() => void sceneText.flush()} />
+            <label htmlFor={`scene-action-${scene.id}`}>What happens?</label>
+            <textarea id={`scene-action-${scene.id}`} rows={5} maxLength={12000} value={sceneText.text.description} placeholder="Describe what your characters do in this scene." onChange={(e) => sceneText.edit('description', e.target.value)} onBlur={() => void sceneText.flush()} />
+            <p className="hint" role="status">{sceneText.status}</p>
+            <ProblemBox error={sceneText.error} />
+            {Boolean(sceneText.error) && <div className="row">
+              <button type="button" className="secondary" onClick={() => void sceneText.retry()}>{sceneText.conflict ? 'Save my changes' : 'Retry save'}</button>
+              {sceneText.conflict && <button type="button" className="secondary" onClick={() => void sceneText.retry(false)}>Use saved version</button>}
+            </div>}
+            <details className="scene-settings">
+              <summary>Camera, time and mood</summary>
+              <div className="stack scene-settings-body">
+                <div className="field">
+                  <span className="label-text">Camera angle</span>
+                  <OptionPicker vocabulary="camera_angle" value={sceneText.text.camera_angle ?? 'eye_level'} friendly={!advanced}
+                    allowedValues={['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter']}
+                    onChange={(value) => { sceneText.edit('camera_angle', value); void sceneText.flush(); }} />
+                </div>
+                <div className="field">
+                  <span className="label-text">What time of day is it?</span>
+                  <OptionPicker vocabulary="time_of_day" value={sceneText.text.time_of_day} friendly={!advanced}
+                    onChange={(value) => { sceneText.edit('time_of_day', value ?? 'unspecified'); void sceneText.flush(); }} />
+                </div>
+                <div className="field">
+                  <span className="label-text">What's the mood?</span>
+                  <OptionPicker vocabulary="mood_atmosphere" value={sceneText.text.mood_atmosphere} friendly={!advanced} allowNone
+                    onChange={(value) => { sceneText.edit('mood_atmosphere', value); void sceneText.flush(); }} />
+                </div>
+              </div>
+            </details>
+            <details className="scene-settings"><summary>More writing tools</summary><div className="scene-settings-body"><p className="hint">Open the full scene editor for writing help and scene sketches.</p><Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Edit scene</Link></div></details>
           </div>
 
           {/* Characters: their chosen looks are used automatically (review P1). */}
@@ -274,7 +335,7 @@ export function SceneComposer(props: Props) {
                       {c.look_status === 'none'
                         ? <button type="button" className="link-button" onClick={() => openStudio(c.character_id)}>Choose {c.name}’s look</button>
                         : c.newer_look_available ? <>Using an earlier look · <button type="button" className="link-button" disabled={busy} onClick={() => void useNewestLook(c.character_id)}>Use the newest</button></>
-                          : 'Using your chosen look'}
+                          : wordsOnly ? 'Picture not used for this clip' : useStart ? 'Using the starting picture for this clip' : 'Using your chosen look'}
                     </span>
                   </div>
                 ))}
@@ -328,7 +389,7 @@ export function SceneComposer(props: Props) {
             <div className="clip-styles" role="group" aria-label="Clip style">
               {CLIP_STYLES.map(([value, label]) => (
                 <button key={value} type="button" className={`style-card style-${value}`} aria-pressed={styleValue === value}
-                  disabled={!shot || busy || Boolean(activeJob)} onClick={() => void chooseStyle(value)}>
+                  disabled={!shot || busy || Boolean(activeJob) || sceneText.pending} onClick={() => void chooseStyle(value)}>
                   <span className="style-swatch" aria-hidden="true">●</span><span>{label}</span>
                 </button>
               ))}
@@ -336,6 +397,7 @@ export function SceneComposer(props: Props) {
             </div>
           )}
 
+          </>}
           {!fromPreview && (
             <div className="composer-field">
               <span className="label-text" id={`length-${scene.id}`}>Length</span>
@@ -348,21 +410,33 @@ export function SceneComposer(props: Props) {
           <div className="composer-field">
             <span className="label-text" id={`kind-${scene.id}`}>Make a</span>
             <div className="segmented" role="group" aria-labelledby={`kind-${scene.id}`}>
-              <button type="button" className={purpose === 'preview' ? 'on' : ''} aria-pressed={purpose === 'preview'} onClick={() => setPurpose('preview')}>Preview</button>
+              <button type="button" className={purpose === 'preview' ? 'on' : ''} aria-pressed={purpose === 'preview'} onClick={() => { setPurpose('preview'); setFresh(false); }}>Preview</button>
               <button type="button" className={purpose === 'final' ? 'on' : ''} aria-pressed={purpose === 'final'} onClick={() => setPurpose('final')}>Final</button>
             </div>
           </div>
 
-          <details className="more-options">
+          <details className="more-options scene-settings">
             <summary>More options</summary>
-            <div className="stack">
+            <div className="stack scene-settings-body">
+              <p className="hint">These settings apply to the next clip you make. Changing them updates the price on the make button below; your existing clip stays the same.</p>
               {!fromPreview && (
-                <label className="row"><input type="checkbox" checked={audio} onChange={(e) => setAudio(e.target.checked)} /> Add sounds (waves, footsteps, a bounce)</label>
+                <section className="clip-option-group" aria-label="Sound">
+                  <h4>Sound</h4>
+                  <label className="row"><input type="checkbox" checked={audio} onChange={(e) => setAudio(e.target.checked)} /> Add sounds (waves, footsteps, a bounce)</label>
+                  <p className="hint">Leave this off for a silent clip. Sound may change the price or which clip maker is available.</p>
+                </section>
               )}
               {hasCharacters && !fromPreview && (
+                <section className="clip-option-group" aria-label="Character pictures">
+                <h4>Character pictures</h4>
+                <p className="hint">Your chosen looks help keep characters recognisable. Use words only if you want to try a clip without those pictures.</p>
                 <label className="row"><input type="checkbox" checked={wordsOnly} onChange={(e) => setWordsOnly(e.target.checked)} /> Make it from the words only (no character pictures, so they may look different)</label>
+                </section>
               )}
               {!fromPreview && shot && (
+                <section className="clip-option-group" aria-label="Starting and ending pictures">
+                <h4>Starting and ending pictures</h4>
+                <p className="hint">Optional: guide how the clip begins and ends. A starting picture becomes the visual guide instead of the separate character pictures. Add a starting picture before an ending picture.</p>
                 <div className="frame-row">
                   <FrameSlot label="Starting picture" assetId={shot.start_frame_asset_id ?? null} on={useStart} disabled={busy} onToggle={setUseStart}
                     onUpload={() => startInput.current?.click()} onClear={() => void setFrame('start', undefined, null)} />
@@ -371,10 +445,13 @@ export function SceneComposer(props: Props) {
                   <input ref={startInput} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void setFrame('start', e.target.files?.[0])} />
                   <input ref={endInput} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void setFrame('end', e.target.files?.[0])} />
                 </div>
+                </section>
               )}
               {fromPreview && <button type="button" className="link-button" onClick={() => setFresh(true)}>Start a new final instead of using the preview</button>}
               {advanced && (
-                <>
+                <section className="clip-option-group" aria-label="Clip maker">
+                  <h4>Clip maker</h4>
+                  <p className="hint">Let the app choose, or pick a maker and picture size. Available lengths, sound and picture support vary by maker.</p>
                   <VideoModelPicker models={settings?.models ?? []} value={modelId ?? undefined} onChange={(id) => { setModelId(id); setResolution(null); }} />
                   {model && (
                     <div className="row">
@@ -385,11 +462,11 @@ export function SceneComposer(props: Props) {
                       <button type="button" className="link-button" onClick={() => { setModelId(null); setResolution(null); }}>Let the app choose</button>
                     </div>
                   )}
-                </>
+                </section>
               )}
-              <details className="prompt-details">
+              <details className="prompt-details scene-settings">
                 <summary>See the clip instructions</summary>
-                <p className="prompt-box">{shot?.compiled_prompt || 'Write what happens in this scene first.'}</p>
+                <p className="prompt-box">{fromPreview ? plan?.prompt ?? 'Loading the preview’s instructions…' : shot?.compiled_prompt || 'Write what happens in this scene first.'}</p>
               </details>
             </div>
           </details>
@@ -409,14 +486,15 @@ export function SceneComposer(props: Props) {
               {busy && <span className="ai-spinner" aria-hidden="true" />}{actionLabel}{plan ? ` · ${plan.words}` : ''}
             </button>
             {fromPreview && <p className="hint">Makes a new video from your preview’s recipe. It may look a little different from the preview.</p>}
-            {blockedReason && <p className="hint" role="status">{blockedReason}</p>}
+            {quoteFailed ? <p className="hint" role="status">Could not check the price. <button type="button" className="secondary" onClick={() => setQuoteRevision((n) => n + 1)}>Check price again</button></p>
+              : blockedReason && <p className="hint" role="status">{blockedReason}</p>}
             <p className="hint">{settings?.allowance_words}</p>
             {plan && (
-              <details className="price-details">
+              <details className="price-details scene-settings">
                 <summary>Price details</summary>
                 <p className="hint">
                   {plan.generated_seconds} seconds of video{plan.parts && plan.parts.length > 1 ? `, made as ${plan.parts.length} shorter clips joined together (cuts may be visible)` : ''}.
-                  {plan.reference_count > 0 ? ` Uses ${plan.reference_count} chosen ${plan.reference_count === 1 ? 'picture' : 'pictures'}.` : ' Made from the words only.'}
+                  {plan.task === 'image-to-video' ? ' Uses your starting picture and any selected ending picture.' : plan.reference_count > 0 ? ` Uses ${plan.reference_count} chosen ${plan.reference_count === 1 ? 'picture' : 'pictures'}.` : ' Made from the words only.'}
                   {' '}This is an estimate, not a bill.
                 </p>
               </details>
@@ -432,9 +510,11 @@ export function SceneComposer(props: Props) {
         {playing && (
           <>
             <div className="clip-stage">
+              {playing.job?.source_scene_version != null && scene.version > playing.job.source_scene_version && <p className="notice">You changed this scene since making this clip. It stays in your cartoon until you choose a replacement.</p>}
               <AssetVideo url={playing.asset.url} poster={playing.asset.poster_url} className="clip-player" />
               <p className="clip-label">
-                {playing.asset.id === heroId ? <b>In your cartoon</b> : <b>Not in your cartoon</b>}
+                {playing.asset.id === newClip && playing.asset.id !== heroId && <b className="new-clip">New · </b>}
+                {playing.asset.id === heroId ? <b>In your cartoon</b> : <b>Not in your cartoon yet</b>}
                 {playing.job?.intent ? ` · ${playing.job.intent === 'draft' ? 'Preview' : 'Final'}` : ''}
                 {playing.asset.duration_ms ? ` · ${seconds(playing.asset.duration_ms)}` : ''}
               </p>
@@ -467,7 +547,7 @@ export function SceneComposer(props: Props) {
           </div>
         )}
         {clips.length > 1 && (
-          <details className="other-versions">
+          <details className="other-versions scene-settings">
             <summary>Other versions ({clips.length - 1})</summary>
             <div className="take-grid">
               {clips.filter((c) => c.asset.id !== playing?.asset.id).map(({ asset, job }) => (

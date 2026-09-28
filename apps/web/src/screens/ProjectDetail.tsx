@@ -177,7 +177,7 @@ export function ProjectDetail() {
 
       <CartoonHeader projectId={project.id} title={project.title} step="write">
         {project.logline && <p className="lede">{project.logline}</p>}
-        <p className="hint">Write what happens in each scene. Then go to <b>Make clips</b>.</p>
+        <p className="hint">Manage the order of your scenes here. Write and make clips in <b>Create</b>.</p>
       </CartoonHeader>
 
       <ProblemBox error={error} />
@@ -192,7 +192,7 @@ export function ProjectDetail() {
           </div>
           {nextToDescribe ? (
             <Link className="btn" to={`/projects/${project.id}/scenes/${nextToDescribe.id}`}>Write the next scene</Link>
-          ) : <Link className="btn" to={`/projects/${project.id}/director`}>Make clips →</Link>}
+          ) : <Link className="btn" to={`/projects/${project.id}/director`}>Create →</Link>}
         </section>
       )}
 
@@ -251,7 +251,7 @@ export function ProjectDetail() {
                     index={i}
                     count={scenes.length}
                     busy={saving}
-                    item={timeline?.items.find((item) => item.scene_id === scene.id) ?? null}
+                    item={timeline ? timeline.items.find((item) => item.scene_id === scene.id) ?? null : undefined}
                     onMove={move}
                     onDelete={removeScene}
                   />

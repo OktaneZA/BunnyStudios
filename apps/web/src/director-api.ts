@@ -55,6 +55,7 @@ export interface Allowance {
 
 export interface GenerationSettings {
   enabled: boolean;
+  test_mode: boolean;
   review_enabled: boolean;
   models: ModelInfo[];
   allowance: Allowance;
@@ -122,6 +123,7 @@ export interface Job {
   /** A quick preview or a final video (production clips only). */
   intent?: 'draft' | 'final' | null;
   parent_job_id?: string | null;
+  source_scene_version?: number | null;
   attempt: number;
   error: string | null;
   results: Asset[];
@@ -243,6 +245,8 @@ export interface VideoBody {
 
 export interface VideoPlan {
   quote_key: string;
+  output: { durationSeconds: number; resolution: string; aspectRatio: string; audio: boolean };
+  prompt: string;
   pence: number;
   words: string;
   task: 'text-to-video' | 'image-to-video' | 'reference-to-video';

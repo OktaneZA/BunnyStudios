@@ -25,6 +25,8 @@ export function Together() {
   const [recording, setRecording] = useState(false);
   const [voiceStart, setVoiceStart] = useState(0);
   const recorder = useRef<MediaRecorder | null>(null);
+  const mounted = useRef(true);
+  const requestingMic = useRef(false);
   const chunks = useRef<Blob[]>([]);
   const musicInput = useRef<HTMLInputElement>(null);
   const voiceInput = useRef<HTMLInputElement>(null);
@@ -60,14 +62,19 @@ export function Together() {
   }
 
   async function startRecording() {
+    if (requestingMic.current || recorder.current?.state === 'recording') return;
+    requestingMic.current = true;
+    let stream: MediaStream | null = null;
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current) { stream.getTracks().forEach((t) => t.stop()); return; }
       const rec = new MediaRecorder(stream);
       chunks.current = [];
       rec.ondataavailable = (e) => { if (e.data.size) chunks.current.push(e.data); };
       rec.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
+        rec.stream.getTracks().forEach((t) => t.stop());
+        if (!mounted.current) return;
         const blob = new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' });
         setRecording(false);
         if (projectId && blob.size) void change(() => director.uploadVoiceover(projectId, blob, 'recording.webm', voiceStart * 1000));
@@ -76,16 +83,26 @@ export function Together() {
       recorder.current = rec;
       setRecording(true);
     } catch {
+      stream?.getTracks().forEach((t) => t.stop());
+      if (!mounted.current) return;
       setError(new ApiProblem({ type: 'about:blank', title: 'No microphone', status: 0, detail: 'The browser did not let us use the microphone. You can upload a recording instead.' }));
-    }
+    } finally { requestingMic.current = false; }
   }
 
   function stopRecording() { recorder.current?.stop(); }
 
   // Leaving the screen switches the microphone off and drops the unfinished recording.
-  useEffect(() => () => {
-    const rec = recorder.current;
-    if (rec && rec.state !== 'inactive') { rec.onstop = null; rec.stop(); rec.stream.getTracks().forEach((t) => t.stop()); }
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const rec = recorder.current;
+      if (rec) {
+        rec.onstop = null;
+        if (rec.state !== 'inactive') rec.stop();
+        rec.stream.getTracks().forEach((t) => t.stop());
+      }
+    };
   }, []);
 
   const renderUrl = useAssetUrl(timeline?.render?.url ?? null);

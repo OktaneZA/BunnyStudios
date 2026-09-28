@@ -16,6 +16,8 @@ interface Props {
   onClose: () => void;
   advanced: boolean;
   settingsMessage: string | null;
+  onLookChosen?: (characterId: string) => Promise<void>;
+  testMode?: boolean;
   /** Open straight on this character (from "Choose Fox's look" in a scene). */
   initialCharacterId?: string | null;
   /** Opened from a scene: the scene's name, for "Return to …". */
@@ -28,7 +30,7 @@ const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Nee
  * Your cast (plan D39) and Character Studio: find people in the story or add someone, then
  * choose how each of them looks. Choosing a look is always a deliberate step (CS-04).
  */
-export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene }: Props) {
+export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen }: Props) {
   const characters = cast?.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacterId ?? null);
   const [proposal, setProposal] = useState<CastProposal | null>(null);
@@ -89,6 +91,7 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
   return (
     <Sheet title="Your characters" lede="Describe each character and choose the picture that looks right. Chosen pictures help keep them the same in every scene; check each clip, as they can still change a little." onClose={onClose}>
       <ProblemBox error={error} />
+      {testMode && <p className="notice" role="status">Test mode: these are coloured placeholders, not character pictures. No provider credits are used.</p>}
 
       {needsFinding && !proposal && (
         <div className="cast-find card-soft">
@@ -158,7 +161,10 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
             <h4>{selected.name}</h4>
             {selected.scene_numbers.length > 0 && <p className="muted">In {selected.scene_numbers.length === 1 ? 'scene' : 'scenes'} {listNumbers(selected.scene_numbers)}.</p>}
           </div>
-          <CharacterStudio key={selected.id} characterId={selected.id} jobs={jobs} onJob={onJob} onChanged={() => void refreshCast().catch(() => {})}
+          <CharacterStudio key={selected.id} characterId={selected.id} jobs={jobs} onJob={onJob} onChanged={async (lookChosen) => {
+            if (lookChosen) await onLookChosen?.(selected.id);
+            await refreshCast().catch((err) => { setError(err); if (lookChosen) throw err; });
+          }}
             onReturn={returnToScene ? onClose : null} returnLabel={returnToScene ? "the scene" : null} />
         </>
       )}

@@ -33,6 +33,7 @@ export function Director({ account }: { account: Account }) {
   const [studioFor, setStudioFor] = useState<string | null>(null);
   const openStudio = useCallback((characterId: string) => { setStudioFor(characterId); setSheet('cast'); }, []);
   const [error, setError] = useState<unknown>(null);
+  const [addingScene, setAddingScene] = useState(false);
   const [design, setDesign] = useState(() => {
     try { return localStorage.getItem('director.design') === 'scene-board' ? 'scene-board' : 'film-strip'; } catch { return 'film-strip'; }
   });
@@ -112,12 +113,14 @@ export function Director({ account }: { account: Account }) {
         <div className="director-progress"><span>{inCartoon} of {scenes.length} scenes in your cartoon</span><progress aria-label="Scenes with clips" value={inCartoon} max={Math.max(1, scenes.length)} /></div>
       </CartoonHeader>
       <ProblemBox error={error} />
+      {settings?.test_mode && <p className="notice" role="status">Test mode: pictures and clips are coloured placeholders, not AI-generated characters. No provider credits are used.</p>}
 
       <section className="director-view-controls" aria-label="Director controls">
         <button type="button" className="cast-button" onClick={() => setSheet('cast')}>Characters · {castWords} ›</button>
         <details className="view-menu">
           <summary>View</summary>
           <div className="view-menu-body">
+            <Link className="btn secondary" to={`/projects/${project.id}`}>Manage scenes</Link>
             <div className="segmented" role="group" aria-label="Layout">
               {DESIGNS.map((item) => <button key={item.id} type="button" className={design === item.id ? 'on' : ''} aria-pressed={design === item.id} onClick={() => pickDesign(item.id)}>{item.name}</button>)}
             </div>
@@ -134,23 +137,48 @@ export function Director({ account }: { account: Account }) {
       </section>
 
       <DirectorPanel key={`scenes-${layoutReset}`} title="Scenes" className="director-overview" movable={movable}>
+        <button type="button" className="secondary add-scene-button" disabled={addingScene} onClick={async () => {
+          setAddingScene(true); setError(null);
+          try {
+            const created = await api.createScene(project.id, { title: `Scene ${scenes.length + 1}` });
+            setScenes((previous) => [...(previous ?? []), created]);
+            await refreshShot(created.id);
+            setSearch({ scene: created.id });
+            void refreshTimeline().catch(setError);
+          } catch (err) { setError(err); }
+          finally { setAddingScene(false); }
+        }}>{addingScene ? 'Adding scene…' : '+ Add scene'}</button>
         <DirectorScenes layout={design} scenes={scenes} shots={shots} jobs={jobs} assets={assetsById}
           selectedId={selected?.id} projectId={project.id} timeline={timeline} onTimeline={setTimeline}
           onSelect={(sceneId) => setSearch({ scene: sceneId })} />
       </DirectorPanel>
-      <div id="director-scene-work">
+      {/* While a new scene is being made the editor still shows the previous one: lock it, so
+          typing can never land in (and overwrite) the scene the child has just left. */}
+      <div id="director-scene-work" inert={addingScene || undefined} aria-busy={addingScene} className={addingScene ? 'is-switching' : undefined}>
         {selected ? <SceneComposer key={selected.id} scene={selected} projectId={project.id} shot={shots.get(selected.id)} settings={settings}
           jobs={jobs} jobsLoaded={jobsLoaded} assetsById={assetsById} advanced={advanced} movable={movable} layoutReset={layoutReset}
           castList={(cast?.data ?? []).map((c) => ({ id: c.id, name: c.name, lookId: c.look?.id ?? null }))}
           addJob={addJob} onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
           onScene={(updated) => setScenes((prev) => prev?.map((s) => s.id === updated.id ? updated : s) ?? null)}
           afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} openStudio={openStudio} />
-          : <p className="notice">Add a scene in <Link to={`/projects/${project.id}`}>Write</Link> first.</p>}
+          : null}
       </div>
 
       {sheet === 'cast' && (
         <CastSheet projectId={project.id} cast={cast} models={settings?.models ?? []} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
-          onClose={() => { setSheet(null); setStudioFor(null); }} advanced={advanced} settingsMessage={settings?.message ?? null}
+          onClose={() => { setSheet(null); setStudioFor(null); }} advanced={advanced} settingsMessage={settings?.message ?? null} testMode={settings?.test_mode}
+          onLookChosen={studioFor && selected ? async (characterId) => {
+            // Approval from a scene applies only to that scene; other scenes keep their pinned looks.
+            const currentShot = (await director.shots(selected.id)).data[0];
+            if (!currentShot) return;
+            const currentCast = await director.shotCast(currentShot.id);
+            if (currentCast.saved && currentCast.characters.some((c) => c.character_id === characterId)) {
+              await director.saveShotCast(currentShot.id, currentCast.characters.map((c) => ({
+                character_id: c.character_id, look: c.character_id === characterId ? 'current' : c.look_id ?? 'none', outfit_label: c.outfit_label,
+              })), currentCast.version);
+            }
+            await refreshShot(selected.id);
+          } : undefined}
           initialCharacterId={studioFor} returnToScene={studioFor ? selected?.title ?? 'the scene' : null} />
       )}
     </div>

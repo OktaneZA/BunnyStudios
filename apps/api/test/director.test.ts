@@ -121,6 +121,7 @@ test('settings list the enabled models, the allowance and plain words', async ()
   assert.equal(r.statusCode, 200, r.body);
   const body = r.json();
   assert.equal(body.enabled, true);
+  assert.equal(body.test_mode, true, 'fake providers are clearly identified to the UI');
   assert.deepEqual(body.models.map((m: { id: string }) => m.id), ['quick_picture', 'clip_low', 'clip_high', 'move_maker']);
   const tiers = (await app.inject({ method: 'GET', url: '/api/v1/models/tiers', headers: token() })).json().data;
   assert.deepEqual(tiers.map((m: { tier: string; id: string }) => [m.tier, m.id]), [['low', 'clip_low'], ['high', 'clip_high']], 'one clip maker per cost level, in order');

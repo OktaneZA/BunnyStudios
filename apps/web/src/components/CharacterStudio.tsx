@@ -11,7 +11,7 @@ interface Props {
   jobs: Job[];
   onJob: (job: Job) => void;
   /** Tell the cast list something changed (a look approved, traits saved). */
-  onChanged: () => void;
+  onChanged: (lookChosen?: boolean) => void | Promise<void>;
   /** Opened from a scene: offer to go straight back to it once the look is chosen. */
   onReturn?: (() => void) | null;
   returnLabel?: string | null;
@@ -42,7 +42,11 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   const [pack, setPack] = useState<Set<string>>(new Set());
   const [changing, setChanging] = useState<Candidate | null>(null);
   const [changeNote, setChangeNote] = useState('');
-  const [prices, setPrices] = useState<{ portrait?: string; view?: string }>({});
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [priceFailed, setPriceFailed] = useState(false);
+  const [priceRevision, setPriceRevision] = useState(0);
+  const [refinePrice, setRefinePrice] = useState<{ key: string; words: string } | null>(null);
+  const making = useRef(false);
   const [editing, setEditing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
@@ -73,10 +77,30 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   useEffect(() => {
     if (!character) return;
     let on = true;
-    director.quoteCharacterJob(character.id, { intent: 'portrait', count: 2 }).then((q) => on && setPrices((p) => ({ ...p, portrait: q.words }))).catch(() => {});
-    if (look) director.quoteCharacterJob(character.id, { intent: 'view', view: 'side' }).then((q) => on && setPrices((p) => ({ ...p, view: q.words }))).catch(() => {});
+    setPrices({}); setPriceFailed(false);
+    const requests: [string, StudioJobBody][] = [['portrait', { intent: 'portrait', count: 2 }]];
+    if (look) for (const view of studio?.views ?? []) {
+      if (view.value !== 'main') requests.push([view.value, { intent: 'view', view: view.value }]);
+    }
+    for (const [key, body] of requests) {
+      director.quoteCharacterJob(character.id, body).then((q) => { if (on) setPrices((p) => ({ ...p, [key]: q.words })); })
+        .catch(() => { if (on) setPriceFailed(true); });
+    }
     return () => { on = false; };
-  }, [character?.id, look?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [character?.id, look?.id, priceRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refineKey = JSON.stringify([character?.id, changing?.id, changeNote.trim()]);
+  useEffect(() => {
+    setRefinePrice(null);
+    if (!character || !changing || !changeNote.trim()) return;
+    let on = true;
+    const timer = setTimeout(() => {
+      director.quoteCharacterJob(character.id, { intent: 'refine', candidate_id: changing.id, note: changeNote.trim() })
+        .then((q) => { if (on) setRefinePrice({ key: refineKey, words: q.words }); })
+        .catch(() => { if (on) setPriceFailed(true); });
+    }, 350);
+    return () => { on = false; clearTimeout(timer); };
+  }, [refineKey, priceRevision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When a picture job for this character finishes, reload the choices.
   const myJobs = useMemo(() => jobs.filter((j) => j.target_entity_type === 'character' && j.target_entity_id === characterId), [jobs, characterId]);
@@ -109,10 +133,14 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   }
 
   async function make(body: StudioJobBody) {
-    if (!character) return;
-    if (!(await saveWords())) return;
-    const job = await run(() => director.drawCharacter(character.id, body, uuid()));
-    if (job) { onJob(job); setChanging(null); setChangeNote(''); }
+    const quoted = body.intent === 'refine' ? refinePrice?.key === refineKey : Boolean(prices[body.intent === 'view' ? body.view! : 'portrait']);
+    if (!character || !quoted || making.current) return;
+    making.current = true;
+    try {
+      if (!(await saveWords())) return;
+      const job = await run(() => director.drawCharacter(character.id, body, uuid()));
+      if (job) { onJob(job); setChanging(null); setChangeNote(''); }
+    } finally { making.current = false; }
   }
 
   async function useStoryWords() {
@@ -141,7 +169,10 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   async function useThisLook() {
     if (!character || !picked) return;
     const approved = await run(() => director.approveLook(character.id, { main_asset_id: picked, pictures: [{ asset_id: picked, role: 'main' }] }, character.version));
-    if (approved) { setPicked(null); setEditing(false); await load(); onChanged(); }
+    if (approved) {
+      try { await onChanged(true); setPicked(null); setEditing(false); await load(); }
+      catch (err) { setError(err); }
+    }
   }
 
   /** "Add these angles": the current look plus the chosen extra angles. */
@@ -151,12 +182,17 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
     const keep = look.references.map((r) => ({ asset_id: r.asset.id, role: r.role }));
     const added = studio.candidates.filter((c) => pack.has(c.id)).map((c) => ({ asset_id: c.asset.id, role: c.view_role }));
     const approved = await run(() => director.approveLook(character.id, { main_asset_id: main.asset.id, pictures: [...keep, ...added] }, character.version));
-    if (approved) { setPack(new Set()); await load(); onChanged(); }
+    if (approved) {
+      try { await onChanged(true); setPack(new Set()); await load(); }
+      catch (err) { setError(err); }
+    }
   }
 
   async function goBackTo(l: Look) {
     if (!character) return;
-    if (await run(() => director.selectLook(character.id, l.id, character.version))) { await load(); onChanged(); }
+    if (await run(() => director.selectLook(character.id, l.id, character.version))) {
+      try { await onChanged(true); await load(); } catch (err) { setError(err); }
+    }
   }
 
   if (!studio || !character) return <><ProblemBox error={error} />{!error && <p className="muted">Opening the studio…</p>}</>;
@@ -173,6 +209,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   return (
     <div className="studio stack">
       <ProblemBox error={error} />
+      {priceFailed && <p className="hint" role="status">Some prices could not be checked. <button type="button" className="secondary" onClick={() => setPriceRevision((n) => n + 1)}>Check prices again</button></p>}
       <p className={`look-status look-${character.look_status}`} role="status">{statusWords}</p>
 
       {character.story_suggestion && (
@@ -201,10 +238,10 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
 
           <details className="studio-more">
             <summary>Add more angles (optional)</summary>
-            <p className="hint">Made from the chosen picture. {prices.view ? `About ${prices.view.replace(/^about /, '')} each.` : ''}</p>
+            <p className="hint">Made from the chosen picture. Each button shows its price.</p>
             <div className="view-buttons">
               {angleOptions.map((v) => (
-                <button key={v.value} type="button" className="secondary" title={v.help} disabled={busy || Boolean(activeJob)} onClick={() => void make({ intent: 'view', view: v.value })}>{v.label}</button>
+                <button key={v.value} type="button" className="secondary" title={v.help} disabled={busy || Boolean(activeJob) || !prices[v.value]} onClick={() => void make({ intent: 'view', view: v.value })}>{v.label}{prices[v.value] ? ` · ${prices[v.value]}` : ' · checking price…'}</button>
               ))}
             </div>
             {activeJob && <JobProgress job={activeJob} what="pictures" />}
@@ -271,8 +308,8 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
               </div>
             </details>
             <div className="row">
-              <button type="button" disabled={busy || Boolean(activeJob) || !traits.description.trim()} onClick={() => void make({ intent: 'portrait', count: 2 })}>
-                Make 2 pictures{prices.portrait ? ` · ${prices.portrait}` : ''}
+              <button type="button" disabled={busy || Boolean(activeJob) || !traits.description.trim() || !prices.portrait} onClick={() => void make({ intent: 'portrait', count: 2 })}>
+                Make 2 pictures{prices.portrait ? ` · ${prices.portrait}` : ' · checking price…'}
               </button>
               <button type="button" className="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>Upload a picture</button>
               <input ref={fileInput} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadPicture(e.target.files?.[0])} />
@@ -299,8 +336,8 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
                   <label htmlFor="studio-change">What should be different in this picture?</label>
                   <input id="studio-change" value={changeNote} maxLength={300} placeholder="Example: floppier ears" onChange={(e) => setChangeNote(e.target.value)} />
                   <div className="row">
-                    <button type="button" disabled={busy || !changeNote.trim() || Boolean(activeJob)} onClick={() => void make({ intent: 'refine', candidate_id: changing.id, note: changeNote.trim() })}>
-                      Make a changed picture{prices.view ? ` · ${prices.view}` : ''}
+                    <button type="button" disabled={busy || !changeNote.trim() || Boolean(activeJob) || refinePrice?.key !== refineKey} onClick={() => void make({ intent: 'refine', candidate_id: changing.id, note: changeNote.trim() })}>
+                      Make a changed picture{refinePrice?.key === refineKey ? ` · ${refinePrice.words}` : ''}
                     </button>
                     <button type="button" className="secondary" onClick={() => setChanging(null)}>Cancel</button>
                   </div>

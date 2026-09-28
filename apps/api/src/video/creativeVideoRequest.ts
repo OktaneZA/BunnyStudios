@@ -44,6 +44,8 @@ export interface FrameBinding {
 export interface CreativeVideoSnapshot {
   schemaVersion: typeof CREATIVE_SNAPSHOT_VERSION;
   shotId: string;
+  /** Scene revision used for these instructions; absent on older recipes. */
+  sceneVersion?: number;
   task: VideoTaskName;
   intent: GenerationIntent;
   /** Server compiled (CR-05); the browser never supplies it. */

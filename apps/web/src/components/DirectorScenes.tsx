@@ -5,7 +5,7 @@ import { director, isActiveJob, seconds, type Asset, type Job, type Shot, type T
 import { TakeImage } from './AssetMedia';
 import { TransitionChip, TransitionPopover } from './Transitions';
 import { ProblemBox } from './ProblemBox';
-import { SCENE_STATE_WORDS, sceneLink, sceneState } from '../sceneState';
+import { SCENE_STATE_WORDS, sceneState } from '../sceneState';
 
 /** One scene list, shown as either the film strip or the scene board. */
 export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId, projectId, timeline, onTimeline, onSelect }: {
@@ -29,7 +29,7 @@ export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId
       <Link className="btn secondary" to={`/projects/${projectId}/together`}>Put it together →</Link>
     </header>
     <ProblemBox error={error} />
-    {!scenes.length && <p className="notice">Add scenes in <Link to={`/projects/${projectId}`}>Write</Link> and they appear here.</p>}
+    {!scenes.length && <p className="notice">Add a scene, describe what happens, then make its clip.</p>}
     <div className="scene-overview-list">
       {scenes.map((scene, index) => {
         const shot = shots.get(scene.id);
@@ -55,7 +55,7 @@ export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId
               </span>
             </button>
             {layout === 'scene-board' && <div className="overview-actions">
-              {!scene.description.trim() ? <Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Write this scene</Link>
+              {!scene.description.trim() ? <button type="button" className="secondary" onClick={() => { onSelect(scene.id); document.getElementById('director-scene-work')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>Write this scene</button>
                 : <button type="button" className="secondary" onClick={() => {
                   onSelect(scene.id);
                   document.getElementById('director-scene-work')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

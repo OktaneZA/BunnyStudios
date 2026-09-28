@@ -367,6 +367,7 @@ test('a draft and a separately accepted final keep lineage, sound, their own quo
   assert.equal(draft.statusCode, 202, draft.body);
   await runner.drain();
   const draftRow = await jobRow(draft.json().id);
+  assert.equal(typeof draft.json().source_scene_version, 'number', 'new clips record the scene revision for the editor');
   assert.equal(draftRow.intent, 'draft');
   assert.equal(draftRow.modelId, 'seedance_25_refs', 'the preview went to the cheapest compatible maker');
 
@@ -379,6 +380,10 @@ test('a draft and a separately accepted final keep lineage, sound, their own quo
   assert.equal(final.statusCode, 202, final.body);
   assert.equal(final.json().plan.new_render, true, 'another maker is a new render, not an upscale (DF-03)');
   assert.equal(final.json().plan.native_completion, 'unavailable');
+  assert.equal(final.json().source_scene_version, draft.json().source_scene_version, 'a final from a preview keeps the original scene revision');
+  assert.equal(final.json().plan.output.audio, true, 'the UI summary reports the saved sound setting');
+  assert.equal(final.json().plan.output.durationSeconds, 5);
+  assert.equal(final.json().plan.prompt, (draftRow.request as JobRequest).creative!.prompt, 'the UI shows the saved instructions, not later scene edits');
   const twice = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/videos`, headers: { ...token(), 'idempotency-key': key }, payload: { purpose: 'final', duration_seconds: 5, from_job_id: draftRow.id } });
   assert.equal(twice.statusCode, 200, 'clicking twice made one paid job');
   const finalRow = await jobRow(final.json().id);

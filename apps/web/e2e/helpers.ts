@@ -22,6 +22,14 @@ export async function createCartoon(page: Page, title: string) {
   await page.getByLabel("What's it called?").fill(title);
   await page.getByRole('button', { name: 'Create cartoon' }).click();
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
+  await expect(page).toHaveURL(/\/director$/);
+  const steps = page.getByRole('navigation', { name: 'Cartoon steps' });
+  await expect(steps.getByRole('link')).toHaveCount(2);
+  await expect(steps.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'step');
+  await expect(steps.getByRole('link', { name: 'Write', exact: true })).toHaveCount(0);
+  // Older editing/ordering tests still exercise the optional scene manager.
+  await page.getByText('View', { exact: true }).click();
+  await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
 }
 
 export async function addScene(page: Page, title: string) {

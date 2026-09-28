@@ -72,9 +72,9 @@ test.describe('Director', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Write', exact: true }).click();
+    await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
     await expect(page.locator('html')).not.toHaveAttribute('data-director-theme');
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-director-theme', 'white');
   });
   test('the Director tab reads the storyboard: scene strip, cost levels and selected scene', async ({ page }) => {
@@ -83,11 +83,11 @@ test.describe('Director', () => {
     await createCartoon(page, title);
     await addScene(page, 'Timmy finds the ball');
     await addScene(page, 'Sister wants a go');
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
     await expect(page.getByRole('heading', { name: /Scene 1 · Timmy finds the ball/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /2 Sister wants a go/ })).toBeVisible();
-    await expect(page.getByText('Describe what happens before making a clip.')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Edit scene' })).toBeVisible();
+    await expect(page.getByLabel('What happens?')).toHaveValue('');
+    await expect(page.getByLabel('What happens?')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
     await expect(page.getByText('Describe what happens in this scene first.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Your cartoon' })).toBeVisible();
@@ -107,7 +107,7 @@ test.describe('Director', () => {
     await page.getByLabel('Scene description').fill('Milo finds a map under a tree.');
     await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
     await expect(page.getByRole('heading', { name: /Scene 1 · Find the map/ })).toBeVisible();
-    await expect(page.locator('.scene-summary')).toHaveText('Milo finds a map under a tree.');
+    await expect(page.getByLabel('What happens?')).toHaveValue('Milo finds a map under a tree.');
     await expect(page.locator('.prompt-details')).not.toHaveAttribute('open');
     await page.getByRole('link', { name: 'Put it together →' }).click();
     const missing = page.getByRole('region', { name: 'Scenes missing from your cartoon' });
@@ -119,7 +119,7 @@ test.describe('Director', () => {
   test('the cast sheet contains keyboard focus and returns it when closed', async ({ page }) => {
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E cast access'));
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
     const opener = page.locator('.cast-button');
     await opener.click();
     const dialog = page.getByRole('dialog', { name: 'Your characters' });
@@ -144,7 +144,7 @@ test.describe('Director', () => {
     await page.getByRole('link', { name: 'Timmy finds the ball', exact: true }).click();
     await page.getByLabel('Scene description').fill('Timmy spots a red beach ball on the sand.');
     await page.getByRole('link', { name: /All scenes/ }).click();
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Make clips', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
 
     const saved = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes('/scenes/'));
     await page.getByRole('button', { name: 'Change', exact: true }).click();
@@ -172,9 +172,9 @@ test.describe('Director', () => {
     await addScene(page, 'Follow the map');
     const steps = page.getByRole('navigation', { name: 'Cartoon steps' });
     // Write is lit on the board and on a scene's own page.
-    await expect(steps.getByRole('link', { name: 'Write', exact: true })).toHaveAttribute('aria-current', 'step');
+    await expect(steps.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'step');
     await page.getByRole('link', { name: 'Find the map', exact: true }).click();
-    await expect(steps.getByRole('link', { name: 'Write', exact: true })).toHaveAttribute('aria-current', 'step');
+    await expect(steps.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'step');
     await expect(page.getByText('Scene 1 of 2').first()).toBeVisible();
     // The arrows move between scenes; the dock stays on screen at tablet size.
     await page.getByRole('button', { name: 'Next scene' }).click();
@@ -182,15 +182,17 @@ test.describe('Director', () => {
     await page.getByLabel('Scene description').fill('Milo follows the map to the pond.');
     await expect(page.getByRole('button', { name: /Make this scene.s clip/ })).toBeInViewport();
     await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
-    await expect(steps.getByRole('link', { name: 'Make clips', exact: true })).toHaveAttribute('aria-current', 'step');
+    await expect(steps.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'step');
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();
     // Writing from Make clips returns to the same scene's clip, not to the board.
+    await page.getByText('More writing tools', { exact: true }).click();
     await page.getByRole('link', { name: 'Edit scene' }).click();
     await expect(page.getByRole('heading', { name: 'Follow the map' })).toBeVisible();
-    await page.getByRole('link', { name: /Back to making clips/ }).click();
+    await page.getByRole('link', { name: /Back to Create/ }).click();
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();
     // The board shows the same state words as the film strip.
-    await steps.getByRole('link', { name: 'Write', exact: true }).click();
+    await page.getByText('View', { exact: true }).click();
+    await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
     await expect(page.locator('.scene-row').nth(0)).toContainText('Needs a description');
     await expect(page.locator('.scene-row').nth(1)).toContainText('No clip yet');
   });

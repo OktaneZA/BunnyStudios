@@ -311,6 +311,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
 
     const snapshot: CreativeVideoSnapshot = {
       schemaVersion: CREATIVE_SNAPSHOT_VERSION, shotId: shot.id, task, intent: body.purpose === 'preview' ? 'draft' : 'final',
+      ...(base ? (base.sceneVersion === undefined ? {} : { sceneVersion: base.sceneVersion }) : { sceneVersion: scene.version }),
       prompt, negativePrompt: base?.negativePrompt ?? shot.compiledNegativePrompt, compilerVersion: base?.compilerVersion ?? TEMPLATE_VERSION,
       startFrame, endFrame, references, characters: manifest?.characters ?? [],
       output: { durationSeconds: nativeSeconds, resolution, aspectRatio, audio },
@@ -337,6 +338,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       quote_key: createHash('sha256').update(JSON.stringify({ creative: p.snapshot, pricing: p.quote.snapshot })).digest('hex'),
       pence: p.quote.pence, words: `about ${pence(p.quote.pence)}`,
       task: p.snapshot.task, intent: p.snapshot.intent,
+      output: p.snapshot.output, prompt: p.snapshot.prompt,
       model_id: advanced ? p.model.id : null, model_label: advanced ? p.model.label : null,
       parts: p.parts, generated_seconds: generated,
       characters: p.snapshot.characters.map((c) => ({ character_id: c.characterId, name: c.name, look_version: c.visualVersion })),

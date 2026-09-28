@@ -83,6 +83,7 @@ export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
     task: j.task,
     intent: j.intent,
     parent_job_id: j.parentJobId,
+    source_scene_version: (j.request as JobRequest).creative?.sceneVersion ?? null,
     attempt: j.attempt,
     error: j.status === 'failed' ? j.errorDetail : null,
     results: visible.map(presentAsset),
@@ -150,6 +151,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const cheapestClip = catalogue.cheapest('video');
     return {
       enabled: enabled.length > 0,
+      test_mode: enabled.some((m) => String(m.provider).startsWith('fake')),
       review_enabled: review.enabled,
       models: enabled.map((m) => presentModel(m, advanced)),
       allowance: a,

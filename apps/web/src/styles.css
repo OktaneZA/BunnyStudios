@@ -820,7 +820,13 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .overview-actions { display: flex; justify-content: flex-end; padding: 4px 10px 10px; }
 .overview-actions button, .overview-actions .btn { font-size: .8rem; padding-inline: 12px; }
 #director-scene-work { margin-top: 14px; scroll-margin-top: 12px; }
-.director-page .director-work { display: block; }
+.director-page .director-work { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); }
+@media (max-width: 1100px) { .director-page .director-work { grid-template-columns: minmax(0, 1fr); } }
+.scene-writing { display: grid; gap: 8px; min-width: 0; }
+.scene-writing > * { margin: 0; }
+.scene-writing > * + * { margin-top: 0; }
+.scene-writing textarea { min-height: 140px; resize: vertical; }
+.scene-writing > summary, .scene-writing summary { cursor: pointer; min-height: var(--tap); padding: 10px 0; }
 .director-page .director-main { width: 100%; }
 .director-page .director-main > .work-head { margin: 0; padding: 18px 20px 0; background: var(--surface); border: 1px solid var(--line); border-bottom: 0; border-radius: 16px 16px 0 0; }
 .director-page .director-main > .work-head h3 { margin: 0; }
@@ -974,6 +980,8 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .confirm-cast { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: var(--selected-surface); }
 .cast-editor { display: grid; gap: 10px; width: 100%; }
 .more-options > summary, .price-details > summary, .other-versions > summary, .studio-more > summary, .together-extras > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; font-weight: 700; }
+.more-options > summary::before, .price-details > summary::before, .other-versions > summary::before, .studio-more > summary::before, .together-extras > summary::before { content: '▸'; margin-right: 8px; }
+.more-options[open] > summary::before, .price-details[open] > summary::before, .other-versions[open] > summary::before, .studio-more[open] > summary::before, .together-extras[open] > summary::before { content: '▾'; }
 .more-options .stack { gap: 12px; margin-top: 8px; }
 .main-action { min-width: 240px; font-size: 1.05rem; }
 .clip-stage { display: grid; gap: 6px; }
@@ -987,3 +995,48 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .view-menu-body { position: static; margin-top: 8px; box-shadow: none; min-width: 0; }
 .view-menu[open] { flex-basis: 100%; }
 .clip-styles > p { grid-column: 1 / -1; }
+
+/* Shared scene sections: consistent surfaces in both director themes. */
+.director-work .scene-settings,
+.composer > .composer-field {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--control-surface);
+}
+.composer > .composer-field { align-items: flex-start; }
+.composer > .composer-field > .label-text { color: var(--pale); padding-top: 8px; }
+.director-work .scene-settings > summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  gap: 8px;
+  color: var(--pale);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.director-work .scene-settings > summary::-webkit-details-marker { display: none; }
+.director-work .scene-settings > summary::before { content: '▸'; margin: 0; }
+.director-work .scene-settings[open] > summary::before { content: '▾'; }
+.director-work .scene-settings > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.director-work .scene-settings[open] > summary { margin-bottom: 12px; }
+.composer .clip-option-group { min-width: 0; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 10px; }
+.composer .clip-option-group h4, .composer .clip-option-group p { margin: 0; }
+.composer .clip-option-group label.row { display: flex; align-items: flex-start; flex-wrap: nowrap; gap: 10px; min-height: var(--tap); }
+.composer .clip-option-group input[type="checkbox"] { flex: 0 0 auto; margin-top: 6px; }
+.composer .frame-row { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
+.composer .frame-slot { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+@media (max-width: 600px) {
+  .composer > .composer-field { flex-direction: column; }
+  .composer > .composer-field > .label-text { padding-top: 0; }
+  .composer .composer-cast { width: 100%; }
+  .composer .segmented { max-width: 100%; flex-wrap: wrap; }
+}
+
+/* A scene is being added: the old editor is locked and dimmed until the new one appears. */
+#director-scene-work.is-switching { opacity: .45; pointer-events: none; }
+
+.add-scene-button { margin-bottom: 14px; }
+.clip-label .new-clip { color: var(--success); }
