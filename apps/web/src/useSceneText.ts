@@ -104,6 +104,13 @@ export function useSceneText(scene: Scene, onSaved: (scene: Scene) => Promise<vo
       await flush();
     } catch (err) { setError(err); }
   }
-  return { text, edit, flush, retry, conflict, error, pending: dirty || working || Boolean(error),
+  /** Save now, and refuse to continue unless the words on screen are the saved words. */
+  async function settle() {
+    await flush();
+    if (halted.current || !same(live.current, committed.current)) {
+      throw new ApiProblem({ status: 409, type: 'about:blank', title: 'Save your scene first', detail: 'Your words are not saved yet. Fix the save problem above, then try again. Your text is still here.' });
+    }
+  }
+  return { text, edit, flush, settle, retry, conflict, error, pending: dirty || working || Boolean(error),
     status: error ? 'Not saved — your text is kept here.' : !text.title.trim() ? 'Give this scene a name.' : dirty || working ? 'Saving…' : saved ? 'Saved' : '' };
 }

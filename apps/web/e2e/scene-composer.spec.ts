@@ -106,3 +106,42 @@ test('typing while a new scene is being added never overwrites the previous scen
   await expect(page.getByLabel('What happens?')).toHaveValue('The first scene must keep these words.');
   await expect(page.getByLabel('Scene name', { exact: true })).toHaveValue('Keep me');
 });
+
+test('Let AI help improves the scene in Create; nothing changes until the suggestion is chosen', async ({ page }) => {
+  test.skip(!process.env.E2E_FAKE_GENERATION, 'requires fake generation');
+  await workspace(page);
+  const suggestion = 'A small white rabbit tiptoes through moonlit grass, ears twitching, toward a sleeping farmer.';
+  let askedWith = '';
+  // Only the AI replies are faked (tests never call Claude); saving the scene is real.
+  await page.route('**/api/v1/settings/ai', (route) => route.fulfill({ json: { thumbnails_enabled: false, improve_enabled: true, daily_limit: 30, message: null } }));
+  await page.route('**/api/v1/scenes/*/description-proposals**', async (route) => {
+    const request = route.request();
+    const url = request.url();
+    if (request.method() === 'GET' && /description-proposals$/.test(url)) return route.fulfill({ json: { proposal: null } });
+    if (request.method() === 'POST' && /description-proposals$/.test(url)) {
+      const sceneId = url.split('/scenes/')[1]!.split('/')[0]!;
+      askedWith = (await (await page.request.get(`/api/v1/scenes/${sceneId}`, { headers: { authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('storyboard.token'))}` } })).json()).description;
+      return route.fulfill({ json: { id: 'p1', status: 'ready', preview: null, error: null, text: suggestion } });
+    }
+    if (request.method() === 'POST' && url.endsWith('/accept')) {
+      // Stand in for the server applying the accepted text to the scene.
+      const sceneId = url.split('/scenes/')[1]!.split('/')[0]!;
+      const auth = { authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('storyboard.token'))}` };
+      const scene = await (await page.request.get(`/api/v1/scenes/${sceneId}`, { headers: auth })).json();
+      await page.request.patch(`/api/v1/scenes/${sceneId}`, { headers: { ...auth, 'if-match': String(scene.version) }, data: { description: suggestion } });
+      return route.fulfill({ json: { status: 'accepted' } });
+    }
+    return route.fulfill({ json: { status: 'cancelled' } });
+  });
+  await page.reload();
+  await page.getByLabel('What happens?').fill('Bunny sneaks past the farmer.');
+  await page.getByText('Let AI help', { exact: true }).click();
+  await page.getByRole('button', { name: 'Improve for me' }).click();
+  await expect(page.getByText(suggestion)).toBeVisible();
+  expect(askedWith, 'the words were saved before asking for help').toBe('Bunny sneaks past the farmer.');
+  await expect(page.getByLabel('What happens?')).toHaveValue('Bunny sneaks past the farmer.');
+  await page.getByRole('button', { name: 'Use this description' }).click();
+  await expect(page.getByLabel('What happens?')).toHaveValue(suggestion);
+  await page.reload();
+  await expect(page.getByLabel('What happens?')).toHaveValue(suggestion);
+});

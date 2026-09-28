@@ -15,6 +15,7 @@ import { DirectorPanel } from './DirectorPanel';
 import { VideoModelPicker } from './VideoModelPicker';
 import { useSceneText } from '../useSceneText';
 import { OptionPicker } from './OptionPicker';
+import { SceneImprover } from './SceneImprover';
 
 const CLIP_STYLES = [
   ['2d_flat_vector', '2D cartoon'], ['3d_pixar_style', 'Pixar-like 3D'],
@@ -297,6 +298,22 @@ export function SceneComposer(props: Props) {
               <button type="button" className="secondary" onClick={() => void sceneText.retry()}>{sceneText.conflict ? 'Save my changes' : 'Retry save'}</button>
               {sceneText.conflict && <button type="button" className="secondary" onClick={() => void sceneText.retry(false)}>Use saved version</button>}
             </div>}
+            <details className="scene-settings let-ai-help">
+              <summary>Let AI help</summary>
+              <div className="scene-settings-body">
+                {/* The words are saved first, and a suggestion only replaces them when chosen. */}
+                <SceneImprover scene={{ ...scene, description: sceneText.text.description }} beforeGenerate={sceneText.settle}
+                  mutate={async (action) => {
+                    await sceneText.settle();
+                    await action(scene);
+                    const fresh = await api.getScene(scene.id);
+                    onScene(fresh);
+                    const next = (await director.shots(fresh.id)).data[0];
+                    if (next) onShot(next);
+                    setQuoteRevision((n) => n + 1);
+                  }} />
+              </div>
+            </details>
             <details className="scene-settings">
               <summary>Camera, time and mood</summary>
               <div className="stack scene-settings-body">
@@ -318,7 +335,7 @@ export function SceneComposer(props: Props) {
                 </div>
               </div>
             </details>
-            <details className="scene-settings"><summary>More writing tools</summary><div className="scene-settings-body"><p className="hint">Open the full scene editor for writing help and scene sketches.</p><Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Edit scene</Link></div></details>
+            <details className="scene-settings"><summary>More writing tools</summary><div className="scene-settings-body"><p className="hint">Open the full scene editor for scene sketches.</p><Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Edit scene</Link></div></details>
           </div>
 
           {/* Characters: their chosen looks are used automatically (review P1). */}
