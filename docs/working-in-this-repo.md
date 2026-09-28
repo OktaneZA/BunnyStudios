@@ -4,6 +4,10 @@ Read [build-plan-v1.1.md](build-plan-v1.1.md) first. Decisions D1–D18 there ov
 spec wherever they disagree, and several are deliberate deviations rather than oversights.
 [architecture.md](architecture.md) records the current shape, a review, and the target design.
 
+For Character Studio and production video, also read [the current requirements](character-studio-requirements.md),
+[build plan](character-studio-build-plan.md) and [media architecture](media-generation-architecture.md).
+Their explicit supersession notes govern conflicts with older cast/text-only production decisions.
+
 ## The rules that matter most
 
 **The audience is a 10–15 year old.** Every user-facing string is written for them. Film vocabulary

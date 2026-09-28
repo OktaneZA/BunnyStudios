@@ -7,8 +7,8 @@
  * the row so it no longer counts. Caps are per UTC day and per UTC month.
  */
 import { and, eq, gte, inArray, sql as raw } from 'drizzle-orm';
-import type { GenerationModel } from '@storyboard/models';
-import { estimatePence, unitsFor } from '@storyboard/models';
+import type { GenerationModel, QuoteOptions } from '@storyboard/models';
+import { quoteGeneration } from '@storyboard/models';
 import { db, schema } from '../db/client.ts';
 import { ApiError, ProblemType } from '../errors.ts';
 
@@ -80,10 +80,12 @@ export class BudgetError extends ApiError {
  * Reserve the estimated cost of a job. Call inside a transaction that has already locked
  * the account row (`FOR UPDATE`), after the job row exists.
  */
-export async function reserve(tx: Tx, input: { accountId: string; projectId: string; jobId: string; model: GenerationModel; count?: number; durationSeconds?: number }) {
+export async function reserve(tx: Tx, input: { accountId: string; projectId: string; jobId: string; model: GenerationModel } & QuoteOptions) {
   const [account] = await tx.select().from(schema.accounts).where(eq(schema.accounts.id, input.accountId));
   if (!account) throw ApiError.notFound('Account');
-  const estimated = estimatePence(input.model, input);
+  // The same calculation the price check showed (MB-01), with its provenance (MB-02).
+  const quote = quoteGeneration(input.model, input);
+  const estimated = quote.pence;
   const now = new Date();
   const [today, month] = await Promise.all([spent(tx, input.accountId, startOfDay(now)), spent(tx, input.accountId, startOfMonth(now))]);
   const tomorrow = startOfDay(now); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
@@ -96,17 +98,39 @@ export async function reserve(tx: Tx, input: { accountId: string; projectId: str
   }
   const [row] = await tx.insert(schema.generationLedger).values({
     accountId: input.accountId, projectId: input.projectId, jobId: input.jobId, modelId: input.model.id,
-    units: unitsFor(input.model, input), unitCostPence: String(input.model.unit_cost_pence), estimatedPence: estimated, currency: account.currency,
+    units: quote.snapshot.units, unitCostPence: String(input.model.unit_cost_pence), estimatedPence: estimated, currency: account.currency,
+    costState: 'estimated', pricingSnapshot: quote.snapshot,
   }).returning();
-  return { ledger: row!, estimated };
+  return { ledger: row!, estimated, quote };
 }
 
+/**
+ * The job produced its result. With an actual provider cost the row records it; without one the
+ * estimate stands and says so (MB-04). Settles once: a second call finds no reserved row.
+ */
 export async function settle(jobId: string, actualPence: number | null = null, database: typeof db | Tx = db) {
-  await database.update(schema.generationLedger).set({ status: 'settled', ...(actualPence !== null ? { actualPence } : {}) })
+  await database.update(schema.generationLedger).set({ status: 'settled', ...(actualPence !== null ? { actualPence, costState: 'actual' as const } : { costState: 'estimated' as const }) })
     .where(and(eq(schema.generationLedger.jobId, jobId), eq(schema.generationLedger.status, 'reserved')));
 }
 
+/**
+ * Work reached the provider and may be billed, but the amount is not confirmed: a cancel after
+ * submission, a failure after a paid part, an ambiguous submit. The estimate keeps counting
+ * against the allowance, marked unknown, instead of claiming zero cost (MB-04, MG-08).
+ */
+export async function keepAsUnknown(jobId: string, database: typeof db | Tx = db) {
+  await database.update(schema.generationLedger).set({ status: 'settled', costState: 'unknown' })
+    .where(and(eq(schema.generationLedger.jobId, jobId), eq(schema.generationLedger.status, 'reserved')));
+}
+
+/** Nothing reached the provider, so nothing can be billed: the reservation goes back. */
 export async function refund(jobId: string, database: typeof db | Tx = db) {
-  await database.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0 })
+  await database.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0, costState: 'not_incurred' })
     .where(and(eq(schema.generationLedger.jobId, jobId), inArray(schema.generationLedger.status, ['reserved', 'settled'])));
+}
+
+/** True when any of this job's paid work was sent to a provider (or may have been). */
+export function reachedProvider(job: { providerJobId: string | null; submissionState: string; request: unknown }): boolean {
+  const parts = (job.request as { partJobIds?: string[] } | null)?.partJobIds ?? [];
+  return Boolean(job.providerJobId) || parts.length > 0 || job.submissionState !== 'not_submitted';
 }

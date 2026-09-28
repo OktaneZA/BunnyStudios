@@ -14,7 +14,7 @@ import { createClaudeCastFinder, type CastFinder } from './cast/finder.ts';
 import { createRunner, type Runner } from './jobs/runner.ts';
 import { renderTimeline } from './jobs/render.ts';
 import type { GenerationModel } from '@storyboard/models';
-import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_MEDIUM_MODEL, FAKE_VIDEO_HIGH_MODEL, TINY_PNG } from './generation/fake.ts';
+import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_MEDIUM_MODEL, FAKE_VIDEO_HIGH_MODEL, FAKE_REF_VIDEO_MODEL, FAKE_FRAMES_MODEL, TINY_PNG } from './generation/fake.ts';
 import { makeTestClip, makeTestImage } from './generation/media.ts';
 
 export interface DirectorServices {
@@ -47,18 +47,21 @@ function fileLog() {
   return { info: (m: string) => write('INFO ', m), error: (m: string) => write('ERROR', m) };
 }
 
+/** Dev fake mode's own provider name: its runner must never claim the test suite's 'fake' jobs. */
+const DEV_FAKE = 'fake-dev';
+
 export function createDirectorServices(overrides: DirectorOverrides = {}): DirectorServices {
   const fake = config.GENERATION_FAKE === 'on' && !config.isProduction;
   if (config.GENERATION_FAKE === 'on' && config.isProduction) throw new Error('GENERATION_FAKE cannot be on in production');
   const colours = ['goldenrod', 'steelblue', 'seagreen', 'tomato', 'orchid', 'slategray'];
   let colourIndex = 0;
-  const providers = overrides.providers ?? (fake ? [createFakeProvider({ pollsBeforeDone: 2, bytesFor: async (file) => {
+  const providers = overrides.providers ?? (fake ? [createFakeProvider({ name: DEV_FAKE, pollsBeforeDone: 2, bytesFor: async (file) => {
     // Plain coloured stand-ins so the whole flow, including posters and the render, can be seen.
     const colour = colours[colourIndex++ % colours.length]!;
     if (file.mimeType.startsWith('video/')) return (await makeTestClip(Math.max(1, Math.round((file.durationMs ?? 5000) / 1000)), colour)) ?? Buffer.alloc(0);
     return (await makeTestImage(colour)) ?? TINY_PNG;
   } })] : [createFalProvider({ apiKey: config.FAL_KEY })]);
-  const catalogue = overrides.models ? createCatalogue(providers, overrides.models) : fake ? createCatalogue(providers, [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_MEDIUM_MODEL, FAKE_VIDEO_HIGH_MODEL]) : createCatalogue(providers);
+  const catalogue = overrides.models ? createCatalogue(providers, overrides.models) : fake ? createCatalogue(providers, [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_VIDEO_MEDIUM_MODEL, FAKE_VIDEO_HIGH_MODEL, FAKE_REF_VIDEO_MODEL, FAKE_FRAMES_MODEL].map((m) => ({ ...m, provider: DEV_FAKE as GenerationModel['provider'] }))) : createCatalogue(providers);
   const store = overrides.store ?? createDiskStore(config.STORAGE_ROOT);
   const review = overrides.review ?? (fake ? { ...noReview, enabled: true } : config.ANTHROPIC_API_KEY ? createClaudeReview() : noReview);
   const finder = overrides.finder ?? createClaudeCastFinder();

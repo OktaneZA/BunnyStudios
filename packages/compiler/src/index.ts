@@ -274,3 +274,51 @@ export function promptBudget(prompt: string, maxLength: number): PromptBudget {
     warning: length >= maxLength * 0.75,
   };
 }
+
+// ── Character sheets (Character Studio CS-02, CS-06) ────────────────────────
+
+export const CHARACTER_SHEET_VERSION = 'cs1';
+
+/** CS-02/CS-07: visual identity only. Personality and story never reach a picture prompt. */
+export interface CharacterSheetInput {
+  /** An `art_style` vocabulary value, or `''`. */
+  artStyle: string;
+  /** Verbatim style phrase that replaces the art style when non-empty. */
+  styleOverride: string;
+  lineTreatment: string;
+  /** A `reference_view` vocabulary value. */
+  view: string;
+  character: {
+    name: string;
+    description: string;
+    species: string;
+    build: string;
+    colours: string;
+    features: string;
+    /** The named outfit for this sheet (CS-07); identity does not include clothes. */
+    costume: string;
+  };
+  /** Free text for an expression view ("surprised") or a "change this picture" request. */
+  note: string;
+}
+
+/**
+ * Compile a character-sheet prompt: style, the view from the `reference_view` vocabulary, the
+ * visual traits, then the child's note. Identity for non-main views comes from the approved
+ * anchor picture the caller supplies; nothing here claims the words alone preserve it (CS-06).
+ */
+export function compileCharacterSheet(input: CharacterSheetInput): { prompt: string; negativePrompt: string; version: string } {
+  const style = firstNonEmpty([input.styleOverride, phrase('art_style', input.artStyle)]);
+  const stylePrefix = join([style, input.lineTreatment], ', ');
+  const c = input.character;
+  const traits = join([c.species, c.build, c.colours, c.features], ', ');
+  const who = describeCharacter({ name: c.name, description: join([c.description, traits], ', '), costume: c.costume });
+  const sections = [stylePrefix, phrase('reference_view', input.view), who, clean(input.note)]
+    .map(stripTrailingStops)
+    .filter((s) => s !== '');
+  return {
+    prompt: sections.length === 0 ? '' : `${sections.join('. ')}.`,
+    negativePrompt: STANDARD_NEGATIVE,
+    version: CHARACTER_SHEET_VERSION,
+  };
+}

@@ -12,6 +12,9 @@ container on a Synology NAS against an existing Postgres server.
 
 | Document | What it is |
 |---|---|
+| [docs/character-studio-requirements.md](docs/character-studio-requirements.md) | Current requirements: approved character packs, visual revisions, story-aware video and draft/final |
+| [docs/character-studio-build-plan.md](docs/character-studio-build-plan.md) | Staged delivery: Character Studio before Seedance production, then drafts and Advanced alternatives |
+| [docs/media-generation-architecture.md](docs/media-generation-architecture.md) | Domain/schema contract, provider-neutral requests, adapters, persistent jobs and pricing |
 | [docs/usability-review.md](docs/usability-review.md) | Teen and tablet review, revised screen flow, changes and verification limits |
 | [docs/architecture.md](docs/architecture.md) | Current architecture, an honest review, and the target design |
 | [docs/working-in-this-repo.md](docs/working-in-this-repo.md) | Rules, conventions and the gotchas found the hard way |
@@ -21,7 +24,7 @@ container on a Synology NAS against an existing Postgres server.
 | [docs/scene-thumbnails.md](docs/scene-thumbnails.md) | How AI thumbnails and "Improve for me" work, and their limits |
 | [docs/director-mode.md](docs/director-mode.md) | Director Mode as built: setup, shape, what is verified, limits |
 | [deploy/synology/README.md](deploy/synology/README.md) | Deploying, releasing, backing up and restoring on the NAS |
-| [docs/spike/](docs/spike/) | Phase −1: validates the core bet before the prompt compiler is written |
+| [docs/spike/continuity-benchmark.md](docs/spike/continuity-benchmark.md) | Current continuity experiment; earlier OpenArt fixtures remain available |
 
 ## What works today
 

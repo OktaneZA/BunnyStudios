@@ -15,6 +15,15 @@ import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './di
 const idParam = z.object({ id: z.string().uuid() });
 const TRANSITIONS = ['cut', 'fade', 'slide'] as const;
 
+/**
+ * The caller's own, live cartoon first, then its timeline. ensureTimeline inserts a row when
+ * there is none, so without this check another account could claim a cartoon's timeline slot.
+ */
+async function ownTimeline(accountId: string, projectId: string) {
+  await isConstrained(db, accountId, projectId);
+  return ensureTimeline(accountId, projectId);
+}
+
 export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.addHook('onRequest', app.requireAuth);
   const { store, runner } = deps;
@@ -81,7 +90,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.patch('/projects/:id/timeline', async (request) => {
     const { id } = idParam.parse(request.params);
     const body = z.object({ music_asset_id: z.string().uuid().nullable().optional(), music_volume: z.number().int().min(0).max(100).optional(), music_fade_in_ms: z.number().int().min(0).max(10_000).optional(), music_fade_out_ms: z.number().int().min(0).max(10_000).optional(), hand_edited: z.boolean().optional() }).parse(request.body);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     const patch: Partial<typeof schema.timelines.$inferInsert> = { updatedAt: new Date(), version: timeline.version + 1 };
     if (body.music_asset_id !== undefined) {
       if (body.music_asset_id) {
@@ -104,6 +113,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const [row] = await db.select({ item: schema.timelineItems, timeline: schema.timelines }).from(schema.timelineItems).innerJoin(schema.timelines, eq(schema.timelines.id, schema.timelineItems.timelineId))
       .where(and(eq(schema.timelineItems.id, id), eq(schema.timelineItems.accountId, request.accountId), isNull(schema.timelineItems.deletedAt)));
     if (!row) throw ApiError.notFound('Timeline item');
+    await isConstrained(db, request.accountId, row.timeline.projectId);
     const patch: Partial<typeof schema.timelineItems.$inferInsert> = {};
     if (body.transition_out !== undefined) patch.transitionOut = body.transition_out;
     if (body.asset_id !== undefined) {
@@ -122,7 +132,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.post('/projects/:id/timeline/transitions', async (request) => {
     const { id } = idParam.parse(request.params);
     const { transition_out } = z.object({ transition_out: z.enum(TRANSITIONS) }).parse(request.body);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     await db.update(schema.timelineItems).set({ transitionOut: transition_out }).where(eq(schema.timelineItems.timelineId, timeline.id));
     return present(request.accountId, id);
   });
@@ -130,7 +140,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.post('/projects/:id/timeline/items/reorder', async (request) => {
     const { id } = idParam.parse(request.params);
     const { item_ids } = z.object({ item_ids: z.array(z.string().uuid()).min(1) }).parse(request.body);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     const items = await db.select().from(schema.timelineItems).where(and(eq(schema.timelineItems.timelineId, timeline.id), isNull(schema.timelineItems.deletedAt)));
     const live = await db.select({ id: schema.scenes.id }).from(schema.scenes).where(and(eq(schema.scenes.projectId, id), isNull(schema.scenes.deletedAt)));
     const liveIds = new Set(live.map((s) => s.id));
@@ -145,7 +155,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.post('/projects/:id/timeline/match-scenes', async (request) => {
     const { id } = idParam.parse(request.params);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     await db.update(schema.timelines).set({ handEdited: false, updatedAt: new Date() }).where(eq(schema.timelines.id, timeline.id));
     await ensureTimeline(request.accountId, id);
     return present(request.accountId, id);
@@ -168,7 +178,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.post('/projects/:id/timeline/music', async (request, reply) => {
     const { id } = idParam.parse(request.params);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     const asset = await storeAudio(request, id, 'music');
     await db.update(schema.assets).set({ ownerEntityId: timeline.id }).where(eq(schema.assets.id, asset.id));
     await db.update(schema.timelines).set({ musicAssetId: asset.id, updatedAt: new Date(), version: timeline.version + 1 }).where(eq(schema.timelines.id, timeline.id));
@@ -178,7 +188,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.post('/projects/:id/timeline/voiceovers', async (request, reply) => {
     const { id } = idParam.parse(request.params);
     const startMs = z.coerce.number().int().min(0).max(3_600_000).default(0).parse((request.query as Record<string, string>).start_ms);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     const asset = await storeAudio(request, id, 'voiceover');
     await db.update(schema.assets).set({ ownerEntityId: timeline.id }).where(eq(schema.assets.id, asset.id));
     await db.insert(schema.timelineVoiceovers).values({ accountId: request.accountId, timelineId: timeline.id, assetId: asset.id, startMs });
@@ -190,6 +200,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const body = z.object({ start_ms: z.number().int().min(0).max(3_600_000).optional(), volume: z.number().int().min(0).max(100).optional() }).parse(request.body);
     const [row] = await db.select({ v: schema.timelineVoiceovers, t: schema.timelines }).from(schema.timelineVoiceovers).innerJoin(schema.timelines, eq(schema.timelines.id, schema.timelineVoiceovers.timelineId)).where(and(eq(schema.timelineVoiceovers.id, id), eq(schema.timelineVoiceovers.accountId, request.accountId), isNull(schema.timelineVoiceovers.deletedAt)));
     if (!row) throw ApiError.notFound('Voice');
+    await isConstrained(db, request.accountId, row.t.projectId);
     await db.update(schema.timelineVoiceovers).set({ ...(body.start_ms !== undefined ? { startMs: body.start_ms } : {}), ...(body.volume !== undefined ? { volume: body.volume } : {}) }).where(eq(schema.timelineVoiceovers.id, id));
     return present(request.accountId, row.t.projectId);
   });
@@ -206,7 +217,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const { id } = idParam.parse(request.params);
     const requestKey = z.string().uuid().parse(request.headers['idempotency-key']);
     const { account, constrained } = await isConstrained(db, request.accountId, id);
-    const timeline = await ensureTimeline(request.accountId, id);
+    const timeline = await ownTimeline(request.accountId, id);
     const created = await db.transaction(async (tx) => {
       const [previous] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.accountId, request.accountId), eq(schema.generationJobs.requestKey, requestKey)));
       if (previous) return { job: previous, fresh: false };

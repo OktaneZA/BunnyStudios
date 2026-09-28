@@ -19,7 +19,7 @@ function CartoonCard({ p, busy }: { p: Project; busy: boolean }) {
         </svg>
       </button>
     </div>
-    <Link to={`/projects/${p.id}`}><h3>{p.title}</h3></Link>
+    <Link to={`/projects/${p.id}/director`}><h3>{p.title}</h3></Link>
     <p>{p.logline || 'No description yet.'}</p>
     <div className="meta"><span>{p.scene_count ?? 0} scenes</span></div>
     <div className="project-dates">

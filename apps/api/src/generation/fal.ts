@@ -22,7 +22,7 @@ import {
 export const FAL_QUEUE_BASE = 'https://queue.fal.run';
 
 const MESSAGES = {
-  disabled: 'The picture maker is not switched on yet. Ask a grown-up to add its key.',
+  disabled: 'Generation isn’t connected yet. Ask the account owner to set it up.',
   auth: 'The picture maker needs its key checked by a grown-up.',
   invalid: 'The picture maker could not use this request. Try a simpler wording.',
   busy: 'The picture maker is busy. Please try again in a minute.',
@@ -86,7 +86,7 @@ export function createFalProvider(
   const enabled = apiKey.length > 0;
 
   function requireEnabled() {
-    if (!enabled) throw providerError('unavailable', MESSAGES.disabled);
+    if (!enabled) throw providerError('unavailable', MESSAGES.disabled, true);
   }
 
   /** Performs one request and maps every failure class onto a ProviderError. */
@@ -103,16 +103,18 @@ export function createFalProvider(
     }
     if (response.ok) return response;
     const status = response.status;
-    if (status === 401 || status === 403) throw providerError('auth', MESSAGES.auth);
+    // A 4xx is fal answering "no": nothing was accepted, so nothing can be billed (MG-07).
+    if (status === 401 || status === 403) throw providerError('auth', MESSAGES.auth, true);
     if (status === 400 || status === 422) {
       const body = await readJson(response);
       // Server log only, never a user message: the detail names the field the catalogue got wrong.
       console.warn(`[fal] ${status} validation detail: ${JSON.stringify((body as { detail?: unknown })?.detail ?? body).slice(0, 600)}`);
-      if (looksLikePolicyRejection(body)) throw providerError('rejected', MESSAGES.rejected);
-      throw providerError('invalid', MESSAGES.invalid);
+      if (looksLikePolicyRejection(body)) throw providerError('rejected', MESSAGES.rejected, true);
+      throw providerError('invalid', MESSAGES.invalid, true);
     }
-    if (status === 404) throw providerError('invalid', MESSAGES.unknownJob);
-    // 429, 5xx and anything unexpected: the runner may retry later.
+    if (status === 404) throw providerError('invalid', MESSAGES.unknownJob, true);
+    if (status === 429) throw providerError('unavailable', MESSAGES.busy, true);
+    // 5xx and anything unexpected: the runner may retry later, but on submit it is ambiguous.
     throw providerError('unavailable', MESSAGES.busy);
   }
 

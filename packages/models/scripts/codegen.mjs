@@ -60,10 +60,22 @@ for (const m of doc.models) {
       errors.push(`${at}: a video model needs duration_seconds {min, max, step}`);
     }
     if (m.unit !== 'second') errors.push(`${at}: a video model is priced per second`);
-    if (!m.capabilities.image_to_video && !m.capabilities.text_to_video) errors.push(`${at}: a video model must support image_to_video or text_to_video`);
+    if (!m.capabilities.image_to_video && !m.capabilities.text_to_video && !m.capabilities.reference_images) errors.push(`${at}: a video model must support a video task`);
     if (m.capabilities.image_to_video !== m.capabilities.start_frame) errors.push(`${at}: image_to_video and start_frame must agree`);
     if (m.capabilities.start_frame && !m.request_shape.start_frame) errors.push(`${at}: start_frame needs request_shape.start_frame`);
-    if (m.capabilities.audio && !m.request_shape.audio) errors.push(`${at}: audio needs request_shape.audio`);
+    if (m.capabilities.audio && !m.request_shape.audio && m.video?.audio_mode !== 'always') errors.push(`${at}: audio needs request_shape.audio`);
+    if (m.capabilities.reference_images && !m.request_shape.reference_images) errors.push(`${at}: references need a payload field`);
+    if (m.capabilities.end_frame && !m.request_shape.end_frame) errors.push(`${at}: end frame needs a payload field`);
+    if (m.video && (!m.video.family || !m.video.documentation || !m.video.categories?.length || m.video.categories.some((c) => !['recommended', 'fast', 'cinematic', 'references', 'more'].includes(c)))) errors.push(`${at}: invalid video presentation`);
+    if (m.video?.rollout !== undefined && !['production', 'advanced'].includes(m.video.rollout)) errors.push(`${at}: rollout must be production or advanced`);
+    if (m.video?.rollout === 'production' && m.video.verified_live !== true) errors.push(`${at}: a production rollout needs verified_live: true`);
+    if (m.pricing) {
+      const p = m.pricing;
+      if (!['per_second', 'per_clip', 'video_tokens'].includes(p.strategy) || !Number.isFinite(p.pence_per_usd) || p.pence_per_usd <= 0 || !p.source || !p.verified_on) errors.push(`${at}: invalid pricing metadata`);
+      const keys = p.strategy === 'per_clip' ? Array.from({ length: Math.floor((d.max - d.min) / d.step) + 1 }, (_, i) => String(d.min + i * d.step)) : m.resolutions;
+      if (keys.some((k) => !Number.isFinite(p.rates?.[k]) || p.rates[k] < 0)) errors.push(`${at}: missing or invalid price`);
+      if (p.strategy === 'video_tokens' && (!Number.isFinite(p.fps) || p.fps <= 0 || m.resolutions.some((r) => !Number.isFinite(p.pixels_per_frame?.[r]) || p.pixels_per_frame[r] <= 0))) errors.push(`${at}: invalid token dimensions`);
+    }
   }
 }
 

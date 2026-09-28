@@ -10,6 +10,7 @@
  * stable code the runner uses to decide whether to retry.
  */
 import type { GenerationModel } from '@storyboard/models';
+import { buildVideoPayload } from '../video/adapters/catalogue.ts';
 
 export interface BinaryImage {
   bytes: Buffer;
@@ -22,6 +23,8 @@ export interface GenerationRequest {
   negativePrompt: string;
   /** Main pictures of the cast in the scene, already truncated to the model's limit. */
   referenceImages: BinaryImage[];
+  referenceNames?: string[];
+  endFrame?: BinaryImage | null;
   /** The picked picture a clip starts from (video models with start_frame). */
   startFrame: BinaryImage | null;
   aspectRatio: '16:9' | '9:16' | '1:1';
@@ -49,17 +52,32 @@ export interface ProviderFile {
   width?: number;
   height?: number;
   durationMs?: number;
+  /** Set on the first file of a result when the provider reports a seed or a draft id. */
+  meta?: ProviderResultMeta;
 }
 
 export interface ProviderError extends Error {
   code: 'unavailable' | 'rejected' | 'invalid' | 'auth' | 'timeout';
+  /**
+   * MG-07: true only when the provider answered and definitely did not accept the request
+   * (a 4xx, a 429). A network failure, a timeout or a 5xx on submit is ambiguous: the request
+   * may have been accepted and billed, so the runner must not resubmit it blind.
+   */
+  notAccepted?: boolean;
 }
 
-export function providerError(code: ProviderError['code'], message: string): ProviderError {
+export function providerError(code: ProviderError['code'], message: string, notAccepted = false): ProviderError {
   const error = new Error(message) as ProviderError;
   error.name = 'ProviderError';
   error.code = code;
+  if (notAccepted) error.notAccepted = true;
   return error;
+}
+
+/** Provider metadata kept for lineage (MG-05, DF-04). Never shown to the child. */
+export interface ProviderResultMeta {
+  seed?: number;
+  draftId?: string;
 }
 
 export function isProviderError(error: unknown): error is ProviderError {
@@ -80,6 +98,7 @@ export interface GenerationProvider {
 
 /** Convert a request into the provider's input object using the catalogue's request_shape. */
 export function shapeRequest(request: GenerationRequest, toUrl: (image: BinaryImage) => string): Record<string, unknown> {
+  if (request.model.kind === 'video') return buildVideoPayload(request.model, request, toUrl);
   const s = request.model.request_shape;
   const body: Record<string, unknown> = { [s.prompt]: request.prompt };
   if (s.negative_prompt && request.negativePrompt) body[s.negative_prompt] = request.negativePrompt;
@@ -115,5 +134,10 @@ export function shapeResult(model: GenerationModel, response: unknown): Provider
     if (typeof f.duration === 'number') file.durationMs = Math.round(f.duration * 1000);
     files.push(file);
   }
+  const root = response as Record<string, unknown> | null;
+  const meta: ProviderResultMeta = {};
+  if (typeof root?.seed === 'number') meta.seed = root.seed;
+  if (typeof root?.draft_id === 'string' && root.draft_id) meta.draftId = root.draft_id;
+  if (files[0] && (meta.seed !== undefined || meta.draftId)) files[0].meta = meta;
   return files;
 }

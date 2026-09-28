@@ -9,12 +9,13 @@ import { estimatePence, clipPlan, CLIP_LENGTHS, type GenerationModel } from '@st
 import { promptBudget } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
-import { allowance, allowanceInWords, pence, refund, reserve } from '../generation/budget.ts';
+import { allowance, allowanceInWords, keepAsUnknown, pence, reachedProvider, refund, reserve } from '../generation/budget.ts';
 import { presentModel, type Catalogue } from '../generation/catalogue.ts';
 import type { ReviewProvider } from '../generation/review.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
 import type { JobRequest, Runner } from '../jobs/runner.ts';
-import { ownShot, presentShot, sceneCharacters, syncSceneShots } from '../shots/sync.ts';
+import { ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
+import { buildManifest, shotCast } from '../shots/cast.ts';
 import { projectIsLive } from './scenes.ts';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -79,6 +80,10 @@ export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
     target_entity_type: j.targetEntityType,
     target_entity_id: j.targetEntityId,
     model_id: j.modelId,
+    task: j.task,
+    intent: j.intent,
+    parent_job_id: j.parentJobId,
+    source_scene_version: (j.request as JobRequest).creative?.sceneVersion ?? null,
     attempt: j.attempt,
     error: j.status === 'failed' ? j.errorDetail : null,
     results: visible.map(presentAsset),
@@ -100,7 +105,7 @@ function lastStep(events: unknown) {
 
 export async function isConstrained(database: typeof db, accountId: string, projectId: string) {
   const [account] = await database.select().from(schema.accounts).where(eq(schema.accounts.id, accountId));
-  const [project] = await database.select().from(schema.projects).where(and(eq(schema.projects.id, projectId), eq(schema.projects.accountId, accountId)));
+  const [project] = await database.select().from(schema.projects).where(and(eq(schema.projects.id, projectId), eq(schema.projects.accountId, accountId), isNull(schema.projects.deletedAt)));
   if (!account || !project) throw ApiError.notFound('Project');
   const [bible] = await database.select({ aspectRatio: schema.seriesBibles.aspectRatio }).from(schema.seriesBibles).where(eq(schema.seriesBibles.projectId, project.id));
   return { account, project, aspectRatio: bible?.aspectRatio ?? '16:9', constrained: account.isMinor || ['preschool', 'kids_6_11'].includes(project.targetAudience) };
@@ -122,7 +127,7 @@ export function resolveOptions(model: GenerationModel, body: z.infer<typeof jobB
     }
   }
   const count = model.kind === 'image' ? body.count ?? 1 : 1;
-  const audio = Boolean(body.audio) && model.capabilities.audio;
+  const audio = model.video?.audio_mode === 'always' || (Boolean(body.audio) && model.capabilities.audio);
   return { aspect, resolution, durationSeconds, count, audio };
 }
 
@@ -140,23 +145,25 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     if (!account) throw ApiError.notFound('Account');
     const advanced = account.defaultEditorMode === 'advanced';
-    const enabled = catalogue.enabled();
+    const enabled = catalogue.available(advanced);
     const a = await allowance(request.accountId);
     const cheapestImage = catalogue.cheapest('image');
     const cheapestClip = catalogue.cheapest('video');
     return {
       enabled: enabled.length > 0,
+      test_mode: enabled.some((m) => String(m.provider).startsWith('fake')),
       review_enabled: review.enabled,
       models: enabled.map((m) => presentModel(m, advanced)),
       allowance: a,
       allowance_words: allowanceInWords(a, cheapestImage ? estimatePence(cheapestImage, { count: 1 }) : null, cheapestClip ? estimatePence(cheapestClip, { durationSeconds: cheapestClip.duration_seconds?.min ?? 1 }) : null),
-      message: enabled.length ? null : 'Picture makers are not set up yet. Ask a grown-up to add a key.',
+      message: enabled.length ? null : 'Generation isn’t connected yet. Ask the account owner to set it up.',
     };
   });
 
   app.get('/models', async (request) => {
     const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
-    return { data: catalogue.enabled().map((m) => presentModel(m, account?.defaultEditorMode === 'advanced')) };
+    const advanced = account?.defaultEditorMode === 'advanced';
+    return { data: catalogue.available(advanced).map((m) => presentModel(m, advanced)) };
   });
 
   // ── Shots (one per scene in Simple mode) ──────────────────────────────────
@@ -197,7 +204,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       if (previous) return { job: previous, fresh: false };
       const { shot, scene } = await ownShot(tx, request.accountId, id, true);
       const { account, aspectRatio, constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, scene.projectId);
-      const model = catalogue.enabled().find((m) => m.id === body.model_id);
+      const model = catalogue.available(account.defaultEditorMode === 'advanced').find((m) => m.id === body.model_id);
       if (!model) throw ApiError.validation('That picture maker is not available. Pick another one.');
       if (constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so pictures cannot be made on this account yet. Ask a grown-up.');
       const options = resolveOptions(model, body, aspectRatio);
@@ -209,18 +216,24 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       const budget = promptBudget(prompt, model.max_prompt_length);
       if (budget.over) throw ApiError.validation(`The scene description is too long for ${model.friendlyLabel}. Shorten it in Story by about ${budget.length - budget.max} letters.`);
       let startFrameAssetId: string | null = null;
-      if (model.kind === 'video' && !model.capabilities.text_to_video) {
+      if (model.kind === 'video' && model.capabilities.image_to_video && !model.capabilities.text_to_video) {
         // An image-to-video model (Advanced only) needs a picked picture to start from.
         if (current.heroAssetId) startFrameAssetId = current.heroAssetId;
         else throw ApiError.validation('This clip maker needs a picture to start from. Pick one that makes clips straight from the scene instead.');
       }
-      const cast = await sceneCharacters(tx, request.accountId, scene);
-      const referenceAssetIds = cast.map((c) => c.mainReferenceAssetId).filter((v): v is string => Boolean(v)).slice(0, model.max_reference_images);
-      if (model.capabilities.requires_reference_images && !referenceAssetIds.length) {
-        throw ApiError.validation(`${model.friendlyLabel} works from your cast pictures, and nobody in this scene has one yet. Give someone a picture in Cast, or pick a different picture maker.`);
+      // Character pictures come only from approved looks, one main picture each, pinned by hash (CS-10).
+      const manifest = model.capabilities.reference_images ? buildManifest(await shotCast(tx, request.accountId, current, scene), 1) : null;
+      const refs = manifest?.references ?? [];
+      if (refs.length > model.max_reference_images) throw ApiError.validation('There are too many characters for this maker. Choose fewer characters in this scene, or another maker.');
+      if (model.kind === 'video' && model.capabilities.requires_reference_images && manifest?.missingLooks.length) {
+        throw ApiError.validation(`Choose how ${manifest.missingLooks.map((m) => m.name).join(' and ')} ${manifest.missingLooks.length === 1 ? 'looks' : 'look'} in Cast first.`);
+      }
+      if (model.capabilities.requires_reference_images && !refs.length) {
+        throw ApiError.validation(`${model.friendlyLabel} works from your approved character pictures, and nobody in this scene has one yet. Choose a look in Cast, or pick a different picture maker.`);
       }
       const jobRequest: JobRequest = {
-        prompt, negativePrompt: current.compiledNegativePrompt, referenceAssetIds, startFrameAssetId,
+        prompt, negativePrompt: current.compiledNegativePrompt, referenceAssetIds: refs.map((r) => r.assetId), referenceHashes: refs.map((r) => r.contentHash),
+        referenceNames: refs.map((r) => r.characterName), startFrameAssetId,
         aspectRatio: options.aspect, count: options.count, durationSeconds: options.durationSeconds, audio: options.audio, resolution: options.resolution,
         constrained, assetKind: 'generated_output',
       };
@@ -228,7 +241,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
         accountId: request.accountId, projectId: scene.projectId, requestKey, kind: model.kind, targetEntityType: 'shot', targetEntityId: shot.id,
         modelId: model.id, provider: model.provider, request: jobRequest,
       }).returning();
-      await reserve(tx, { accountId: account.id, projectId: scene.projectId, jobId: job!.id, model, count: options.count, ...(options.durationSeconds ? { durationSeconds: options.durationSeconds } : {}) });
+      await reserve(tx, { accountId: account.id, projectId: scene.projectId, jobId: job!.id, model, count: options.count, resolution: options.resolution, ...(options.durationSeconds ? { durationSeconds: options.durationSeconds } : {}) });
       return { job: job!, fresh: true };
     });
     if (created.fresh) void runner.tick().catch(() => {});
@@ -240,9 +253,10 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const { id } = idParam.parse(request.params);
     const [job] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, id), eq(schema.generationJobs.accountId, request.accountId)));
     if (!job) throw ApiError.notFound('Request');
-    const { account } = await isConstrained(db, request.accountId, job.projectId);
+    // Not isConstrained: a job still answers after its cartoon went in the bin, so polling ends cleanly.
+    const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     reply.header('Cache-Control', 'no-store');
-    return presentJob(job, await jobAssets([job]), account.isMinor);
+    return presentJob(job, await jobAssets([job]), account?.isMinor ?? true);
   });
 
   app.get('/projects/:id/jobs', async (request, reply) => {
@@ -262,8 +276,10 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       const [job] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, id), eq(schema.generationJobs.accountId, request.accountId))).for('update');
       if (!job) throw ApiError.notFound('Request');
       if (!['queued', 'submitted', 'running', 'reviewing'].includes(job.status)) return job;
-      const [updated] = await tx.update(schema.generationJobs).set({ status: 'cancelled', finishedAt: new Date(), updatedAt: new Date() }).where(eq(schema.generationJobs.id, id)).returning();
-      await refund(id, tx);
+      const [updated] = await tx.update(schema.generationJobs).set({ status: 'cancelled', claimedBy: null, finishedAt: new Date(), updatedAt: new Date() }).where(eq(schema.generationJobs.id, id)).returning();
+      // MG-08: stopping here does not mean the provider refunded work it already started.
+      if (reachedProvider(job)) await keepAsUnknown(id, tx);
+      else await refund(id, tx);
       return updated!;
     });
     runner.abort(id);
@@ -369,7 +385,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
   /** The clip maker for a cost level: the child picks low, medium or high, never a model. */
   app.get('/models/tiers', async () => {
     // Only makers that work straight from the scene text: the child never needs a picture first.
-    const enabled = catalogue.enabled().filter((m) => m.kind === 'video' && m.tier && m.capabilities.text_to_video);
+    const enabled = catalogue.videoModels({ task: 'text-to-video', referenceImageCount: 0 });
     return { data: ['low', 'medium', 'high'].map((tier) => enabled.find((m) => m.tier === tier)).filter(Boolean).map((m) => presentModel(m!, false)) };
   });
 
@@ -413,10 +429,11 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
   });
 
   app.get('/settings/estimate', async (request) => {
-    const q = z.object({ model_id: z.string(), count: z.coerce.number().int().min(1).max(4).optional(), duration_seconds: z.coerce.number().int().optional() }).parse(request.query);
+    const q = z.object({ model_id: z.string(), resolution: z.string().max(20).optional(), count: z.coerce.number().int().min(1).max(4).optional(), duration_seconds: z.coerce.number().int().min(1).max(60).optional() }).parse(request.query);
     const model = catalogue.find(q.model_id);
     if (!model) throw ApiError.notFound('Picture maker');
-    const p = estimatePence(model, { ...(q.count ? { count: q.count } : {}), ...(q.duration_seconds ? { durationSeconds: q.duration_seconds } : {}) });
+    const options = resolveOptions(model, { kind: model.kind, model_id: model.id, resolution: q.resolution, duration_seconds: q.duration_seconds, count: q.count }, model.aspect_ratios[0]!);
+    const p = estimatePence(model, { resolution: options.resolution, count: options.count, ...(options.durationSeconds ? { durationSeconds: options.durationSeconds } : {}) });
       const parts = model.kind === 'video' && model.capabilities.text_to_video && q.duration_seconds && CLIP_LENGTHS.includes(q.duration_seconds) ? clipPlan(model, q.duration_seconds) : null;
       return { pence: p, words: `about ${pence(p)}`, parts };
   });

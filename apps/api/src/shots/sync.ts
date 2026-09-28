@@ -14,6 +14,7 @@ import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import { sceneDescription } from '../scenes/description.ts';
 import type { Tx } from '../generation/budget.ts';
+import { compileCharacter, shotCast } from './cast.ts';
 
 type Scene = typeof schema.scenes.$inferSelect;
 type Shot = typeof schema.shots.$inferSelect;
@@ -40,8 +41,11 @@ export async function compileInput(database: Database, accountId: string, scene:
   const [location] = scene.locationId
     ? await database.select().from(schema.locations).where(and(eq(schema.locations.id, scene.locationId), eq(schema.locations.accountId, accountId)))
     : [];
-  const cast = await sceneCharacters(database, accountId, scene);
-  const subjects = shot?.subjectCharacterIds.length ? cast.filter((c) => shot.subjectCharacterIds.includes(c.id)) : cast;
+  // CR-01: a saved "Characters in this shot" list drives the words, each described from its pinned look.
+  const saved = shot?.castSaved ? (await shotCast(database, accountId, shot, scene)).map(compileCharacter) : null;
+  const cast = saved ? [] : await sceneCharacters(database, accountId, scene);
+  const subjects = saved ?? (shot?.subjectCharacterIds.length ? cast.filter((c) => shot.subjectCharacterIds.includes(c.id)) : cast)
+    .map((c) => ({ name: c.name, description: c.promptToken, costume: c.defaultCostume }));
   return {
     bible: {
       artStyle: bible?.artStyle || DEFAULT_ART_STYLE,
@@ -74,7 +78,7 @@ export async function compileInput(database: Database, accountId: string, scene:
       expressionNote: shot?.expressionNote ?? '',
       lightingOverride: shot?.lightingOverride ?? null,
       userPromptAddendum: shot?.userPromptAddendum ?? '',
-      characters: subjects.map((c) => ({ name: c.name, description: c.promptToken, costume: c.defaultCostume })),
+      characters: subjects,
       propTokens: [],
     },
   };
@@ -142,6 +146,9 @@ export function presentShot(s: Shot) {
     camera_angle: s.cameraAngle,
     hero_asset_id: s.heroAssetId,
     hero_video_asset_id: s.heroVideoAssetId,
+    start_frame_asset_id: s.startFrameAssetId,
+    end_frame_asset_id: s.endFrameAssetId,
+    cast_saved: s.castSaved,
     generated_asset_ids: s.generatedAssetIds,
     version: s.version,
     updated_at: s.updatedAt.toISOString(),

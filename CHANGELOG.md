@@ -7,6 +7,19 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+- Create on tablets and desktops: fold time, mood and camera into Scene details with a
+  summary; place the priced make action beside the editor above the player; label previews
+  explicitly as "Make preview". Fix Characters contrast in light mode and use 44px detail chips.
+
+- Character Studio: make a character, make or upload picture choices, say "This looks like …",
+  add views made from that picture and approve the pack. Pictures stay ideas until chosen;
+  approved looks never change by themselves, and older clips keep the look they used. Each
+  scene has "Characters in this scene", an optional starting/ending picture, and "Quick preview"
+  / "Make final video" with prices; a final can be made from a preview's recipe. New video
+  makers stay grown-up-only until tried for real. See `docs/character-studio-status.md`.
+- Money: stopping a clip after it was sent no longer gives the money back as if nothing was
+  spent; an uncertain send is never repeated automatically.
+
 - Clip log: every clip, picture and render keeps a step trail (sending, waiting, fetching,
   joining, checking), shown to the child as a live step and to the adult on Grown-ups → Clip log
   with raw errors; also written to `logs/generation.log`. Long clips no longer stall: running

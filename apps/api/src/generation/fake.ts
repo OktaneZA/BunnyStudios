@@ -23,6 +23,11 @@ export interface FakeProviderOptions {
   pollsBeforeDone?: number;
   /** Optional byte source for downloads; defaults to TINY_PNG or a small MP4 stub. */
   bytesFor?: (file: ProviderFile) => Buffer | Promise<Buffer>;
+  /**
+   * Provider name, and so which jobs a runner claims. The development server's fake mode uses
+   * its own name so its runner never picks up the test suite's jobs in the shared database.
+   */
+  name?: string;
 }
 
 export function createFakeProvider(options: FakeProviderOptions = {}) {
@@ -30,7 +35,7 @@ export function createFakeProvider(options: FakeProviderOptions = {}) {
   const submitted: GenerationRequest[] = [];
   const cancelled: string[] = [];
   const provider: GenerationProvider & { jobs: typeof jobs; submitted: typeof submitted; cancelled: typeof cancelled; enabled: boolean } = {
-    name: 'fake',
+    name: options.name ?? 'fake',
     enabled: true,
     jobs, submitted, cancelled,
     async submit(request) {
@@ -98,6 +103,21 @@ export const FAKE_VIDEO_MEDIUM_MODEL: GenerationModel = {
   ...FAKE_VIDEO_MODEL, id: 'clip_medium', provider_model: 'fake/video-medium', tier: 'medium',
   label: 'Fake video medium', friendlyLabel: 'Medium', unit_cost_pence: 4,
   duration_seconds: { min: 6, max: 10, step: 4 },
+};
+/** Development fake of a reference-to-video endpoint (Seedance-like), for clips with characters. */
+export const FAKE_REF_VIDEO_MODEL: GenerationModel = {
+  id: 'seedance_25_refs', provider: 'fake', provider_model: 'fake/refs', kind: 'video', tier: 'high', label: 'Fake reference video', friendlyLabel: 'With your characters', help: 'Uses the chosen pictures of the characters.', icon: 'model-video',
+  capabilities: { reference_images: true, requires_reference_images: true, start_frame: false, end_frame: false, audio: true, multi_shot: false, image_to_video: false, text_to_video: false },
+  aspect_ratios: ['16:9', '9:16'], resolutions: ['720p'], duration_seconds: { min: 4, max: 30, step: 1 }, max_reference_images: 6, max_prompt_length: 2000,
+  unit: 'second', unit_cost_pence: 5, request_shape: { prompt: 'prompt', reference_images: 'image_urls', reference_token_prefix: '@Image', duration: 'duration', duration_format: 'string_seconds', audio: 'generate_audio' },
+  result_shape: { files: 'video' }, enabled: true, video: { family: 'fake_refs', categories: ['recommended', 'references'], documentation: 'development fake' },
+};
+/** Development fake of a start/end-picture endpoint (Seedance image-to-video-like). */
+export const FAKE_FRAMES_MODEL: GenerationModel = {
+  ...FAKE_REF_VIDEO_MODEL, id: 'seedance_25_i2v', provider_model: 'fake/i2v', label: 'Fake start/end video', friendlyLabel: 'From a picture', help: 'Starts from a picture.', max_reference_images: 0,
+  capabilities: { reference_images: false, start_frame: true, end_frame: true, audio: true, multi_shot: false, image_to_video: true, text_to_video: false },
+  request_shape: { prompt: 'prompt', start_frame: 'image_url', end_frame: 'end_image_url', duration: 'duration', duration_format: 'string_seconds', audio: 'generate_audio' },
+  video: { family: 'fake_frames', categories: ['recommended'], documentation: 'development fake' },
 };
 /** An image-to-video model kept for the Advanced path, so the start-frame code still has a test. */
 export const FAKE_I2V_MODEL: GenerationModel = {

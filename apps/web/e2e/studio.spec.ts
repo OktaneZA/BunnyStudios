@@ -95,6 +95,9 @@ test.describe('cartoons and scenes', () => {
     await row.getByRole('button', { name: 'Put back' }).click();
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
     await page.getByRole('heading', { name: title }).click();
+    await expect(page).toHaveURL(/\/director$/);
+    await page.getByText('View', { exact: true }).click();
+    await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
     await expect.poll(() => boardTitles(page)).toEqual(['Kept']);
   });
 

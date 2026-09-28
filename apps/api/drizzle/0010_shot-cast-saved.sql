@@ -1,0 +1,1 @@
+ALTER TABLE "shots" ADD COLUMN "cast_saved" boolean DEFAULT false NOT NULL;

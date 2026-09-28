@@ -48,7 +48,9 @@ jobs:
       - run: npm run build -w @storyboard/api
       - run: npm run build -w @storyboard/web
       - run: npm run migrate -w @storyboard/api
-      - run: node --test test/*.test.ts
+      # One file at a time: several test files run a job runner against the same database,
+      # and in parallel they would claim each other's jobs (same as the package's test script).
+      - run: node --test --test-concurrency=1 test/*.test.ts
         working-directory: apps/api
 
   image:

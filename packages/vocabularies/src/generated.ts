@@ -733,6 +733,67 @@ export const MOOD_ATMOSPHERE = [
   }
 ] as const;
 
+export type ReferenceView = "main" | "front" | "three_quarter" | "side" | "back" | "full_body" | "expression";
+export const REFERENCE_VIEW_VALUES = ["main", "front", "three_quarter", "side", "back", "full_body", "expression"] as const satisfies readonly ReferenceView[];
+export const REFERENCE_VIEW = [
+  {
+    "value": "main",
+    "prompt_phrase": "character design sheet, full body, standing, facing the camera, neutral pose, plain white background",
+    "label": "Main picture",
+    "friendlyLabel": "Main picture",
+    "help": "The picture everyone else is compared with.",
+    "icon": "view-main"
+  },
+  {
+    "value": "front",
+    "prompt_phrase": "the same character seen straight from the front, full body, plain white background",
+    "label": "Front",
+    "friendlyLabel": "From the front",
+    "help": "Looking straight at us.",
+    "icon": "view-front"
+  },
+  {
+    "value": "three_quarter",
+    "prompt_phrase": "the same character in a three-quarter view, turned slightly to one side, full body, plain white background",
+    "label": "Three-quarter",
+    "friendlyLabel": "Turned a little",
+    "help": "Turned slightly, so we see some of the side.",
+    "icon": "view-three-quarter"
+  },
+  {
+    "value": "side",
+    "prompt_phrase": "the same character seen from the side in profile, full body, plain white background",
+    "label": "Side",
+    "friendlyLabel": "From the side",
+    "help": "Side on, like a shadow puppet.",
+    "icon": "view-side"
+  },
+  {
+    "value": "back",
+    "prompt_phrase": "the same character seen from behind, full body, plain white background",
+    "label": "Back",
+    "friendlyLabel": "From behind",
+    "help": "What they look like walking away.",
+    "icon": "view-back"
+  },
+  {
+    "value": "full_body",
+    "prompt_phrase": "the same character, full body from head to feet, standing naturally, plain white background",
+    "label": "Full body",
+    "friendlyLabel": "Head to toe",
+    "help": "All of them, so shoes and tails are clear.",
+    "icon": "view-full-body"
+  },
+  {
+    "value": "expression",
+    "prompt_phrase": "the same character, head and shoulders, showing a clear facial expression, plain white background",
+    "label": "Expression",
+    "friendlyLabel": "A face",
+    "help": "A close-up of a feeling. Say which one.",
+    "icon": "view-expression"
+  }
+] as const;
+
 export type MusicGenre = "orchestral" | "jazz" | "chiptune" | "synthwave" | "folk_acoustic" | "rock" | "hip_hop" | "ambient" | "circus_polka" | "lullaby" | "marching_band" | "silence";
 export const MUSIC_GENRE_VALUES = ["orchestral", "jazz", "chiptune", "synthwave", "folk_acoustic", "rock", "hip_hop", "ambient", "circus_polka", "lullaby", "marching_band", "silence"] as const satisfies readonly MusicGenre[];
 export const MUSIC_GENRE = [

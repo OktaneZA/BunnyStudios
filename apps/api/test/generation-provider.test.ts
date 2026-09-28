@@ -219,7 +219,7 @@ describe('fal adapter', () => {
     ]);
     const p = createFalProvider({ apiKey: 'k' }, fetcher);
     assert.deepEqual(await p.fetchResult('a', FAKE_IMAGE_MODEL, signal()), [
-      { url: 'https://v3.fal.media/1.png', mimeType: 'image/png', width: 1024, height: 576 },
+      { url: 'https://v3.fal.media/1.png', mimeType: 'image/png', width: 1024, height: 576, meta: { seed: 7 } },
       { url: 'https://v3.fal.media/2.jpg', mimeType: 'image/jpeg', width: 1024, height: 576 },
     ]);
     assert.deepEqual(await p.fetchResult('b', FAKE_VIDEO_MODEL, signal()), [

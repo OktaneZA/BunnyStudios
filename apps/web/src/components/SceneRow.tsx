@@ -31,6 +31,8 @@ interface Props {
 export function SceneRow({ projectId, scene, index, count, busy, onMove, onDelete, item }: Props) {
   const thumbnail = scene.thumbnail ?? scene.thumbnail_preview;
   const state = sceneState({ hasClip: item?.source === 'video', making: Boolean(item?.making), hasDescription: Boolean(scene.description.trim()) });
+  // Undefined = clip state not loaded yet: say nothing rather than a wrong "No clip yet".
+  const loading = item === undefined;
   const link = sceneLink(projectId, scene.id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scene.id,
@@ -72,12 +74,12 @@ export function SceneRow({ projectId, scene, index, count, busy, onMove, onDelet
         <Link className="scene-thumbnail" to={link} aria-label={`Open scene ${scene.scene_number}: ${scene.title}`}>
           {item?.source === 'video' ? <ItemStill item={item} />
             : thumbnail ? <img src={thumbnail.src} alt={thumbnail.description} loading="lazy" />
-            : <span className="thumbnail-placeholder">{scene.description.trim() ? 'No clip yet' : 'Write what happens'}</span>}
+            : <span className="thumbnail-placeholder">{loading ? '' : scene.description.trim() ? 'No clip yet' : 'Write what happens'}</span>}
         </Link>
         <h4>
           <Link to={link}>{scene.title}</Link>
         </h4>
-        <span className={`scene-state ${state}`}><span className="state-dot" aria-hidden="true" />{SCENE_STATE_WORDS[state]}</span>
+        {!loading && <span className={`scene-state ${state}`}><span className="state-dot" aria-hidden="true" />{SCENE_STATE_WORDS[state]}</span>}
         <p className={`scene-excerpt${scene.description.trim() ? '' : ' todo'}`}>
           {scene.description.trim() || 'No words yet. Open the scene to write what happens.'}
         </p>

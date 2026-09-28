@@ -17,7 +17,7 @@ export function NewProject() {
     try {
       const project = await api.createProject({ title, logline });
       // Straight into the new cartoon — the next thing to do is add a scene.
-      navigate(`/projects/${project.id}`, { replace: true });
+      navigate(`/projects/${project.id}/director`, { replace: true });
     } catch (err) {
       setError(err);
       setBusy(false);

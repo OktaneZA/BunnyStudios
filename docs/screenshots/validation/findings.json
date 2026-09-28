@@ -1,0 +1,134 @@
+[
+  {
+    "screen": "01-sign-in",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "02-cartoons",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "03-new-cartoon",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "04-create-empty",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "05-create-scene",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "06-characters-empty",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "07-studio-describe",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "08-studio-choose",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "09-studio-ready",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "10-composer-ready",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "11-after-preview",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "12-final-from-preview",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "13-after-final",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "14-create-with-clip",
+    "width": 390,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "14-create-with-clip",
+    "width": 1440,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "15-create-white",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "16-together",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "17-together-made",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "17-together-made",
+    "width": 390,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "18-manage-scenes",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "19-scene-page",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "20-grownups",
+    "width": 1024,
+    "overflow": false,
+    "consoleErrors": []
+  }
+]

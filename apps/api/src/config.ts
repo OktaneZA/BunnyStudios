@@ -76,6 +76,12 @@ const schema = z.object({
   GENERATION_JOB_TIMEOUT_MS: z.coerce.number().int().min(30_000).default(20 * 60_000),
   /** Where the runner's step log is written, one line per step ('' turns the file off). */
   GENERATION_LOG_FILE: z.string().trim().default('./logs/generation.log'),
+  /**
+   * Release gate for video families not yet checked live (build plan Stage 1/6): `advanced`
+   * lets Advanced accounts pick them; `all` also lets Simple-mode routing use them (after a
+   * recorded live check); `off` hides them.
+   */
+  VIDEO_FAMILY_ROLLOUT: z.enum(['off', 'advanced', 'all']).default('advanced'),
   /** Claude model used to review prompts and returned pictures (plan D32 gates 1 and 3). */
   REVIEW_MODEL: z.string().trim().min(1).default('claude-sonnet-5'),
   /** Claude model used to find the cast in the story (plan D39). */

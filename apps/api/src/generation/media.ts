@@ -10,7 +10,14 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { config } from '../config.ts';
 
-const run = promisify(execFile);
+const exec = promisify(execFile);
+/**
+ * Every ffmpeg/ffprobe call has a time limit, so a run that hangs on a bad input is killed and
+ * surfaces as a failed job instead of a clip slot that is "running" for ever.
+ */
+const FFMPEG_TIMEOUT_MS = 10 * 60_000;
+const run = (file: string, args: string[], options: { maxBuffer?: number } = {}) =>
+  exec(file, args, { timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, ...options });
 
 export async function ffmpegAvailable(): Promise<boolean> {
   try { await run(config.FFMPEG_PATH, ['-version']); return true; } catch { return false; }
