@@ -1,0 +1,23 @@
+{
+  "name": "@storyboard/models",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./models.json": "./models.json"
+  },
+  "files": ["dist", "models.json"],
+  "scripts": {
+    "codegen": "node scripts/codegen.mjs",
+    "check": "node scripts/codegen.mjs --check",
+    "prebuild": "npm run codegen",
+    "build": "tsc --build",
+    "test": "node scripts/codegen.mjs --check"
+  }
+}

@@ -43,6 +43,20 @@
       "when": 1788965929745,
       "tag": "0005_scene_logical_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789983455552,
+      "tag": "0006_director_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790266409736,
+      "tag": "0007_job_events",
+      "breakpoints": true
     }
   ]
 }

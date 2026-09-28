@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, Link, Navigate, useMatch } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, useMatch, useLocation } from 'react-router-dom';
 import { BunnyLogo } from './components/BunnyLogo';
 import { api, auth, type Account } from './api';
 import { Login } from './screens/Login';
@@ -7,9 +7,17 @@ import { ProjectList } from './screens/ProjectList';
 import { NewProject } from './screens/NewProject';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { SceneDetail } from './screens/SceneDetail';
+import { Director } from './screens/Director';
+import { Together } from './screens/Together';
+import { Grownups } from './screens/Grownups';
 
 export default function App() {
   const sceneRoute = useMatch('/projects/:projectId/scenes/:sceneId');
+  const togetherRoute = useMatch('/projects/:projectId/together');
+  const directorRoute = useMatch('/projects/:projectId/director');
+  const storyRoute = useMatch('/projects/:projectId');
+  const location = useLocation();
+  const fromMake = new URLSearchParams(location.search).get('from') === 'make';
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,6 +58,11 @@ export default function App() {
         </div>
 
         <nav className="menu">
+          {!account.is_minor && (
+            <Link className="btn secondary" to="/grownups">
+              Grown-ups
+            </Link>
+          )}
           <Link className="btn" to="/projects/new">
             + New cartoon
           </Link>
@@ -61,8 +74,12 @@ export default function App() {
 
       <main>
         <nav className="crumbs" aria-label="Back navigation">
-          {sceneRoute && <Link to={`/projects/${sceneRoute.params.projectId}`}>← Back to scenes</Link>}
-          <Link to="/">← Back to Cartoons</Link>
+          {/* One back link per screen. A scene opened from Make clips goes back to that scene's clip. */}
+          {sceneRoute && (fromMake
+            ? <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to making clips</Link>
+            : <Link to={`/projects/${sceneRoute.params.projectId}`}>← All scenes</Link>)}
+          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Make clips</Link>}
+          {(directorRoute || (storyRoute && storyRoute.params.projectId !== 'new')) && <Link to="/">← All cartoons</Link>}
         </nav>
         <Routes>
           <Route path="/" element={<ProjectList />} />
@@ -72,6 +89,9 @@ export default function App() {
             path="/projects/:projectId/scenes/:sceneId"
             element={<SceneDetail account={account} />}
           />
+          <Route path="/projects/:projectId/director" element={<Director account={account} />} />
+          <Route path="/projects/:projectId/together" element={<Together />} />
+          {!account.is_minor && <Route path="/grownups" element={<Grownups />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

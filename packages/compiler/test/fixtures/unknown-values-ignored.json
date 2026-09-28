@@ -1,0 +1,43 @@
+{
+  "input": {
+    "bible": {
+      "artStyle": "not_a_style",
+      "lineTreatment": "",
+      "defaultLighting": "",
+      "renderQualityTokens": "",
+      "negativePrompt": "",
+      "colourPalette": []
+    },
+    "scene": {
+      "description": "",
+      "sceneryDescription": "",
+      "cameraAngle": "from_the_moon",
+      "timeOfDay": "teatime",
+      "weather": null,
+      "moodAtmosphere": "grumpy",
+      "lightingPreset": "disco",
+      "lighting": "",
+      "styleOverride": null,
+      "locationName": "",
+      "locationDescription": "somewhere with no name",
+      "locationDefaultLighting": ""
+    },
+    "shot": {
+      "shotType": "selfie",
+      "lensFocalLength": "1mm",
+      "depthOfField": "blurry_everything",
+      "subjectPlacement": "",
+      "actionBeat": "Bunny shrugs",
+      "expressionNote": "",
+      "lightingOverride": null,
+      "userPromptAddendum": "",
+      "characters": [],
+      "propTokens": []
+    }
+  },
+  "expected": {
+    "prompt": "Bunny shrugs. somewhere with no name.",
+    "negativePrompt": "text, watermark, signature, extra limbs, deformed hands, photorealistic, blurry",
+    "characterCount": 0
+  }
+}

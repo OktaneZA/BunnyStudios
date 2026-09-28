@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiProblem, type Scene, type Account } from '../api';
 import { ProblemBox } from '../components/ProblemBox';
 import { OptionPicker } from '../components/OptionPicker';
@@ -7,6 +7,8 @@ import { SceneThumbnail } from '../components/SceneThumbnail';
 import { SceneImprover } from '../components/SceneImprover';
 import { CopyButton } from '../components/CopyButton';
 import { sceneText } from '../sceneExport';
+import { CartoonHeader } from '../components/ProjectTabs';
+import { sceneLink } from '../sceneState';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type Field = keyof Scene;
@@ -47,6 +49,12 @@ function SceneEditor({ account }: Props) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [projectMode, setProjectMode] = useState(account.default_editor_mode);
   const [hasConflict, setHasConflict] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const [projectTitle, setProjectTitle] = useState('');
+  /** The cartoon's scenes in order, for "Scene 2 of 4" and the arrows between scenes. */
+  const [siblings, setSiblings] = useState<Scene[]>([]);
+  const [search] = useSearchParams();
+  const fromMake = search.get('from') === 'make';
   const conflict = useRef(false);
 
   /** The server's last confirmed record. Source of the version sent as If-Match. */
@@ -64,7 +72,9 @@ function SceneEditor({ account }: Props) {
   const friendly = projectMode === 'simple';
 
   useEffect(() => {
-    if (projectId) void api.getProject(projectId).then((p) => setProjectMode(p.editor_mode)).catch(setError);
+    if (!projectId) return;
+    void api.getProject(projectId).then((p) => { setProjectMode(p.editor_mode); setProjectTitle(p.title); }).catch(setError);
+    void api.listScenes(projectId).then((r) => setSiblings(r.data)).catch(() => { /* the arrows are optional */ });
   }, [projectId]);
 
   useEffect(() => {
@@ -160,7 +170,7 @@ function SceneEditor({ account }: Props) {
     await queue.current;
     if (dirty.current.size || conflict.current) throw new ApiProblem({
       status: 409, type: 'about:blank', title: 'Save your scene first',
-      detail: 'Resolve any save problems before using AI. Your text is still here.',
+      detail: 'Resolve any save problems before continuing. Your text is still here.',
     });
   }
 
@@ -187,7 +197,7 @@ function SceneEditor({ account }: Props) {
 
   async function removeScene() {
     if (!scene || !projectId) return;
-    if (!confirm(`Delete scene ${scene.scene_number}, "${scene.title}"? This cannot be undone.`)) {
+    if (!confirm(`Move scene ${scene.scene_number}, "${scene.title}", to the bin? You can put it back from Story.`)) {
       return;
     }
     try {
@@ -201,6 +211,17 @@ function SceneEditor({ account }: Props) {
   if (error && !scene) return <ProblemBox error={error} />;
   if (!scene) return <p className="muted">Loading…</p>;
 
+  const index = siblings.findIndex((s) => s.id === scene.id);
+  const prev = index > 0 ? siblings[index - 1] : null;
+  const next = index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : null;
+  /** Leave this scene only once its edits are saved. */
+  async function go(to: string) {
+    setContinuing(true);
+    try { await flushEdits(); navigate(to); }
+    catch (err) { setError(err); }
+    finally { setContinuing(false); }
+  }
+
   const saveLabel =
     saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'All changes saved' : '';
 
@@ -208,9 +229,10 @@ function SceneEditor({ account }: Props) {
     <>
 
 
-      <header className="project-head">
-        <p className="muted">Scene {scene.scene_number}</p>
-        <h2>{scene.title}</h2>
+      {projectId && <CartoonHeader projectId={projectId} title={projectTitle || ' '} step="write" />}
+      <header className="scene-head">
+        <p className="muted">Scene {scene.scene_number}{siblings.length ? ` of ${siblings.length}` : ''}</p>
+        <h3 className="scene-title">{scene.title}</h3>
         <CopyButton text={() => sceneText(live.current ?? scene)} />
         {/* SC-5 requires a visible save-state indicator; silence is not an answer. */}
         <p className="save-state" role="status" aria-live="polite">
@@ -297,13 +319,29 @@ function SceneEditor({ account }: Props) {
 
 
 
-      <SceneThumbnail scene={scene} beforeGenerate={flushEdits} mutate={mutateThumbnail} />
+      <details className="card optional-sketch">
+        <summary>Optional: a quick sketch of this scene</summary>
+        <SceneThumbnail scene={scene} beforeGenerate={flushEdits} mutate={mutateThumbnail} />
+      </details>
 
       <div className="row danger-row">
         <button className="secondary danger-text" onClick={removeScene} type="button">
           Delete this scene
         </button>
       </div>
+
+      {/* Always on screen: move between scenes, or go and make this scene's clip. */}
+      <nav className="scene-dock" aria-label="Scene navigation">
+        <button type="button" className="icon secondary" aria-label="Previous scene" disabled={!prev || continuing} onClick={() => prev && void go(sceneLink(projectId!, prev.id, fromMake ? 'make' : undefined))}>‹</button>
+        <span className="scene-dock-count">Scene {scene.scene_number}{siblings.length ? ` of ${siblings.length}` : ''}</span>
+        <button type="button" className="icon secondary" aria-label="Next scene" disabled={!next || continuing} onClick={() => next && void go(sceneLink(projectId!, next.id, fromMake ? 'make' : undefined))}>›</button>
+        <span className="scene-dock-space" />
+        {!scene.description.trim() && <span className="hint">Write what happens first.</span>}
+        <button type="button" disabled={!scene.description.trim() || continuing || hasConflict}
+          onClick={() => void go(`/projects/${projectId}/director?scene=${scene.id}`)}>
+          {continuing ? 'Saving your scene…' : 'Make this scene’s clip →'}
+        </button>
+      </nav>
     </>
   );
 }

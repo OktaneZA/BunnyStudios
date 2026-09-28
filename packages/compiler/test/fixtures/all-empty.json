@@ -1,0 +1,43 @@
+{
+  "input": {
+    "bible": {
+      "artStyle": "",
+      "lineTreatment": "",
+      "defaultLighting": "",
+      "renderQualityTokens": "",
+      "negativePrompt": "",
+      "colourPalette": []
+    },
+    "scene": {
+      "description": "",
+      "sceneryDescription": "",
+      "cameraAngle": null,
+      "timeOfDay": "unspecified",
+      "weather": null,
+      "moodAtmosphere": null,
+      "lightingPreset": null,
+      "lighting": "",
+      "styleOverride": null,
+      "locationName": "",
+      "locationDescription": "",
+      "locationDefaultLighting": ""
+    },
+    "shot": {
+      "shotType": null,
+      "lensFocalLength": null,
+      "depthOfField": null,
+      "subjectPlacement": "",
+      "actionBeat": "",
+      "expressionNote": "",
+      "lightingOverride": null,
+      "userPromptAddendum": "",
+      "characters": [],
+      "propTokens": []
+    }
+  },
+  "expected": {
+    "prompt": "",
+    "negativePrompt": "text, watermark, signature, extra limbs, deformed hands, photorealistic, blurry",
+    "characterCount": 0
+  }
+}

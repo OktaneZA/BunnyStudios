@@ -1,0 +1,57 @@
+{
+  "input": {
+    "bible": {
+      "artStyle": "2d_flat_vector",
+      "lineTreatment": "",
+      "defaultLighting": "",
+      "renderQualityTokens": "",
+      "negativePrompt": "",
+      "colourPalette": []
+    },
+    "scene": {
+      "description": "  Bunny   trips over\n a root.  ",
+      "sceneryDescription": "",
+      "cameraAngle": null,
+      "timeOfDay": "unspecified",
+      "weather": null,
+      "moodAtmosphere": null,
+      "lightingPreset": null,
+      "lighting": "",
+      "styleOverride": null,
+      "locationName": "Meadow",
+      "locationDescription": "",
+      "locationDefaultLighting": ""
+    },
+    "shot": {
+      "shotType": null,
+      "lensFocalLength": null,
+      "depthOfField": null,
+      "subjectPlacement": "",
+      "actionBeat": "",
+      "expressionNote": "",
+      "lightingOverride": null,
+      "userPromptAddendum": "Make it funny...",
+      "characters": [
+        {
+          "name": " Bunny ",
+          "description": "",
+          "costume": ""
+        },
+        {
+          "name": "  ",
+          "description": "nobody",
+          "costume": ""
+        }
+      ],
+      "propTokens": [
+        "  ",
+        "a tiny hat "
+      ]
+    }
+  },
+  "expected": {
+    "prompt": "2D flat vector cartoon, clean geometric shapes, uniform outlines. Bunny. Bunny trips over a root. Meadow, a tiny hat. Make it funny.",
+    "negativePrompt": "text, watermark, signature, extra limbs, deformed hands, photorealistic, blurry",
+    "characterCount": 1
+  }
+}

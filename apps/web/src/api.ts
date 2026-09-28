@@ -9,6 +9,8 @@ export interface Problem {
   status: number;
   detail: string;
   field_errors?: Record<string, string[]>;
+  /** A 409 carries the server's record; a 402 carries `resets_at`. */
+  current_state?: unknown;
 }
 
 export class ApiProblem extends Error {
@@ -46,9 +48,10 @@ export const auth = {
   },
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body) headers.set('Content-Type', 'application/json');
+  // FormData sets its own multipart boundary; forcing a JSON type would break uploads.
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   const token = auth.token;
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
@@ -67,6 +70,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       status: res.status,
       detail: p?.detail ?? `The server returned ${res.status}.`,
       ...(p?.field_errors ? { field_errors: p.field_errors } : {}),
+      ...(p?.current_state !== undefined ? { current_state: p.current_state } : {}),
     });
   }
 
@@ -97,6 +101,7 @@ export interface Project {
 }
 
 export interface Scene {
+  art_style?: string | null;
   id: string;
   scene_number: number;
   sort_order: number;
@@ -197,3 +202,4 @@ export const api = {
       body: JSON.stringify({ scene_ids: sceneIds }),
     }),
 };
+export * from './director-api';

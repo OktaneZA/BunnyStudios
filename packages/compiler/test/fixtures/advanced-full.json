@@ -1,0 +1,61 @@
+{
+  "input": {
+    "bible": {
+      "artStyle": "classic_cel_animation",
+      "lineTreatment": "thick clean ink outlines",
+      "defaultLighting": "soft bible default light",
+      "renderQualityTokens": "highly detailed, 4k",
+      "negativePrompt": "gore, scary faces",
+      "colourPalette": [
+        "warm cream",
+        "forest green",
+        "#ff6a3d"
+      ]
+    },
+    "scene": {
+      "description": "Bunny and Fox meet at the old oak.",
+      "sceneryDescription": "autumn leaves drifting across the path",
+      "cameraAngle": "low_angle",
+      "timeOfDay": "dusk",
+      "weather": "light drizzle",
+      "moodAtmosphere": "tense",
+      "lightingPreset": "golden_hour",
+      "lighting": "scene free-text light",
+      "styleOverride": null,
+      "locationName": "The Old Oak",
+      "locationDescription": "a gnarled oak at a crossroads",
+      "locationDefaultLighting": "dappled light through leaves"
+    },
+    "shot": {
+      "shotType": "two_shot",
+      "lensFocalLength": "portrait_85mm",
+      "depthOfField": "shallow_bokeh",
+      "subjectPlacement": "Bunny on the left, Fox on the right",
+      "actionBeat": "Fox leans in and offers Bunny a wilted flower",
+      "expressionNote": "Bunny wary, Fox sheepish",
+      "lightingOverride": "a single shaft of late sun between them",
+      "userPromptAddendum": "Keep the flower clearly visible.",
+      "characters": [
+        {
+          "name": "Bunny",
+          "description": "a small white rabbit with one floppy ear",
+          "costume": "a red scarf"
+        },
+        {
+          "name": "Fox",
+          "description": "a lanky orange fox with a bushy tail",
+          "costume": ""
+        }
+      ],
+      "propTokens": [
+        "a wilted daisy",
+        "a wooden signpost"
+      ]
+    }
+  },
+  "expected": {
+    "prompt": "classic hand-drawn cel animation, painted backgrounds, thick clean ink outlines. two shot, both subjects in frame, low angle looking up at the subject, shot on an 85mm portrait lens, compressed perspective, shallow depth of field, soft bokeh background. Bunny: a small white rabbit with one floppy ear, wearing a red scarf; Fox: a lanky orange fox with a bushy tail; Bunny wary, Fox sheepish. Fox leans in and offers Bunny a wilted flower. Bunny on the left, Fox on the right. The Old Oak: a gnarled oak at a crossroads, autumn leaves drifting across the path, a wilted daisy, a wooden signpost. at dusk, light drizzle. a single shaft of late sun between them. tense, taut atmosphere. colour palette: warm cream, forest green, #ff6a3d. highly detailed, 4k. Keep the flower clearly visible.",
+    "negativePrompt": "gore, scary faces, text, watermark, signature, extra limbs, deformed hands, photorealistic, blurry",
+    "characterCount": 2
+  }
+}

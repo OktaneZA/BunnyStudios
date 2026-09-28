@@ -11,15 +11,21 @@ WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/vocabularies/package.json packages/vocabularies/
+COPY packages/models/package.json packages/models/
+COPY packages/compiler/package.json packages/compiler/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN npm ci
 
 COPY packages/vocabularies packages/vocabularies
+COPY packages/models packages/models
+COPY packages/compiler packages/compiler
 COPY apps/web apps/web
 COPY apps/api apps/api
 
 RUN npm run build -w @storyboard/vocabularies \
+ && npm run build -w @storyboard/models \
+ && npm run build -w @storyboard/compiler \
  && npm run build -w @storyboard/web \
  && npm run build -w @storyboard/api
 
@@ -28,6 +34,8 @@ RUN npm prune --omit=dev
 
 # ---------- runtime ----------
 FROM node:24-alpine
+# ffmpeg for poster frames and the final render (plan D36); libx264 and aac are in the alpine build.
+RUN apk add --no-cache ffmpeg
 # Stamped by deploy/release.mjs; surfaced by GET /health so a release can prove what is live.
 ARG BUILD_TAG=dev
 ARG APP_VERSION=0.0.0-dev
@@ -39,6 +47,7 @@ ENV NODE_ENV=production \
     PORT=3001 \
     HOST=0.0.0.0 \
     WEB_ROOT=/app/apps/web/dist \
+    STORAGE_ROOT=/data/storage \
     RUN_MIGRATIONS=true
 WORKDIR /app
 
@@ -47,12 +56,18 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/vocabularies/package.json packages/vocabularies/
 COPY --from=build /app/packages/vocabularies/dist packages/vocabularies/dist
 COPY --from=build /app/packages/vocabularies/vocabularies.json packages/vocabularies/
+COPY --from=build /app/packages/models/package.json packages/models/
+COPY --from=build /app/packages/models/dist packages/models/dist
+COPY --from=build /app/packages/models/models.json packages/models/
+COPY --from=build /app/packages/compiler/package.json packages/compiler/
+COPY --from=build /app/packages/compiler/dist packages/compiler/dist
 COPY --from=build /app/apps/api/package.json apps/api/
 COPY --from=build /app/apps/api/src apps/api/src
 COPY --from=build /app/apps/api/drizzle apps/api/drizzle
 COPY --from=build /app/apps/web/dist apps/web/dist
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R node:node /app
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R node:node /app \
+ && mkdir -p /data/storage && chown -R node:node /data
 
 USER node
 EXPOSE 3001

@@ -52,6 +52,34 @@ const schema = z.object({
   ANTHROPIC_MODEL: z.string().trim().min(1).default('claude-sonnet-5'),
   THUMBNAIL_DAILY_LIMIT: z.coerce.number().int().min(1).max(500).default(30),
   THUMBNAIL_REQUESTS_PER_MINUTE: z.coerce.number().int().min(1).max(20).default(3),
+
+  // ── Director Mode (docs/director-mode-plan-v1.md) ─────────────────────────
+  /** fal.ai key (plan D28). Blank disables every fal model; the picker hides them. */
+  FAL_KEY: z.string().trim().default(''),
+  /** Where generated pictures, clips and renders live (plan D29). A NAS volume in production. */
+  STORAGE_ROOT: z.string().trim().default('./storage'),
+  /** ffmpeg / ffprobe binaries for posters and the final render (plan D36). */
+  FFMPEG_PATH: z.string().trim().default('ffmpeg'),
+  FFPROBE_PATH: z.string().trim().default('ffprobe'),
+  /** The in-process job runner (plan D30). Off in tests, which drive the runner by hand. */
+  GENERATION_RUNNER: z.enum(['on', 'off']).default('on'),
+  /** Development only: 'on' swaps every provider and the reviewer for fakes so the whole flow can be driven without keys. Refused in production. */
+  GENERATION_FAKE: z.enum(['on', 'off']).default('off'),
+  GENERATION_POLL_MS: z.coerce.number().int().min(250).max(60_000).default(3000),
+  /**
+   * How long a claim may be silent before a runner takes the job over. A running job heartbeats
+   * every 10 seconds, so a silent claim means the process died (a restart, a crash). Short, so a
+   * restart mid-clip costs a minute, not a quarter of an hour.
+   */
+  GENERATION_CLAIM_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(60_000),
+  /** How long one clip or picture may take at the provider before we give up on it. */
+  GENERATION_JOB_TIMEOUT_MS: z.coerce.number().int().min(30_000).default(20 * 60_000),
+  /** Where the runner's step log is written, one line per step ('' turns the file off). */
+  GENERATION_LOG_FILE: z.string().trim().default('./logs/generation.log'),
+  /** Claude model used to review prompts and returned pictures (plan D32 gates 1 and 3). */
+  REVIEW_MODEL: z.string().trim().min(1).default('claude-sonnet-5'),
+  /** Claude model used to find the cast in the story (plan D39). */
+  CAST_MODEL: z.string().trim().min(1).default('claude-sonnet-5'),
 });
 
 const parsed = schema.safeParse(process.env);

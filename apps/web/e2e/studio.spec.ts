@@ -136,6 +136,8 @@ test.describe('AI', () => {
     const settings = await page.request.get('/api/v1/settings/ai', {
       headers: { authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('storyboard.token'))}` },
     }).then((r) => r.json());
+    // The sketch is optional (D42), so it sits in a folded section until opened.
+    await page.getByText('Optional: a quick sketch of this scene').click();
     if (settings.thumbnails_enabled) {
       test.info().annotations.push({ type: 'note', description: 'AI is enabled on this server; the disabled-state message is not exercised.' });
       await expect(page.getByRole('button', { name: /Make a thumbnail|Improve for me/ }).first()).toBeVisible();

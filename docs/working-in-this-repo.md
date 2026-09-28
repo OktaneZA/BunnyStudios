@@ -91,6 +91,19 @@ which is not on PATH in a non-interactive SSH session, and it stores a project's
 `compose.yaml` under the project name chosen in the DSM UI, not the folder name. DSM's sshd has
 no SFTP unless enabled, so `scp` fails; `deploy/release.mjs` uploads through plain SSH.
 
+**The generation runner never starts under `node --test`.** `app.ts` checks
+`NODE_TEST_CONTEXT`; tests call `app.director.runner.drain()` to run queued jobs to completion
+against the fake provider. Never let a test reach a real provider or the Claude reviewer.
+
+**Money is reserved inside the job's transaction with the account row locked.** A new kind of
+generation must call `reserve()` from `generation/budget.ts` in that same transaction, and
+anything that ends without a result must `refund()`. The three safety gates (D32) fail closed
+on the teen account: no reviewer, no generation.
+
+**Windows: ffmpeg from winget is not on the PATH of an already-open shell**, and several
+repo files use CRLF. Put full `FFMPEG_PATH`/`FFPROBE_PATH` in `.env`, and when patching files
+from a script normalise line endings first.
+
 ## Conventions
 
 - API is `snake_case` on the wire, `camelCase` in TypeScript. Presenter functions do the mapping.

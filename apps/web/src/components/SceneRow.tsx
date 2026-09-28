@@ -2,6 +2,9 @@ import { Link } from 'react-router-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Scene } from '../api';
+import type { TimelineItem } from '../director-api';
+import { ItemStill } from './CartoonStrip';
+import { SCENE_STATE_WORDS, sceneLink, sceneState } from '../sceneState';
 import { CopyButton } from './CopyButton';
 import { sceneText } from '../sceneExport';
 
@@ -11,6 +14,8 @@ interface Props {
   index: number;
   count: number;
   busy: boolean;
+  /** This scene on the cartoon's timeline: its clip, picture or sketch. */
+  item?: TimelineItem | null;
   onMove: (index: number, direction: -1 | 1) => void;
   onDelete: (scene: Scene) => void;
 }
@@ -23,8 +28,10 @@ interface Props {
  * The buttons are not a legacy fallback; on a tablet they are often the easier option, and
  * they are what satisfies NF-24 without relying on drag behaving well under touch.
  */
-export function SceneRow({ projectId, scene, index, count, busy, onMove, onDelete }: Props) {
+export function SceneRow({ projectId, scene, index, count, busy, onMove, onDelete, item }: Props) {
   const thumbnail = scene.thumbnail ?? scene.thumbnail_preview;
+  const state = sceneState({ hasClip: item?.source === 'video', making: Boolean(item?.making), hasDescription: Boolean(scene.description.trim()) });
+  const link = sceneLink(projectId, scene.id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scene.id,
     // Carried into the drag announcements so a screen reader can say which scene moved
@@ -61,22 +68,19 @@ export function SceneRow({ projectId, scene, index, count, busy, onMove, onDelet
       </span>
 
       <div className="scene-body">
-        <Link className="scene-thumbnail" to={`/projects/${projectId}/scenes/${scene.id}`} aria-label={`Open scene ${scene.scene_number}: ${scene.title}`}>
-          {thumbnail ? <img src={thumbnail.src} alt={thumbnail.description} loading="lazy" />
-            : <span className="thumbnail-placeholder">Add a scene sketch</span>}
+        {/* The same still the film strip in Make clips shows: the clip, else the sketch, else empty. */}
+        <Link className="scene-thumbnail" to={link} aria-label={`Open scene ${scene.scene_number}: ${scene.title}`}>
+          {item?.source === 'video' ? <ItemStill item={item} />
+            : thumbnail ? <img src={thumbnail.src} alt={thumbnail.description} loading="lazy" />
+            : <span className="thumbnail-placeholder">{scene.description.trim() ? 'No clip yet' : 'Write what happens'}</span>}
         </Link>
         <h4>
-          <Link to={`/projects/${projectId}/scenes/${scene.id}`}>{scene.title}</Link>
+          <Link to={link}>{scene.title}</Link>
         </h4>
-        {!scene.thumbnail && scene.thumbnail_preview && <p className="hint">Preview — open the scene to use it</p>}
-        {scene.thumbnail?.stale && <p className="hint">Scene changed since this sketch</p>}
-        {/* The slugline is derived from the location (§3.10). Until one is set it would just
-            echo the title in capitals, so show the next useful step instead. */}
-        {scene.location_id ? (
-          <p className="slug">{scene.slugline}</p>
-        ) : (
-          <p className="slug todo">No place or time set yet</p>
-        )}
+        <span className={`scene-state ${state}`}><span className="state-dot" aria-hidden="true" />{SCENE_STATE_WORDS[state]}</span>
+        <p className={`scene-excerpt${scene.description.trim() ? '' : ' todo'}`}>
+          {scene.description.trim() || 'No words yet. Open the scene to write what happens.'}
+        </p>
       </div>
 
       <div className="scene-actions">

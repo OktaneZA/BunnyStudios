@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply }
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import fastifyStatic from '@fastify/static';
+import multipart from '@fastify/multipart';
 import { config } from './config.ts';
 import { registerErrorHandler, ApiError } from './errors.ts';
 import { authRoutes } from './routes/auth.ts';
@@ -10,9 +11,14 @@ import { sceneRoutes } from './routes/scenes.ts';
 import { thumbnailRoutes } from './routes/thumbnails.ts';
 import type { ThumbnailProvider } from './thumbnails/provider.ts';
 import type { SceneImprovementProvider } from './scenes/improver.ts';
+import { directorRoutes } from './routes/director.ts';
+import { castRoutes } from './routes/cast.ts';
+import { timelineRoutes } from './routes/timeline.ts';
+import { createDirectorServices, type DirectorOverrides, type DirectorServices } from './director.ts';
 
 declare module 'fastify' {
   interface FastifyInstance {
+    director: DirectorServices;
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
   interface FastifyRequest {
@@ -21,7 +27,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp(options: { thumbnailProvider?: ThumbnailProvider; improvementProvider?: SceneImprovementProvider } = {}): Promise<FastifyInstance> {
+export async function buildApp(options: { thumbnailProvider?: ThumbnailProvider; improvementProvider?: SceneImprovementProvider; director?: DirectorOverrides } = {}): Promise<FastifyInstance & { director: DirectorServices }> {
   const app = Fastify({
     logger:
       config.NODE_ENV === 'test'
@@ -42,6 +48,13 @@ export async function buildApp(options: { thumbnailProvider?: ThumbnailProvider;
   });
 
   await app.register(jwt, { secret: config.JWT_SECRET });
+  await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+
+  const director = createDirectorServices(options.director ?? {});
+  app.decorate('director', director);
+  app.addHook('onClose', async () => { await director.runner.stop(); });
+  // Tests drive the runner by hand (drain), so it never starts under node --test.
+  if (config.GENERATION_RUNNER === 'on' && config.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) director.runner.start();
 
   app.decorate('requireAuth', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
@@ -90,9 +103,12 @@ export async function buildApp(options: { thumbnailProvider?: ThumbnailProvider;
       };
       await v1.register(thumbnailRoutes, providers);
       await v1.register(thumbnailRoutes, { ...providers, kind: 'improvement' });
+      await v1.register(directorRoutes, director);
+      await v1.register(castRoutes, director);
+      await v1.register(timelineRoutes, director);
     },
     { prefix: '/api/v1' },
   );
 
-  return app;
+  return app as FastifyInstance & { director: DirectorServices };
 }
