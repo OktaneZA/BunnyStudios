@@ -9,6 +9,12 @@ interface Props {
   allowNone?: boolean;
   noneLabel?: string;
   allowedValues?: readonly string[];
+  /** Small chip buttons in one wrapping row (the Create scene editor); no film term underneath. */
+  compact?: boolean;
+  /** Accessible name for the group. */
+  label?: string;
+  /** Tapping the chosen chip again clears it (only with allowNone). */
+  toggle?: boolean;
 }
 
 /**
@@ -29,11 +35,30 @@ export function OptionPicker({
   allowNone = false,
   noneLabel = 'Not decided yet',
   allowedValues,
+  compact = false,
+  label,
+  toggle = false,
 }: Props) {
   const options = PROMPT_VOCABULARIES[vocabulary].filter((option) => !allowedValues || allowedValues.includes(option.value));
 
+  if (compact) {
+    return (
+      <div className="picker compact" role="group" aria-label={label}>
+        {options.map((opt) => {
+          const selected = opt.value === value;
+          return (
+            <button key={opt.value} type="button" className={`chip${selected ? ' selected' : ''}`} aria-pressed={selected} title={opt.help}
+              onClick={() => onChange(selected && toggle && allowNone ? null : opt.value)}>
+              {friendly ? opt.friendlyLabel : opt.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
-    <div className="picker" role="group">
+    <div className="picker" role="group" aria-label={label}>
       {allowNone && (
         <button
           type="button"

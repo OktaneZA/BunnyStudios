@@ -38,7 +38,7 @@ test.describe('Character Studio', () => {
     await expect(portrait).toContainText('Using your chosen look');
     await expect(portrait.locator('img')).toBeVisible();
     await expect.poll(() => portrait.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
-    await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /^Make clip · about/ })).toBeEnabled();
     await page.reload();
     await expect(portrait).toContainText('Using your chosen look');
     await expect(portrait.locator('img')).toBeVisible();
@@ -95,25 +95,25 @@ test.describe('Character Studio', () => {
     await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
     await page.getByRole('button', { name: 'Save characters' }).click();
     await expect(page.locator('.portrait', { hasText: 'Bunny' })).toContainText('Using your chosen look');
-    const main = page.getByRole('button', { name: /^Make preview · about/ });
+    const main = page.getByRole('button', { name: /^Make clip · about/ });
     await expect(main).toBeEnabled();
     await page.screenshot({ path: `${shots}/03-composer.png`, fullPage: true });
 
     // 5. One action: a preview, then the final from it.
     await main.click();
     await expect(page.locator('.clip-label')).toContainText('In your cartoon · Preview', { timeout: 90_000 });
-    await page.getByRole('button', { name: 'Final', exact: true }).click();
+    // With a preview on screen, the one button becomes its final.
     const final = page.getByRole('button', { name: /^Make final clip · about/ });
     await expect(final).toBeEnabled();
-    await expect(page.getByText(/Makes a new video from your preview/)).toBeVisible();
+    await expect(page.getByText(/from your preview’s recipe/)).toBeVisible();
     await expect(page.getByRole('region', { name: 'Settings from your preview' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Edit characters', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Change', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Use my current scene settings instead' }).click();
     await expect(page.getByRole('button', { name: 'Edit characters', exact: true })).toBeVisible();
-    // Switch to a preview and back to reselect the saved-recipe flow.
-    await page.getByRole('button', { name: 'Preview', exact: true }).click();
-    await page.getByRole('button', { name: 'Final', exact: true }).click();
+    // And back to the preview's saved recipe.
+    await page.getByRole('button', { name: 'Use the preview’s saved settings instead' }).click();
+    await expect(page.getByRole('region', { name: 'Settings from your preview' })).toBeVisible();
     await final.click();
     await expect(page.getByText('Other versions (1)')).toBeVisible({ timeout: 90_000 });
 
@@ -135,9 +135,9 @@ test.describe('Character Studio', () => {
     await page.route('**/api/v1/shots/*/videos/quote', (route) => route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ title: 'Unavailable', status: 503, detail: 'Try again.' }) }));
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Check price again' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Make clip/ })).toBeDisabled();
     await page.unroute('**/api/v1/shots/*/videos/quote');
     await page.getByRole('button', { name: 'Check price again' }).click();
-    await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /^Make clip · about/ })).toBeEnabled();
   });
 });

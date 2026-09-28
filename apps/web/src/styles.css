@@ -1040,3 +1040,41 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .add-scene-button { margin-bottom: 14px; }
 .clip-label .new-clip { color: var(--success); }
+
+/* ── Simpler Create (docs mockup "Simpler Create screen", 28 Sep) ───────────── */
+/* One header row: progress, test-mode pill, Characters, View beside the title and steps. */
+.create-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.create-controls .director-progress { margin-right: auto; }
+.create-controls .cast-button { width: auto; min-height: var(--tap); padding: 0 14px; }
+.create-controls .view-menu[open] { flex-basis: 100%; order: 10; }
+.test-mode-pill { font-size: .75rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid #6b5a2a; color: #f0dfb0; background: #2b2616; cursor: help; }
+/* Add scene is the last tile of the strip; a phone gets a scene drop-down instead. */
+.scene-add-tile { flex: 0 0 150px; min-height: 120px; border: 2px dashed var(--line); border-radius: 14px; background: transparent; color: var(--pale); font-weight: 700; }
+.scene-board .scene-add-tile { min-height: 64px; }
+.scene-select { display: none; }
+@media (max-width: 700px) {
+  .scene-select { display: grid; gap: 6px; margin-bottom: 8px; }
+  .scene-select select { min-height: 48px; font-weight: 700; }
+  .director-scenes .scene-overview-list, .director-scenes .scene-overview-head { display: none; }
+}
+/* Scene choices as chips, right under the scene words. */
+.picker.compact { gap: 6px; }
+.picker.compact .chip { min-height: 38px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink-soft); font-weight: 650; font-size: .88rem; }
+.picker.compact .chip.selected { border-color: var(--accent); background: var(--selected-surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.composer-rows { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px 12px; align-items: center; }
+.composer-rows > .label-text { color: var(--ink-soft); font-size: .85rem; font-weight: 700; }
+/* Characters, Style and Length are short rows, not boxes. */
+.composer > .composer-field { border: none; background: none; padding: 0; border-top: 1px solid var(--line); padding-top: 12px; align-items: center; }
+.composer > .composer-field > .label-text { min-width: 100px; padding-top: 0; color: var(--ink-soft); font-size: .85rem; }
+/* "Let AI help" reads as a button that opens the writing help. */
+.let-ai-help > summary { list-style: none; display: inline-flex; align-items: center; min-height: 42px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 10px; color: var(--pale); font-weight: 700; cursor: pointer; }
+.let-ai-help > summary::-webkit-details-marker { display: none; }
+.let-ai-help > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.let-ai-help[open] > summary { margin-bottom: 10px; }
+.money-left { font-weight: 700; }
+/* Scene and clip side by side from tablet width. */
+@media (min-width: 1000px) { .director-page .director-work { grid-template-columns: minmax(0, 1.45fr) minmax(260px, 1fr); } }
+@media (max-width: 600px) {
+  .composer-rows { grid-template-columns: minmax(0, 1fr); }
+  .composer > .composer-field { flex-direction: row; flex-wrap: wrap; }
+}

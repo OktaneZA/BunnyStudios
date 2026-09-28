@@ -27,10 +27,12 @@ test.describe('Director', () => {
     await page.getByRole('button', { name: 'Change', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Watercolour', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.prompt-box')).toContainText("children's storybook watercolour illustration");
-    for (const kind of ['Preview', 'Final']) {
-      await page.getByRole('button', { name: kind, exact: true }).click();
-      for (const seconds of [5, 10, 15, 30]) await expect(page.getByRole('button', { name: `${seconds} seconds`, exact: true })).toBeVisible();
-    }
+    for (const seconds of [5, 10, 15, 30]) await expect(page.getByRole('button', { name: `${seconds} seconds`, exact: true })).toBeVisible();
+    // One button, no Preview/Final switch; skipping the preview is under More options.
+    await expect(page.getByRole('button', { name: 'Final', exact: true })).toHaveCount(0);
+    await page.getByText('More options', { exact: true }).click();
+    await expect(page.getByLabel(/Skip the preview/)).toBeVisible();
+    await page.getByText('More options', { exact: true }).click();
     await page.getByText('View', { exact: true }).click();
     for (const design of ['Film Strip', 'Scene Board']) {
       await page.getByRole('button', { name: design, exact: true }).click();
@@ -88,10 +90,10 @@ test.describe('Director', () => {
     await expect(page.getByRole('button', { name: /2 Sister wants a go/ })).toBeVisible();
     await expect(page.getByLabel('What happens?')).toHaveValue('');
     await expect(page.getByLabel('What happens?')).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Make clip/ })).toBeDisabled();
     await expect(page.getByText('Describe what happens in this scene first.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Your cartoon' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Put it together →' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Change how scenes join/ }).first()).toBeVisible();
     // No horizontal scroll at the tablet width.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -109,7 +111,7 @@ test.describe('Director', () => {
     await expect(page.getByRole('heading', { name: /Scene 1 · Find the map/ })).toBeVisible();
     await expect(page.getByLabel('What happens?')).toHaveValue('Milo finds a map under a tree.');
     await expect(page.locator('.prompt-details')).not.toHaveAttribute('open');
-    await page.getByRole('link', { name: 'Put it together →' }).click();
+    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ }).click();
     const missing = page.getByRole('region', { name: 'Scenes missing from your cartoon' });
     await expect(missing).toBeVisible();
     await missing.getByRole('link', { name: 'Make scene 2' }).click();
@@ -154,10 +156,10 @@ test.describe('Director', () => {
     await page.getByRole('button', { name: '15 seconds', exact: true }).click();
     await page.getByText('Price details').click();
     await expect(page.getByText(/shorter clips joined together/)).toBeVisible();
-    await page.getByRole('button', { name: /^Make preview · about/ }).click();
+    await page.getByRole('button', { name: /^Make clip · about/ }).click();
     await expect(page.getByRole('button', { name: /1 Timmy finds the ball In the cartoon/ })).toBeVisible({ timeout: 90_000 });
 
-    await page.getByRole('link', { name: 'Put it together →' }).click();
+    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ }).click();
     await page.getByRole('button', { name: 'Make my cartoon' }).click();
     await expect(page.getByRole('link', { name: 'Save video' })).toBeVisible({ timeout: 90_000 });
     const download = page.waitForEvent('download');
@@ -185,8 +187,8 @@ test.describe('Director', () => {
     await expect(steps.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'step');
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();
     // Writing from Make clips returns to the same scene's clip, not to the board.
-    await page.getByText('More writing tools', { exact: true }).click();
-    await page.getByRole('link', { name: 'Edit scene' }).click();
+    await page.getByText('More options', { exact: true }).click();
+    await page.getByRole('link', { name: 'Open the full scene page' }).click();
     await expect(page.getByRole('heading', { name: 'Follow the map' })).toBeVisible();
     await page.getByRole('link', { name: /Back to Create/ }).click();
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();

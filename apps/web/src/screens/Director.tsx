@@ -109,13 +109,11 @@ export function Director({ account }: { account: Account }) {
 
   return (
     <div className={`director-page design-${design}`}>
+      {/* One short header row (simpler Create): progress, Characters, View and the two steps. */}
       <CartoonHeader projectId={project.id} title={project.title} step="make">
-        <div className="director-progress"><span>{inCartoon} of {scenes.length} scenes in your cartoon</span><progress aria-label="Scenes with clips" value={inCartoon} max={Math.max(1, scenes.length)} /></div>
-      </CartoonHeader>
-      <ProblemBox error={error} />
-      {settings?.test_mode && <p className="notice" role="status">Test mode: pictures and clips are coloured placeholders, not AI-generated characters. No provider credits are used.</p>}
-
-      <section className="director-view-controls" aria-label="Director controls">
+        <div className="create-controls" role="group" aria-label="Director controls">
+        <div className="director-progress"><span>{inCartoon} of {scenes.length} scenes ready</span><progress aria-label="Scenes with clips" value={inCartoon} max={Math.max(1, scenes.length)} /></div>
+        {settings?.test_mode && <span className="test-mode-pill" title="Pictures and clips are coloured placeholders, not AI-generated. No provider credits are used.">Test mode</span>}
         <button type="button" className="cast-button" onClick={() => setSheet('cast')}>Characters · {castWords} ›</button>
         <details className="view-menu">
           <summary>View</summary>
@@ -134,23 +132,25 @@ export function Director({ account }: { account: Account }) {
             </div>
           </div>
         </details>
-      </section>
+        </div>
+      </CartoonHeader>
+      <ProblemBox error={error} />
 
       <DirectorPanel key={`scenes-${layoutReset}`} title="Scenes" className="director-overview" movable={movable}>
-        <button type="button" className="secondary add-scene-button" disabled={addingScene} onClick={async () => {
-          setAddingScene(true); setError(null);
-          try {
-            const created = await api.createScene(project.id, { title: `Scene ${scenes.length + 1}` });
-            setScenes((previous) => [...(previous ?? []), created]);
-            await refreshShot(created.id);
-            setSearch({ scene: created.id });
-            void refreshTimeline().catch(setError);
-          } catch (err) { setError(err); }
-          finally { setAddingScene(false); }
-        }}>{addingScene ? 'Adding scene…' : '+ Add scene'}</button>
         <DirectorScenes layout={design} scenes={scenes} shots={shots} jobs={jobs} assets={assetsById}
           selectedId={selected?.id} projectId={project.id} timeline={timeline} onTimeline={setTimeline}
-          onSelect={(sceneId) => setSearch({ scene: sceneId })} />
+          onSelect={(sceneId) => setSearch({ scene: sceneId })} adding={addingScene}
+          onAdd={async () => {
+            setAddingScene(true); setError(null);
+            try {
+              const created = await api.createScene(project.id, { title: `Scene ${scenes.length + 1}` });
+              setScenes((previous) => [...(previous ?? []), created]);
+              await refreshShot(created.id);
+              setSearch({ scene: created.id });
+              void refreshTimeline().catch(setError);
+            } catch (err) { setError(err); }
+            finally { setAddingScene(false); }
+          }} />
       </DirectorPanel>
       {/* While a new scene is being made the editor still shows the previous one: lock it, so
           typing can never land in (and overwrite) the scene the child has just left. */}

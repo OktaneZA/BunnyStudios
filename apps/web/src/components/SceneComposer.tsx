@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiProblem, type Scene } from '../api';
 import {
-  director, isActiveJob, seconds,
+  director, formatPence, isActiveJob, seconds,
   type Asset, type GenerationSettings, type Job, type NeedsChoice, type Shot, type ShotCast, type VideoBody, type VideoPlan,
 } from '../director-api';
 import { ART_STYLE } from '@storyboard/vocabularies';
@@ -22,6 +22,8 @@ const CLIP_STYLES = [
   ['anime_ghibli_soft', 'Soft anime'], ['watercolour_storybook', 'Watercolour'], ['claymation_look', 'Clay animation'],
 ] as const;
 const LENGTHS = [5, 10, 15, 30] as const;
+/** Simple mode shows a short, friendly set of moods; Advanced shows every mood in the vocabulary. */
+const SIMPLE_MOODS: readonly string[] = ['whimsical', 'cosy', 'tense', 'eerie', 'triumphant', 'melancholy'];
 const fileUrl = (id: string) => `/api/v1/assets/${id}/file`;
 
 interface Props {
@@ -54,7 +56,8 @@ type Quote = { plan: VideoPlan | null; needs: { detail: string; state: NeedsChoi
  */
 export function SceneComposer(props: Props) {
   const { scene, projectId, shot, settings, jobs, jobsLoaded, assetsById, advanced, movable, layoutReset, castList, addJob, onShot, onScene, afterHero, refreshSettings, openStudio } = props;
-  const [purpose, setPurpose] = useState<'preview' | 'final'>('preview');
+  /** More options: make a final straight away instead of a preview first. */
+  const [skipPreview, setSkipPreview] = useState(false);
   const [duration, setDuration] = useState<number>(5);
   const [audio, setAudio] = useState(false);
   const [wordsOnly, setWordsOnly] = useState(false);
@@ -126,8 +129,16 @@ export function SceneComposer(props: Props) {
   }, [videoJobs, jobsLoaded]);
   const playing = clips.find((c) => c.asset.id === pickedClip) ?? clips.find((c) => c.asset.id === heroId) ?? (heroAsset ? { asset: heroAsset, job: null } : clips[0] ?? null);
   const playingJob = playing?.job ?? null;
-  // After a preview, the next step is its final (review P0), unless the child starts fresh.
-  const fromPreview = purpose === 'final' && !fresh && playingJob?.intent === 'draft' && playingJob.status === 'ready' ? playingJob : null;
+  // One button (simpler Create): "Make clip" makes a preview; with a finished preview on screen
+  // it becomes "Make final clip" from that preview's recipe. "Use my current scene settings
+  // instead" makes a fresh final; "Skip the preview" goes straight to a final.
+  const previewOnScreen = playingJob?.intent === 'draft' && playingJob.status === 'ready' ? playingJob : null;
+  // Writing stays editable after a preview. If the scene changed since the preview was made,
+  // the final follows the scene as it is now rather than the preview's older recipe.
+  const sceneChangedSincePreview = previewOnScreen?.source_scene_version != null && scene.version > previewOnScreen.source_scene_version;
+  const fromPreview = previewOnScreen && !fresh && !skipPreview && !sceneChangedSincePreview ? previewOnScreen : null;
+  const purpose: 'preview' | 'final' = skipPreview || previewOnScreen ? 'final' : 'preview';
+  useEffect(() => { setFresh(false); }, [playingJob?.id]);
 
   const model = settings?.models.find((m) => m.id === modelId) ?? null;
   const body = useMemo((): VideoBody => fromPreview
@@ -261,7 +272,14 @@ export function SceneComposer(props: Props) {
   const styleValue = scene.art_style ?? CLIP_STYLES.find(([v]) => shot?.compiled_prompt.startsWith(ART_STYLE.find((s) => s.value === v)!.prompt_phrase))?.[0] ?? null;
   const styleLabel = CLIP_STYLES.find(([v]) => v === styleValue)?.[1] ?? 'Not chosen';
   const plan = quote?.plan ?? null;
-  const actionLabel = fromPreview ? 'Make final clip' : purpose === 'preview' ? 'Make preview' : 'Make final clip';
+  const actionLabel = purpose === 'preview' ? 'Make clip' : 'Make final clip';
+  // Money in plain words: what is left, next to the price on the button (not "about 9,000 clips").
+  const allowance = settings?.allowance;
+  const leftWords = allowance
+    ? allowance.remaining_this_month_pence < allowance.remaining_today_pence
+      ? `${formatPence(allowance.remaining_this_month_pence)} left this month`
+      : `${formatPence(allowance.remaining_today_pence)} left today`
+    : '';
   const blockedReason = !enabled ? (settings?.message ?? 'Generation isn’t connected yet. Ask the account owner to set it up.')
     : sceneText.pending ? 'Save the scene before making a clip.'
     : !fromPreview && !scene.description.trim() ? 'Describe what happens in this scene first.'
@@ -279,14 +297,6 @@ export function SceneComposer(props: Props) {
           </header>
           <ProblemBox error={error} />
 
-          {fromPreview ? (
-            <section className="notice" aria-label="Settings from your preview">
-              <h4>Using the preview’s saved settings</h4>
-              <p>The scene, character looks and pictures are taken from this preview. Later scene edits are not included.</p>
-              {plan && <p>{plan.output.durationSeconds} seconds · {plan.output.audio ? 'Sound on' : 'Sound off'} · {plan.characters.map((c) => c.name).join(', ') || 'No saved characters'}</p>}
-              <button type="button" className="secondary" onClick={() => setFresh(true)}>Use my current scene settings instead</button>
-            </section>
-          ) : <>
           <div className="scene-writing stack">
             <label htmlFor={`scene-name-${scene.id}`}>Scene name</label>
             <input id={`scene-name-${scene.id}`} maxLength={200} value={sceneText.text.title} onChange={(e) => sceneText.edit('title', e.target.value)} onBlur={() => void sceneText.flush()} />
@@ -298,8 +308,8 @@ export function SceneComposer(props: Props) {
               <button type="button" className="secondary" onClick={() => void sceneText.retry()}>{sceneText.conflict ? 'Save my changes' : 'Retry save'}</button>
               {sceneText.conflict && <button type="button" className="secondary" onClick={() => void sceneText.retry(false)}>Use saved version</button>}
             </div>}
-            <details className="scene-settings let-ai-help">
-              <summary>Let AI help</summary>
+            <details className="let-ai-help">
+              <summary>✦ Let AI help</summary>
               <div className="scene-settings-body">
                 {/* The words are saved first, and a suggestion only replaces them when chosen. */}
                 <SceneImprover scene={{ ...scene, description: sceneText.text.description }} beforeGenerate={sceneText.settle}
@@ -314,30 +324,32 @@ export function SceneComposer(props: Props) {
                   }} />
               </div>
             </details>
-            <details className="scene-settings">
-              <summary>Camera, time and mood</summary>
-              <div className="stack scene-settings-body">
-                <div className="field">
-                  <span className="label-text">Camera angle</span>
-                  <OptionPicker vocabulary="camera_angle" value={sceneText.text.camera_angle ?? 'eye_level'} friendly={!advanced}
-                    allowedValues={['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter']}
-                    onChange={(value) => { sceneText.edit('camera_angle', value); void sceneText.flush(); }} />
-                </div>
-                <div className="field">
-                  <span className="label-text">What time of day is it?</span>
-                  <OptionPicker vocabulary="time_of_day" value={sceneText.text.time_of_day} friendly={!advanced}
-                    onChange={(value) => { sceneText.edit('time_of_day', value ?? 'unspecified'); void sceneText.flush(); }} />
-                </div>
-                <div className="field">
-                  <span className="label-text">What's the mood?</span>
-                  <OptionPicker vocabulary="mood_atmosphere" value={sceneText.text.mood_atmosphere} friendly={!advanced} allowNone
-                    onChange={(value) => { sceneText.edit('mood_atmosphere', value); void sceneText.flush(); }} />
-                </div>
-              </div>
-            </details>
-            <details className="scene-settings"><summary>More writing tools</summary><div className="scene-settings-body"><p className="hint">Open the full scene editor for scene sketches.</p><Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Edit scene</Link></div></details>
+            {/* Time, mood and camera are part of the scene, so they sit right under it as buttons. */}
+            <div className="composer-rows scene-choices">
+              <span className="label-text" id={`time-${scene.id}`}>Time of day</span>
+              <OptionPicker vocabulary="time_of_day" value={sceneText.text.time_of_day} friendly={!advanced} compact label="Time of day" allowNone toggle
+                allowedValues={['dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night']}
+                onChange={(value) => { sceneText.edit('time_of_day', value ?? 'unspecified'); void sceneText.flush(); }} />
+              <span className="label-text">Mood</span>
+              <OptionPicker vocabulary="mood_atmosphere" value={sceneText.text.mood_atmosphere} friendly={!advanced} compact label="Mood" allowNone toggle
+                allowedValues={advanced ? undefined : [...SIMPLE_MOODS, ...(sceneText.text.mood_atmosphere && !SIMPLE_MOODS.includes(sceneText.text.mood_atmosphere) ? [sceneText.text.mood_atmosphere] : [])]}
+                onChange={(value) => { sceneText.edit('mood_atmosphere', value); void sceneText.flush(); }} />
+              <span className="label-text">Camera</span>
+              <OptionPicker vocabulary="camera_angle" value={sceneText.text.camera_angle ?? 'eye_level'} friendly={!advanced} compact label="Camera"
+                allowedValues={['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter']}
+                onChange={(value) => { if (value) { sceneText.edit('camera_angle', value); void sceneText.flush(); } }} />
+            </div>
           </div>
 
+          {fromPreview ? (
+            <section className="notice" aria-label="Settings from your preview">
+              <h4>Using the preview’s saved settings</h4>
+              <p>The final uses the same scene, character looks and pictures as your preview. Change the scene above to make it from the scene as it is now.</p>
+              {plan && <p>{plan.output.durationSeconds} seconds · {plan.output.audio ? 'Sound on' : 'Sound off'} · {plan.characters.map((c) => c.name).join(', ') || 'No saved characters'}</p>}
+              <button type="button" className="secondary" onClick={() => setFresh(true)}>Use my current scene settings instead</button>
+            </section>
+          ) : <>
+          {previewOnScreen && sceneChangedSincePreview && !skipPreview && <p className="hint">You changed this scene since the preview, so the final clip is made from the scene as it is now.</p>}
           {/* Characters: their chosen looks are used automatically (review P1). */}
           <div className="composer-field">
             <span className="label-text">Characters</span>
@@ -424,18 +436,17 @@ export function SceneComposer(props: Props) {
             </div>
           )}
 
-          <div className="composer-field">
-            <span className="label-text" id={`kind-${scene.id}`}>Make a</span>
-            <div className="segmented" role="group" aria-labelledby={`kind-${scene.id}`}>
-              <button type="button" className={purpose === 'preview' ? 'on' : ''} aria-pressed={purpose === 'preview'} onClick={() => { setPurpose('preview'); setFresh(false); }}>Preview</button>
-              <button type="button" className={purpose === 'final' ? 'on' : ''} aria-pressed={purpose === 'final'} onClick={() => setPurpose('final')}>Final</button>
-            </div>
-          </div>
-
           <details className="more-options scene-settings">
             <summary>More options</summary>
             <div className="stack scene-settings-body">
               <p className="hint">These settings apply to the next clip you make. Changing them updates the price on the make button below; your existing clip stays the same.</p>
+              {!previewOnScreen && (
+                <section className="clip-option-group" aria-label="Preview first">
+                  <h4>Preview first</h4>
+                  <label className="row"><input type="checkbox" checked={skipPreview} onChange={(e) => setSkipPreview(e.target.checked)} /> Skip the preview and make a final clip straight away</label>
+                  <p className="hint">A preview is a cheaper try. A final is the better clip for your cartoon.</p>
+                </section>
+              )}
               {!fromPreview && (
                 <section className="clip-option-group" aria-label="Sound">
                   <h4>Sound</h4>
@@ -481,6 +492,11 @@ export function SceneComposer(props: Props) {
                   )}
                 </section>
               )}
+              <section className="clip-option-group" aria-label="Scene sketch">
+                <h4>Scene sketch</h4>
+                <p className="hint">A quick drawing to plan the scene. It is never used as a character picture.</p>
+                <Link className="btn secondary" to={sceneLink(projectId, scene.id, 'make')}>Open the full scene page</Link>
+              </section>
               <details className="prompt-details scene-settings">
                 <summary>See the clip instructions</summary>
                 <p className="prompt-box">{fromPreview ? plan?.prompt ?? 'Loading the preview’s instructions…' : shot?.compiled_prompt || 'Write what happens in this scene first.'}</p>
@@ -502,10 +518,12 @@ export function SceneComposer(props: Props) {
             <button type="button" className="main-action" disabled={off || !plan} onClick={() => void make(quote)}>
               {busy && <span className="ai-spinner" aria-hidden="true" />}{actionLabel}{plan ? ` · ${plan.words}` : ''}
             </button>
-            {fromPreview && <p className="hint">Makes a new video from your preview’s recipe. It may look a little different from the preview.</p>}
+            {fromPreview ? <p className="hint">Makes a new, better video from your preview’s recipe. It may look a little different from the preview.</p>
+              : purpose === 'preview' ? <p className="hint">Makes a quick preview first. You can make the final clip after.</p>
+                : previewOnScreen && fresh && <p className="hint">Makes a final clip from the scene as it is now. <button type="button" className="link-button" onClick={() => setFresh(false)}>Use the preview’s saved settings instead</button></p>}
             {quoteFailed ? <p className="hint" role="status">Could not check the price. <button type="button" className="secondary" onClick={() => setQuoteRevision((n) => n + 1)}>Check price again</button></p>
               : blockedReason && <p className="hint" role="status">{blockedReason}</p>}
-            <p className="hint">{settings?.allowance_words}</p>
+            {leftWords && <p className="hint money-left">{leftWords}</p>}
             {plan && (
               <details className="price-details scene-settings">
                 <summary>Price details</summary>
@@ -523,7 +541,7 @@ export function SceneComposer(props: Props) {
 
       <DirectorPanel key={`clips-${layoutReset}`} title="Your clips" className="director-right" movable={movable}>
         <h4>Your clip</h4>
-        {!playing && <p className="hint">No clips yet. Choose Preview or Final and press the button.</p>}
+        {!playing && <p className="hint">No clip yet. Press Make clip: it makes a quick preview first.</p>}
         {playing && (
           <>
             <div className="clip-stage">

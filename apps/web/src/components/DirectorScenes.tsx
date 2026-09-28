@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import type { Scene } from '../api';
 import { director, isActiveJob, seconds, type Asset, type Job, type Shot, type Timeline } from '../director-api';
 import { TakeImage } from './AssetMedia';
@@ -8,10 +7,12 @@ import { ProblemBox } from './ProblemBox';
 import { SCENE_STATE_WORDS, sceneState } from '../sceneState';
 
 /** One scene list, shown as either the film strip or the scene board. */
-export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId, projectId, timeline, onTimeline, onSelect }: {
+export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId, projectId, timeline, onTimeline, onSelect, onAdd, adding }: {
   layout: string; scenes: Scene[]; shots: Map<string, Shot>; jobs: Job[]; assets: Map<string, Asset>;
   selectedId?: string; projectId: string; timeline: Timeline | null;
   onTimeline: (timeline: Timeline) => void; onSelect: (sceneId: string) => void;
+  /** Add a scene: the last tile in the strip, and the last choice in the phone's scene list. */
+  onAdd: () => void; adding: boolean;
 }) {
   const [join, setJoin] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,10 +27,24 @@ export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId
   return <section className={`director-scenes ${layout}`} aria-label="Your cartoon scenes">
     <header className="scene-overview-head">
       <div><h3>Your cartoon</h3><span className="hint">Tap a scene to work on it · {ready} of {scenes.length} ready · {seconds(timeline?.total_ms ?? 0)} so far</span></div>
-      <Link className="btn secondary" to={`/projects/${projectId}/together`}>Put it together →</Link>
     </header>
     <ProblemBox error={error} />
     {!scenes.length && <p className="notice">Add a scene, describe what happens, then make its clip.</p>}
+    {/* Phones: one compact scene chooser instead of the strip. */}
+    {scenes.length > 0 && (
+      <label className="scene-select">
+        <span className="label-text">Scene</span>
+        <select value={selectedId ?? ''} disabled={adding} onChange={(e) => { if (e.target.value === '__add') onAdd(); else onSelect(e.target.value); }}>
+          {scenes.map((scene) => {
+            const shot = shots.get(scene.id);
+            const making = jobs.some((job) => job.target_entity_id === shot?.id && job.kind === 'video' && isActiveJob(job));
+            const state = sceneState({ hasClip: Boolean(shot?.hero_video_asset_id), making, hasDescription: Boolean(scene.description.trim()) });
+            return <option key={scene.id} value={scene.id}>{scene.scene_number}. {scene.title} · {SCENE_STATE_WORDS[state]}</option>;
+          })}
+          <option value="__add">+ Add scene</option>
+        </select>
+      </label>
+    )}
     <div className="scene-overview-list">
       {scenes.map((scene, index) => {
         const shot = shots.get(scene.id);
@@ -65,6 +80,7 @@ export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId
           {item && index < scenes.length - 1 && <TransitionChip value={item.transition_out} disabled={busy} onClick={() => setJoin(scene.id)} />}
         </div>;
       })}
+      <button type="button" className="scene-add-tile" disabled={adding} onClick={onAdd}>{adding ? 'Adding scene…' : '+ Add scene'}</button>
     </div>
     {joinItem && <TransitionPopover fromNumber={joinItem.scene_number} toNumber={joinItem.scene_number + 1}
       value={joinItem.transition_out} busy={busy} onClose={() => setJoin(null)}
