@@ -47,6 +47,8 @@ interface Props {
   afterHero: () => void;
   /** The cartoon's look changed: other scenes and their instructions changed with it. */
   onCartoonChanged: () => Promise<void>;
+  /** The scene went to the bin: show the next one. */
+  onDeleted: () => Promise<void>;
   refreshSettings: () => Promise<void>;
   openStudio: (characterId: string) => void;
 }
@@ -60,7 +62,7 @@ type Quote = { plan: VideoPlan | null; needs: { detail: string; state: NeedsChoi
  * Every visible setting applies to that one action and its price.
  */
 export function SceneComposer(props: Props) {
-  const { scene, projectId, shot, settings, jobs, jobsLoaded, assetsById, advanced, movable, layoutReset, castList, addJob, onShot, onScene, afterHero, onCartoonChanged, refreshSettings, openStudio } = props;
+  const { scene, projectId, shot, settings, jobs, jobsLoaded, assetsById, advanced, movable, layoutReset, castList, addJob, onShot, onScene, afterHero, onCartoonChanged, onDeleted, refreshSettings, openStudio } = props;
   /** More options: make a final straight away instead of a preview first. */
   const [skipPreview, setSkipPreview] = useState(false);
   const [duration, setDuration] = useState<number>(5);
@@ -292,6 +294,15 @@ export function SceneComposer(props: Props) {
     return () => { on = false; clearTimeout(timer); };
   }, [retrying, retryNote, retryBody, ask, quoteRevision]);
 
+  /** To the bin, never gone: Manage scenes can put it back, clips and all. */
+  async function binScene() {
+    if (busy || activeJob) return;
+    if (!confirm(`Move scene ${scene.scene_number}, "${scene.title}", to the bin? You can put it back later from Manage scenes.`)) return;
+    setBusy(true); setError(null);
+    try { await api.deleteScene(scene.id); await onDeleted(); }
+    catch (err) { setError(err); setBusy(false); }
+  }
+
   async function useThisClip(asset: Asset) {
     if (!shot) return;
     setBusy(true); setError(null);
@@ -336,6 +347,7 @@ export function SceneComposer(props: Props) {
         <section className="composer card" aria-labelledby={`composer-${scene.id}`}>
           <header className="work-head">
             <h3 id={`composer-${scene.id}`}>Scene {scene.scene_number} · {scene.title}</h3>
+            <button type="button" className="link-button bin-scene" disabled={busy || Boolean(activeJob)} onClick={() => void binScene()}>Move to the bin</button>
           </header>
           <ProblemBox error={error} />
 

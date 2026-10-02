@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { addScene, createCartoon, signIn, unique } from './helpers';
+import { addScene, createCartoon, signIn, unique, acceptNextConfirm } from './helpers';
 
 /**
  * Director Mode in the browser. With no clip-maker key the screen says so and nothing can be
@@ -176,6 +176,26 @@ test.describe('Director', () => {
     const download = page.waitForEvent('download');
     await page.getByRole('link', { name: 'Save video' }).click();
     await (await download).saveAs('.playwright-results/joined-cartoon.mp4');
+  });
+
+  test('a scene can go to the bin from Create, and the next scene is shown', async ({ page }) => {
+    await signIn(page, 'teen');
+    await createCartoon(page, unique('E2E bin from create'));
+    await addScene(page, 'Keep me');
+    await addScene(page, 'Bin me');
+    await page.getByRole('link', { name: 'Bin me', exact: true }).click();
+    await page.getByLabel('Scene description').fill('A scene that should not be here.');
+    await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
+    await expect(page.getByRole('heading', { name: 'Scene 2 · Bin me' })).toBeVisible();
+    acceptNextConfirm(page);
+    await page.getByRole('button', { name: 'Move to the bin' }).click();
+    await expect(page.getByRole('heading', { name: 'Scene 1 · Keep me' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Bin me/ })).toHaveCount(0);
+    // Manage scenes still has it, and can put it back.
+    await page.getByText('View', { exact: true }).click();
+    await page.getByRole('link', { name: 'Manage scenes' }).click();
+    await page.getByRole('button', { name: /^Bin \(1\)/ }).click();
+    await expect(page.getByText('Bin me')).toBeVisible();
   });
 
   test('the steps stay put, and a scene opened from Make clips goes back there', async ({ page }) => {

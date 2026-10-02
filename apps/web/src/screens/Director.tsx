@@ -161,6 +161,13 @@ export function Director({ account }: { account: Account }) {
           addJob={addJob} onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
           onScene={(updated) => setScenes((prev) => prev?.map((s) => s.id === updated.id ? updated : s) ?? null)}
           afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} openStudio={openStudio}
+          onDeleted={async () => {
+            // Scene numbers close up behind a binned scene, so reload the list rather than filtering it.
+            const s = await api.listScenes(project.id);
+            setScenes(s.data);
+            const next = s.data.find((x) => x.sort_order >= selected.sort_order) ?? s.data[s.data.length - 1];
+            setSearch(next ? { scene: next.id } : {});
+          }}
           onCartoonChanged={async () => {
             // A new cartoon look changes other scenes too: reload them and their instructions.
             const s = await api.listScenes(project.id);
