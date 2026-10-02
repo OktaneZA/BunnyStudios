@@ -187,9 +187,11 @@ test.describe('Director', () => {
     await page.getByLabel('Scene description').fill('A scene that should not be here.');
     await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
     await expect(page.getByRole('heading', { name: 'Scene 2 · Bin me' })).toBeVisible();
+    // The red cross on the tile, and the link in the editor, do the same thing.
     acceptNextConfirm(page);
-    await page.getByRole('button', { name: 'Move to the bin' }).click();
+    await page.getByRole('button', { name: 'Move scene 2, Bin me, to the bin' }).click();
     await expect(page.getByRole('heading', { name: 'Scene 1 · Keep me' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Move to the bin' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Bin me/ })).toHaveCount(0);
     // Manage scenes still has it, and can put it back.
     await page.getByText('View', { exact: true }).click();

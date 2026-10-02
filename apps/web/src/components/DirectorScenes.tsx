@@ -7,12 +7,14 @@ import { ProblemBox } from './ProblemBox';
 import { SCENE_STATE_WORDS, sceneState } from '../sceneState';
 
 /** One scene list, shown as either the film strip or the scene board. */
-export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId, projectId, timeline, onTimeline, onSelect, onAdd, adding }: {
+export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId, projectId, timeline, onTimeline, onSelect, onAdd, onRemove, adding }: {
   layout: string; scenes: Scene[]; shots: Map<string, Shot>; jobs: Job[]; assets: Map<string, Asset>;
   selectedId?: string; projectId: string; timeline: Timeline | null;
   onTimeline: (timeline: Timeline) => void; onSelect: (sceneId: string) => void;
   /** Add a scene: the last tile in the strip, and the last choice in the phone's scene list. */
   onAdd: () => void; adding: boolean;
+  /** The red cross on a tile: the scene goes to the bin (never gone; Manage scenes puts it back). */
+  onRemove: (scene: Scene) => void;
 }) {
   const [join, setJoin] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,6 +58,8 @@ export function DirectorScenes({ layout, scenes, shots, jobs, assets, selectedId
         const item = timeline?.items.find((item) => item.scene_id === scene.id);
         return <div className="scene-overview-wrap" key={scene.id}>
           <article className={`scene-overview-card${selectedId === scene.id ? ' selected' : ''}`}>
+            <button type="button" className="scene-overview-remove" aria-label={`Move scene ${scene.scene_number}, ${scene.title}, to the bin`} title="Move to the bin"
+              disabled={Boolean(activeJob)} onClick={() => onRemove(scene)}>✕</button>
             <button type="button" className="scene-overview-select" aria-label={`${scene.scene_number} ${scene.title} ${words}`}
               aria-current={selectedId === scene.id ? 'true' : undefined} onClick={() => onSelect(scene.id)}>
               <span className="scene-overview-still">

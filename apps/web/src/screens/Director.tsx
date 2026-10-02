@@ -140,6 +140,19 @@ export function Director({ account }: { account: Account }) {
         <DirectorScenes layout={design} scenes={scenes} shots={shots} jobs={jobs} assets={assetsById}
           selectedId={selected?.id} projectId={project.id} timeline={timeline} onTimeline={setTimeline}
           onSelect={(sceneId) => setSearch({ scene: sceneId })} adding={addingScene}
+          onRemove={(scene) => {
+            if (!confirm(`Move scene ${scene.scene_number}, "${scene.title}", to the bin? You can put it back later from Manage scenes.`)) return;
+            setError(null);
+            api.deleteScene(scene.id).then(async () => {
+              // Scene numbers close up behind a binned scene, so reload the list rather than filtering it.
+              const s = await api.listScenes(project.id);
+              setScenes(s.data);
+              if (selected?.id === scene.id) {
+                const next = s.data.find((x) => x.sort_order >= scene.sort_order) ?? s.data[s.data.length - 1];
+                setSearch(next ? { scene: next.id } : {});
+              }
+            }).catch(setError);
+          }}
           onAdd={async () => {
             setAddingScene(true); setError(null);
             try {
