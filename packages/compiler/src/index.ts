@@ -25,6 +25,8 @@ export const STANDARD_NEGATIVE =
 
 /** A subject character, already resolved by the caller from `subject_character_ids`. */
 export interface CompileCharacter {
+  /** Stable id when the caller has one: two characters may share a name. */
+  id?: string;
   name: string;
   description: string;
   costume: string;
@@ -127,13 +129,14 @@ function firstNonEmpty(candidates: readonly string[]): string {
   return '';
 }
 
-/** Each character exactly once, by name (PC-3), in first-seen order. */
+/** Each character exactly once (PC-3), by id when given else by name, in first-seen order. */
 function dedupeCharacters(characters: readonly CompileCharacter[]): CompileCharacter[] {
   const seen = new Set<string>();
   const unique: CompileCharacter[] = [];
   for (const character of characters) {
-    const key = clean(character.name);
-    if (key === '' || seen.has(key)) continue;
+    if (clean(character.name) === '') continue;
+    const key = character.id ? `id:${character.id}` : `name:${clean(character.name)}`;
+    if (seen.has(key)) continue;
     seen.add(key);
     unique.push(character);
   }
@@ -288,10 +291,10 @@ export interface VideoCompileInput extends CompileInput {
     /** A `camera_movement` vocabulary value (§4.3); emitted only here, never in a still (PC-2c). */
     cameraMovement: string | null;
     /**
-     * Each character's picture tokens ("@Image1", "Image 2") in manifest order, matched by name.
-     * The server numbers them from the manifest; this function never numbers anything (CR-03).
+     * Each character's picture tokens ("@Image1", "Image 2") in manifest order, matched by id when
+     * both sides have one, else by name. The server numbers them from the manifest (CR-03).
      */
-    characterTokens: readonly { name: string; tokens: readonly string[] }[];
+    characterTokens: readonly { id?: string; name: string; tokens: readonly string[] }[];
     /** Token of the cartoon's style picture, or `''` when none is sent. */
     styleToken: string;
     /** `field`: the model takes a negative prompt; `fold`: say the keep-outs in the prompt instead. */
@@ -309,11 +312,12 @@ export interface VideoCompileInput extends CompileInput {
 export function compileVideoShot(input: VideoCompileInput): CompileResult {
   const { bible, scene, shot, video } = input;
 
-  const tokensFor = (name: string) => video.characterTokens.find((c) => clean(c.name) === clean(name))?.tokens.filter((t) => clean(t) !== '') ?? [];
+  const tokensFor = (c: CompileCharacter) => video.characterTokens
+    .find((t) => (c.id && t.id ? t.id === c.id : clean(t.name) === clean(c.name)))?.tokens.filter((t) => clean(t) !== '') ?? [];
   const characters = dedupeCharacters(shot.characters);
   const subjects = join([
     ...characters.map((c) => {
-      const tokens = tokensFor(c.name);
+      const tokens = tokensFor(c);
       return tokens.length ? describeCharacter({ ...c, name: `${clean(c.name)} (${tokens.join(', ')})` }) : describeCharacter(c);
     }),
     shot.expressionNote,

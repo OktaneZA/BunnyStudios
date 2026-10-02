@@ -16,6 +16,7 @@ export const ProblemType = {
   forbidden: `${BASE}/forbidden`,
   notFound: `${BASE}/not-found`,
   conflict: `${BASE}/conflict`,
+  rateLimited: `${BASE}/rate-limited`,
   internal: `${BASE}/internal`,
 } as const;
 

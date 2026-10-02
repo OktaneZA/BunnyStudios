@@ -91,7 +91,7 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
   return (
     <Sheet title="Your characters" lede="Describe each character and choose the picture that looks right. Chosen pictures help keep them the same in every scene; check each clip, as they can still change a little." onClose={onClose}>
       <ProblemBox error={error} />
-      {testMode && <p className="notice" role="status">Test mode: these are coloured placeholders, not character pictures. No provider credits are used.</p>}
+      {testMode && <p className="notice" role="status">Test mode: these are coloured placeholders, not character pictures. Nothing is spent.</p>}
 
       {needsFinding && !proposal && (
         <div className="cast-find card-soft">

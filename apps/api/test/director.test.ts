@@ -474,6 +474,14 @@ test('the pot is checked before the day: an empty pot says to ask a grown-up, a 
     assert.match(over.json().detail, /left in the pot. Ask a grown-up/);
     assert.equal(over.json().current_state.needs_top_up, true);
     assert.equal(over.json().current_state.resets_at, null, 'waiting for tomorrow will not help');
+    // A pot exactly equal to the price is enough.
+    await db.insert(schema.creditTopUps).values({ accountId: ids[0]!, pence: 1, note: 'test' });
+    assert.equal(await pot(), price);
+    const exact = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });
+    assert.equal(exact.statusCode, 202, exact.body);
+    assert.equal(await pot(), 0);
+    await db.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0, costState: 'not_incurred' }).where(eq(schema.generationLedger.jobId, exact.json().id));
+    await db.delete(schema.creditTopUps).where(and(eq(schema.creditTopUps.accountId, ids[0]!), eq(schema.creditTopUps.pence, 1)));
     // A top-up makes room; a job that never reaches the provider gives the money back.
     await db.insert(schema.creditTopUps).values({ accountId: ids[0]!, pence: price, note: 'test' });
     const ok = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });

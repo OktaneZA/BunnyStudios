@@ -209,7 +209,7 @@ export function SceneComposer(props: Props) {
     try {
       setCast(await director.saveShotCast(shot.id, cast.characters.map((c) => ({ character_id: c.character_id, look: c.character_id === characterId ? 'current' : c.look_id ?? 'none', outfit_label: c.outfit_label })), shot.version));
       await refreshShot();
-    } catch (err) { setError(err); }
+    } catch (err) { setError(err); if (err instanceof ApiProblem && err.problem.status === 409) void refreshShot(); }
     finally { setBusy(false); }
   }
 
@@ -250,7 +250,7 @@ export function SceneComposer(props: Props) {
       const id = file ? (await director.uploadFrame(shot.id, file)).id : assetId ?? null;
       onShot(await director.setFrames(shot.id, which === 'start' ? { start_asset_id: id } : { end_asset_id: id }, shot.version));
       if (which === 'start') setUseStart(Boolean(id)); else setUseEnd(Boolean(id));
-    } catch (err) { setError(err); }
+    } catch (err) { setError(err); if (err instanceof ApiProblem && err.problem.status === 409) void refreshShot(); }
     finally { setBusy(false); if (startInput.current) startInput.current.value = ''; if (endInput.current) endInput.current.value = ''; }
   }
 
@@ -260,7 +260,10 @@ export function SceneComposer(props: Props) {
     starting.current = true;
     setBusy(true); setError(null);
     try {
-      addJob(await director.startVideo(shot.id, { ...q.body, expected_quote_key: q.plan.quote_key }, uuid()));
+      const started = await director.startVideo(shot.id, { ...q.body, expected_quote_key: q.plan.quote_key }, uuid());
+      addJob(started);
+      // Making the clip can save the characters, which moves the scene's version.
+      if (started.shot) onShot(started.shot);
       after?.();
       void refreshSettings();
     } catch (err) {
@@ -320,7 +323,7 @@ export function SceneComposer(props: Props) {
       : allowance.pot_pence < allowance.remaining_today_pence ? `${formatPence(allowance.pot_pence)} left in your pot`
         : `${formatPence(allowance.remaining_today_pence)} left today · ${formatPence(allowance.pot_pence)} in your pot`
     : '';
-  const blockedReason = !enabled ? (settings?.message ?? 'Generation isn’t connected yet. Ask the account owner to set it up.')
+  const blockedReason = !enabled ? (settings?.message ?? 'Picture making isn’t switched on yet. Ask a grown-up.')
     : sceneText.pending ? 'Save the scene before making a clip.'
     : !fromPreview && !scene.description.trim() ? 'Describe what happens in this scene first.'
       : !fromPreview && castChanged ? 'Save the characters first.'

@@ -327,7 +327,8 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
     const { id } = idParam.parse(request.params);
     const [row] = await db.update(schema.characters).set({ deletedAt: null }).where(and(eq(schema.characters.id, id), eq(schema.characters.accountId, request.accountId), isNotNull(schema.characters.deletedAt))).returning();
     if (!row) throw ApiError.notFound('Character');
-    return presentOne(row, request.accountId, false);
+    const [account] = await db.select({ isMinor: schema.accounts.isMinor }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    return presentOne(row, request.accountId, account?.isMinor ?? true);
   });
 
   // ── Candidates: upload (CS-03, CS-04) ─────────────────────────────────────
@@ -501,7 +502,7 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
       await reserve(tx, { accountId: account.id, projectId: character.projectId, jobId: job!.id, model: plan.model, count: plan.count, referenceCount: plan.anchor ? 1 : 0 });
       return { job: job!, fresh: true };
     });
-    if (created.fresh) void runner.tick().catch(() => {});
+    if (created.fresh) void runner.tick().catch((e) => request.log.error(e, 'runner tick'));
     reply.header('Cache-Control', 'no-store');
     return reply.code(created.fresh ? 202 : 200).send(presentJob(created.job, [], true));
   });

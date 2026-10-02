@@ -162,7 +162,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       models: enabled.map((m) => presentModel(m, advanced)),
       allowance: a,
       allowance_words: allowanceInWords(a, cheapestImage ? estimatePence(cheapestImage, { count: 1 }) : null, cheapestClip ? estimatePence(cheapestClip, { durationSeconds: cheapestClip.duration_seconds?.min ?? 1 }) : null),
-      message: enabled.length ? null : 'Generation isn’t connected yet. Ask the account owner to set it up.',
+      message: enabled.length ? null : 'Picture making isn’t switched on yet. Ask a grown-up.',
     };
   });
 
@@ -211,7 +211,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       const { shot, scene } = await ownShot(tx, request.accountId, id, true);
       const { account, aspectRatio, constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, scene.projectId);
       const model = catalogue.available(account.defaultEditorMode === 'advanced').find((m) => m.id === body.model_id);
-      if (!model) throw ApiError.validation('That picture maker is not available. Pick another one.');
+      if (!model) throw ApiError.validation(`That ${body.kind === 'video' ? 'clip' : 'picture'} maker is not available. Pick another one.`);
       if (constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so pictures cannot be made on this account yet. Ask a grown-up.');
       const options = resolveOptions(model, body, aspectRatio);
       const [synced] = await syncSceneShots(tx, request.accountId, scene);
@@ -250,7 +250,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       await reserve(tx, { accountId: account.id, projectId: scene.projectId, jobId: job!.id, model, count: options.count, resolution: options.resolution, ...(options.durationSeconds ? { durationSeconds: options.durationSeconds } : {}) });
       return { job: job!, fresh: true };
     });
-    if (created.fresh) void runner.tick().catch(() => {});
+    if (created.fresh) void runner.tick().catch((e) => request.log.error(e, 'runner tick'));
     reply.header('Cache-Control', 'no-store');
     return reply.code(created.fresh ? 202 : 200).send(presentJob(created.job, [], true));
   });
@@ -355,8 +355,9 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.get('/assets/:id/file', async (request, reply) => {
     const { id } = idParam.parse(request.params);
-    const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, request.accountId)));
+    const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, request.accountId), isNull(schema.assets.deletedAt)));
     if (!asset) throw ApiError.notFound('File');
+    reply.header('X-Content-Type-Options', 'nosniff').header('Content-Disposition', 'inline');
     const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     if (account?.isMinor && asset.reviewStatus === 'rejected') throw ApiError.notFound('File');
     if (asset.thumbnailSvg) return reply.type('image/svg+xml').header('Cache-Control', 'private, max-age=3600').send(asset.thumbnailSvg);

@@ -234,9 +234,10 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     }
 
     // Candidate endpoints for this task, before references are counted.
-    const nativeSeconds = body.duration_seconds ?? base?.output.durationSeconds;
+    const parentRequest = parent?.request as JobRequest | null | undefined;
+    const nativeSeconds = body.duration_seconds ?? base?.output.durationSeconds ?? parentRequest?.durationSeconds ?? undefined;
     if (!nativeSeconds) throw ApiError.validation('Choose how long the clip should be.');
-    const requestedAudio = body.audio ?? base?.output.audio ?? false;
+    const requestedAudio = body.audio ?? base?.output.audio ?? parentRequest?.audio ?? false;
     const requestedAspect = base?.output.aspectRatio ?? ((await isConstrained(database as typeof db, accountId, scene.projectId)).aspectRatio as '16:9' | '9:16' | '1:1');
     const requirements = {
       task, startFrame: Boolean(startFrame), endFrame: Boolean(endFrame), audio: requestedAudio, aspectRatio: requestedAspect,
@@ -271,6 +272,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
 
     // A final made from a recipe whose prompt already names pictures inline must keep the same token wording.
     const baseModel = base ? catalogue.find(base!.modelId) : undefined;
+    if (base && !baseModel) throw needs('That clip’s maker is not available any more. Make it from the scene as it is now instead.', { can_use_latest: true });
     if (base?.compilerVersion === VIDEO_TEMPLATE_VERSION && base.references.length) {
       candidates = candidates.filter((m) => m.request_shape.reference_token_prefix === baseModel?.request_shape.reference_token_prefix);
     }
@@ -321,7 +323,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     }
 
     // A preview is made at the maker's cheapest size, a final at its standard size; another version keeps its size.
-    const resolution = body.resolution ?? (base && base.intent === intent ? base.output.resolution : intent === 'draft' ? cheapestResolution(model) : model.resolutions[0]!);
+    const kept = base && base.intent === intent && model.resolutions.includes(base.output.resolution) ? base.output.resolution : null;
+    const resolution = body.resolution ?? kept ?? (intent === 'draft' ? cheapestResolution(model) : model.resolutions[0]!);
     if (!model.resolutions.includes(resolution)) throw needs('That size is not available for this clip maker.', { missing: 'resolution', resolutions: model.resolutions });
     const aspectRatio = requestedAspect;
     const audio = model.video?.audio_mode === 'always' || (requestedAudio && model.capabilities.audio);
@@ -334,10 +337,10 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     else if (shot.promptLocked) compiled = { prompt: shot.compiledPrompt, negativePrompt: shot.compiledNegativePrompt, compilerVersion: TEMPLATE_VERSION };
     else {
       const prefix = model.request_shape.reference_token_prefix;
-      const characterTokens: { name: string; tokens: string[] }[] = [];
+      const characterTokens: { id: string; name: string; tokens: string[] }[] = [];
       for (const r of prefix ? references : []) {
-        let entry = characterTokens.find((c) => c.name === r.characterName);
-        if (!entry) characterTokens.push(entry = { name: r.characterName, tokens: [] });
+        let entry = characterTokens.find((c) => c.id === r.characterId);
+        if (!entry) characterTokens.push(entry = { id: r.characterId, name: r.characterName, tokens: [] });
         entry.tokens.push(`${prefix}${r.position + 1}`);
       }
       const video = compileVideoShot({
@@ -448,8 +451,10 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       await reserve(tx, { accountId: request.accountId, projectId: c.scene.projectId, jobId: job!.id, model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length });
       return { job: job!, fresh: true, planned: presented };
     });
-    if (created.fresh) void runner.tick().catch(() => {});
+    if (created.fresh) void runner.tick().catch((e) => request.log.error(e, 'runner tick'));
     reply.header('Cache-Control', 'no-store');
-    return reply.code(created.fresh ? 202 : 200).send({ ...presentJob(created.job, [], true), plan: created.planned });
+    // The shot's version moves when the cast is saved with the clip; the screen needs the new one.
+    const [shot] = await db.select().from(schema.shots).where(and(eq(schema.shots.id, created.job.targetEntityId), eq(schema.shots.accountId, request.accountId)));
+    return reply.code(created.fresh ? 202 : 200).send({ ...presentJob(created.job, [], true), plan: created.planned, shot: shot ? presentShot(shot) : null });
   });
 }

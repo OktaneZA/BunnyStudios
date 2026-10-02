@@ -90,3 +90,14 @@ test('every section is optional; the same input gives byte-identical output', ()
   assert.equal(compileVideoShot(full).prompt, compileVideoShot(structuredClone(full)).prompt);
   assert.ok(compileVideoShot(full).prompt.includes('Bubbles float past'));
 });
+
+test('two characters with the same name each keep their own words and pictures when ids are given', () => {
+  const i = input({ characterTokens: [{ id: 'a', name: 'Bunny', tokens: ['@Image1'] }, { id: 'b', name: 'Bunny', tokens: ['@Image2'] }] });
+  i.shot.characters = [{ id: 'a', name: 'Bunny', description: 'a white rabbit', costume: '' }, { id: 'b', name: 'Bunny', description: 'a brown rabbit', costume: '' }];
+  const r = compileVideoShot(i);
+  assert.ok(r.prompt.startsWith('Bunny (@Image1): a white rabbit; Bunny (@Image2): a brown rabbit.'));
+  assert.equal(r.characterCount, 2);
+  // Without ids the old rule holds: one name, one character.
+  i.shot.characters = i.shot.characters.map(({ id: _id, ...c }) => c);
+  assert.equal(compileVideoShot(i).characterCount, 1);
+});

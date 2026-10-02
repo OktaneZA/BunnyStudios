@@ -436,8 +436,9 @@ export function createRunner(deps: RunnerDeps) {
         await note(job.id, job.attempt > 1 ? 'Picked up again' : 'Started', {
           detail: `attempt ${job.attempt} on ${instanceId}${(job.request as JobRequest | null)?.partJobIds?.length ? `, ${(job.request as JobRequest).partJobIds!.length} part(s) already sent` : ''}`,
         });
-        // A previous worker died inside a submit call: the provider may have the request (MG-07).
-        if (job.submissionState === 'submitting') {
+        // A previous worker died inside a submit call, or was shut down after an unanswered one:
+        // the provider may have the request, so it is never sent again (MG-07).
+        if (job.submissionState === 'submitting' || job.submissionState === 'uncertain') {
           await db.update(schema.generationJobs).set({ submissionState: 'uncertain' }).where(mine(job.id));
           throw uncertainSubmission();
         }

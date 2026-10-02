@@ -113,7 +113,7 @@ export function Director({ account }: { account: Account }) {
       <CartoonHeader projectId={project.id} title={project.title} step="make">
         <div className="create-controls" role="group" aria-label="Director controls">
         <div className="director-progress"><span>{inCartoon} of {scenes.length} scenes ready</span><progress aria-label="Scenes with clips" value={inCartoon} max={Math.max(1, scenes.length)} /></div>
-        {settings?.test_mode && <span className="test-mode-pill" title="Pictures and clips are coloured placeholders, not AI-generated. No provider credits are used.">Test mode</span>}
+        {settings?.test_mode && <span className="test-mode-pill" title="Pictures and clips are coloured placeholders, not AI-generated. Nothing is spent.">Test mode</span>}
         <button type="button" className="cast-button" onClick={() => setSheet('cast')}>Characters · {castWords} ›</button>
         <details className="view-menu">
           <summary>View</summary>

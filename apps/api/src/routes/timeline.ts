@@ -231,7 +231,7 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
       }).returning();
       return { job: job!, fresh: true };
     });
-    if (created.fresh) void runner.tick().catch(() => {});
+    if (created.fresh) void runner.tick().catch((e) => request.log.error(e, 'runner tick'));
     reply.header('Cache-Control', 'no-store');
     return reply.code(created.fresh ? 202 : 200).send(presentJob(created.job, [], account.isMinor));
   });

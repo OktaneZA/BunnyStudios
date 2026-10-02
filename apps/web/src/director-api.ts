@@ -459,7 +459,7 @@ export const director = {
     request<Shot>(`/shots/${shotId}/frames`, { method: 'PUT', body: JSON.stringify(body), headers: { 'If-Match': String(version) } }),
   quoteVideo: (shotId: string, body: VideoBody) => request<VideoPlan>(`/shots/${shotId}/videos/quote`, { method: 'POST', body: JSON.stringify(body) }),
   startVideo: (shotId: string, body: VideoBody, requestId: string) =>
-    request<Job & { plan: VideoPlan | null }>(`/shots/${shotId}/videos`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
+    request<Job & { plan: VideoPlan | null; shot: Shot | null }>(`/shots/${shotId}/videos`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
 
   // Timeline (D36, D40)
   timeline: (projectId: string) => request<Timeline>(`/projects/${projectId}/timeline`),

@@ -598,3 +598,12 @@ describe('scenes', () => {
     assert.equal(stale.json().current_state.title, 'Renamed once');
   });
 });
+
+test('sign-in is rate limited: the eleventh guess in a minute is refused', async () => {
+  let last = 0;
+  for (let i = 0; i < 11; i++) {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/auth/login', remoteAddress: '10.9.9.9', payload: { email: 'nobody@example.com', password: 'wrong' } });
+    last = res.statusCode;
+  }
+  assert.equal(last, 429);
+});

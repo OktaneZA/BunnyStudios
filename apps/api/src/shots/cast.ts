@@ -44,13 +44,13 @@ export async function shotCast(database: Database, accountId: string, shot: { id
 }
 
 /** Words for the compiler: the pinned look's traits when there is one, else the live character. */
-export function compileCharacter(entry: ShotCastEntry): { name: string; description: string; costume: string } {
+export function compileCharacter(entry: ShotCastEntry): { id: string; name: string; description: string; costume: string } {
   const traits = entry.look?.traits as VisualTraits | undefined;
   const outfits = Array.isArray(entry.character.costumeVariants) ? entry.character.costumeVariants as { label: string; description: string }[] : [];
   const outfit = entry.binding?.outfitLabel ? outfits.find((o) => o.label === entry.binding!.outfitLabel) : undefined;
   const base = traits ?? { name: entry.character.name, description: entry.character.promptToken, costume: entry.character.defaultCostume, species: entry.character.species, build: entry.character.physicalBuild, colours: entry.character.colours, features: entry.character.distinguishingFeatures };
   const description = [base.description, base.species, base.build, base.colours, base.features].map((s) => (s ?? '').trim()).filter(Boolean).join(', ');
-  return { name: entry.character.name, description, costume: outfit?.description ?? base.costume ?? '' };
+  return { id: entry.character.id, name: entry.character.name, description, costume: outfit?.description ?? base.costume ?? '' };
 }
 
 export interface Manifest {

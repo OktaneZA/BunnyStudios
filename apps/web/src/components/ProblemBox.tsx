@@ -7,6 +7,8 @@ export function ProblemBox({ error }: { error: unknown }) {
     error instanceof ApiProblem
       ? error.problem
       : { title: 'Something went wrong', detail: 'Please try again.' };
+  // The child sees plain words; the real error stays in the console for whoever is debugging.
+  if (!(error instanceof ApiProblem)) console.error(error);
 
   return (
     <div className="problem" role="alert">

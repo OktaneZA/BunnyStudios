@@ -141,10 +141,10 @@ export async function keepAsUnknown(jobId: string, database: typeof db | Tx = db
     .where(and(eq(schema.generationLedger.jobId, jobId), eq(schema.generationLedger.status, 'reserved')));
 }
 
-/** Nothing reached the provider, so nothing can be billed: the reservation goes back. */
+/** Nothing reached the provider, so nothing can be billed: the reservation goes back. A settled row never does. */
 export async function refund(jobId: string, database: typeof db | Tx = db) {
   await database.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0, costState: 'not_incurred' })
-    .where(and(eq(schema.generationLedger.jobId, jobId), inArray(schema.generationLedger.status, ['reserved', 'settled'])));
+    .where(and(eq(schema.generationLedger.jobId, jobId), eq(schema.generationLedger.status, 'reserved')));
 }
 
 /** True when any of this job's paid work was sent to a provider (or may have been). */
