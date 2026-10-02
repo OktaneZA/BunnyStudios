@@ -109,6 +109,8 @@ export interface Scene {
   title: string;
   description: string;
   camera_angle: string | null;
+  /** §4.3: how the camera moves in the clip. Null lets the clip maker decide. */
+  camera_movement?: string | null;
   location_id: string | null;
   time_of_day: string;
   mood_atmosphere: string | null;

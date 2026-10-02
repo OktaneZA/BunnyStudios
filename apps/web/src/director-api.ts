@@ -124,6 +124,8 @@ export interface Job {
   intent?: 'draft' | 'final' | null;
   parent_job_id?: string | null;
   source_scene_version?: number | null;
+  /** Characters were in the scene but no pictures of them were sent. */
+  words_only?: boolean;
   attempt: number;
   error: string | null;
   results: Asset[];
@@ -257,9 +259,30 @@ export interface VideoPlan {
   generated_seconds: number;
   characters: { character_id: string; name: string; look_version: number | null }[];
   reference_count: number;
+  /** Characters are in the scene but this clip sends no pictures of them. */
+  words_only: boolean;
   new_render: boolean;
   native_completion: 'unavailable';
   estimate_only: boolean;
+}
+
+/** The cartoon's one look (docs/video-optimisation-plan.md §7.1). */
+export interface CartoonStyle {
+  art_style: string;
+  chosen: boolean;
+  scenes_with_own_style: { scene_id: string; scene_number: number; art_style: string | null }[];
+}
+
+/** Does every scene match? Warnings are written for the child. */
+export interface Continuity {
+  art_style: string;
+  style_chosen: boolean;
+  scenes: {
+    scene_id: string; scene_number: number; title: string; art_style: string | null; own_style: boolean;
+    characters: { character_id: string; name: string; saved: boolean; look_id: string | null; look_version: number | null; current_look_id: string | null }[];
+    clip: { job_id: string; intent: string | null; words_only: boolean; family: string; model_id?: string; seed?: number | null } | null;
+  }[];
+  warnings: { kind: 'scene_style' | 'mixed_looks' | 'look_style' | 'words_only' | 'mixed_makers'; detail: string; scene_ids: string[] }[];
 }
 
 /** What a 422 "choose something first" carries, so the screen can offer the next step. */
@@ -411,6 +434,15 @@ export const director = {
     request<{ pence: number; words: string; count: number; keeps_look: boolean }>(`/characters/${characterId}/jobs/quote`, { method: 'POST', body: JSON.stringify(body) }),
   drawCharacter: (characterId: string, body: StudioJobBody, requestId: string) =>
     request<Job>(`/characters/${characterId}/jobs`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
+
+  // One look per cartoon, and the same characters in every scene
+  cartoonStyle: (projectId: string) => request<CartoonStyle>(`/projects/${projectId}/style`),
+  setCartoonStyle: (projectId: string, artStyle: string, keepSceneStyles = false) =>
+    request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ art_style: artStyle, keep_scene_styles: keepSceneStyles }) }),
+  continuity: (projectId: string) => request<Continuity>(`/projects/${projectId}/continuity`),
+  lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_kept: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
+  useLookEverywhere: (characterId: string, lookId: string) =>
+    request<{ scenes_updated: number; scenes_kept: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`, { method: 'POST' }),
 
   // Characters in a scene, starting pictures and production clips
   shotCast: (shotId: string) => request<ShotCast>(`/shots/${shotId}/cast`),

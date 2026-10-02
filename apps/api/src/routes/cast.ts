@@ -14,6 +14,7 @@ import { compileCharacterSheet } from '@storyboard/compiler';
 import { REFERENCE_VIEW } from '@storyboard/vocabularies';
 import { quoteGeneration, type GenerationModel } from '@storyboard/models';
 import { db, schema } from '../db/client.ts';
+import { cartoonStyle } from '../cartoon/style.ts';
 import { config } from '../config.ts';
 import { ApiError } from '../errors.ts';
 import { pence, reserve } from '../generation/budget.ts';
@@ -53,9 +54,9 @@ async function storySource(accountId: string, projectId: string) {
   return { project, scenes, source, fingerprint: fingerprint(source) };
 }
 
-async function projectStyle(projectId: string) {
-  const [bible] = await db.select({ artStyle: schema.seriesBibles.artStyle, lineTreatment: schema.seriesBibles.lineTreatment }).from(schema.seriesBibles).where(eq(schema.seriesBibles.projectId, projectId));
-  return { artStyle: bible?.artStyle ?? '', lineTreatment: bible?.lineTreatment ?? '' };
+/** Character pictures are drawn in the cartoon's one look (docs/video-optimisation-plan.md F3, §7.1). */
+async function projectStyle(accountId: string, projectId: string) {
+  return cartoonStyle(db, accountId, projectId);
 }
 
 export function presentLook(look: Look, hideRejected: boolean) {
@@ -380,7 +381,7 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
     }).parse(request.body);
     const character = await ownCharacter(request.accountId, id);
     const { account, constrained } = await isConstrained(db, request.accountId, character.projectId);
-    const style = await projectStyle(character.projectId);
+    const style = await projectStyle(character.accountId, character.projectId);
     const result = await db.transaction((tx) => approveLook(tx, {
       accountId: request.accountId, character, expectedVersion: expected, constrained: constrained || account.isMinor, store, artStyle: style.artStyle,
       pictures: body.pictures.map((p) => ({ assetId: p.asset_id, role: p.role })), mainAssetId: body.main_asset_id,
@@ -455,7 +456,7 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
     if (body.intent === 'portrait' && !character.promptToken.trim() && !character.species.trim()) {
       throw ApiError.validation(`Say what ${character.name} looks like first.`);
     }
-    const style = await projectStyle(character.projectId);
+    const style = await projectStyle(character.accountId, character.projectId);
     const sheet = compileCharacterSheet({
       artStyle: style.artStyle, styleOverride: '', lineTreatment: style.lineTreatment, view,
       character: visualTraits(character), note: body.note ?? '',

@@ -1,6 +1,6 @@
 # Video optimisation: models, prompts and continuity (proposal v1, draft)
 
-28 September 2026 · branch `feature/video-optimisation` · **proposal only, nothing built.**
+28 September 2026 · branch `feature/video-optimisation` · **stages 0–4 built 2 October 2026; see §11.** Stage 5 (paid) waits for a spend cap.
 
 Builds on [openart-fal-continuity-review-2026-09-27.md](openart-fal-continuity-review-2026-09-27.md),
 [media-generation-architecture.md](media-generation-architecture.md) and
@@ -399,3 +399,44 @@ Stages 0–4 cost nothing to run. Stage 5 is the only paid step and waits for V7
   re-approval asks before it changes anything.
 - **Style frame counted against reference limits.** It never silently drops a character; the
   quote refuses instead (CR-04).
+
+---
+
+## 11. Implementation status (2 October 2026)
+
+Built on `feature/video-optimisation`, with the recommended answers to V1, V2, V4, V5, V6, V8 and V9. V3
+(default family) and V7 (spend cap) are still open. **No live provider call has been made**:
+`verified_live` is still `false` everywhere, and every test runs against the fake provider.
+
+| Stage | Built | Where |
+|---|---|---|
+| 0 | Hailuo-02 `prompt_optimizer: false`; Veo 3 Fast `auto_fix: false`, `safety_tolerance: "2"`; Wan 2.2 expansion set off explicitly. A clip with characters but no pictures says "Made from the words only", on the quote and on the clip. Character pictures are drawn in the cartoon's look. | `models.json`, `SceneComposer.tsx`, `routes/cast.ts` |
+| 1 | One look per cartoon: `GET/PUT /projects/:id/style`. Until chosen, the look is the one most scenes already use (resolved on read, no backfill). Choosing it clears scene styles and recompiles every scene. Per-scene look is Advanced only ("this scene only"); `art_style: null` puts a scene back on the cartoon look. | `cartoon/style.ts`, `routes/cartoon.ts`, `routes/scenes.ts` |
+| 2 | No "Are these the characters?" stop: a quote uses the story's proposal with each character's current look, and making the clip saves exactly that list. Descriptions always come from a look. "Use this look in every scene" after a new look (scenes with a chosen clip keep theirs). `GET /projects/:id/continuity` drives a "Some scenes may not match" panel in Put it together. | `routes/production.ts`, `shots/sync.ts`, `CharacterStudio.tsx`, `Together.tsx` |
+| 3 | `camera_movement` transcribed verbatim from requirements §4.3 and offered under Scene details. A small `video_direction` vocabulary holds the keep-out, sound and style-picture sentences. The compiler adds `compileVideoShot` (`video-v1`): motion first, tokens inline, keep-outs folded in where there is no negative field. It is compiled per maker at plan time; `shots.compiled_prompt` stays the still prompt. | `vocabularies.json`, `packages/compiler` |
+| 4 | `h3_max_refs` and `wan_30_i2v` added (Advanced, unverified). Seeds are mapped wherever the endpoint takes one. LTX gets its native `camera_motion`. `expanded_prompt`/`actual_prompt` are stored in `provider_result`. `fal-schemas.json` is a committed snapshot of fal's input schemas; codegen checks field names, lengths, sizes, picture limits and that every rewriter is off. `npm run schemas:check -w @storyboard/models` compares it with the live schemas (network, free). | `packages/models` |
+| 6 (part) | A preview is the cheapest try of the family the final would use, at that maker's cheapest size; the final uses the same maker at its standard size and reuses the preview's seed; another version gets a new seed. Makers with no `video.family` (today's Simple tiers) keep the old cheapest/highest rule until the new family is promoted. | `routes/production.ts` |
+
+Deviations from the proposal:
+
+- **No `project_character_looks` table.** A character already belongs to one cartoon, so its
+  current look *is* the cartoon's look. The lock is carried by saved shot bindings plus the
+  "use everywhere" action.
+- **The codegen check found a real bug**: the disabled Kling 2.1 entry sent an `aspect_ratio`
+  that endpoint does not accept. The mapping was removed.
+
+Not built yet:
+
+- The style picture (§7.2).
+- The stored render recipe (§7.3).
+- Seedance draft completion (DF-03).
+- The Kling O3 elements adapter (V9: benchmark first).
+- Joined parts are still possible for a long words-only clip (F12).
+- Director Mode's older `POST /shots/:id/jobs` still sends the still prompt to a video maker.
+- Stage 5, the live smoke test and the benchmark, needs the spend cap (V7).
+
+Tests:
+
+- Compiler: 63, at 100% coverage.
+- API: 141, including `test/video-continuity.test.ts`.
+- Browser: 25 passed, including `e2e/continuity.spec.ts`, at 1024×768 over the LAN IP.

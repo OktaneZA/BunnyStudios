@@ -52,6 +52,10 @@ export interface RequestShape {
   readonly audio?: string;
   readonly resolution?: string;
   readonly safety?: string;
+  /** The seed field, where the endpoint accepts one: a final reuses its preview's seed (V4). */
+  readonly seed?: string;
+  /** A native camera control (LTX): the scene's camera_movement value, mapped by video.camera_motion_map. */
+  readonly camera_motion?: string;
 }
 
 export interface ResultShape {
@@ -73,6 +77,8 @@ export interface GenerationModel {
      */
     readonly rollout?: 'production' | 'advanced';
     readonly verified_live?: boolean;
+    /** camera_movement vocabulary value → this endpoint's own camera_motion value. Unlisted moves stay in the words only. */
+    readonly camera_motion_map?: Readonly<Record<string, string>>;
   };
   readonly pricing?: VideoPricing;
   readonly id: ModelId;

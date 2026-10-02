@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CartoonHeader } from '../components/ProjectTabs';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiProblem, type Project } from '../api';
-import { director, isActiveJob, laneSpan, seconds, type Timeline, type Transition } from '../director-api';
+import { director, isActiveJob, laneSpan, seconds, type Continuity, type Timeline, type Transition } from '../director-api';
 import { useAssetUrl } from '../assetUrl';
 import { uuid } from '../uuid';
 import { ProblemBox } from '../components/ProblemBox';
@@ -19,6 +19,8 @@ export function Together() {
   const { projectId } = useParams<{ projectId: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
+  /** Does every scene match? Only shown when something does not (docs/video-optimisation-plan.md §6.3). */
+  const [continuity, setContinuity] = useState<Continuity | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [join, setJoin] = useState<number | null>(null);
@@ -37,6 +39,8 @@ export function Together() {
     if (!projectId) return;
     api.getProject(projectId).then(setProject).catch(setError);
     refresh().catch(setError);
+    // A helpful check, not a gate: if it cannot load, the cartoon can still be made.
+    director.continuity(projectId).then(setContinuity).catch(() => {});
   }, [projectId, refresh]);
 
   const rendering = Boolean(timeline?.render_job && isActiveJob(timeline.render_job));
@@ -133,6 +137,17 @@ export function Together() {
           <p>Make clips for them, or continue with the scenes that are ready.</p>
           <div className="row">{skipped.map((item) => <Link className="btn secondary" key={item.id}
             to={`/projects/${projectId}/director?scene=${item.scene_id}`}>Make scene {item.scene_number}</Link>)}</div>
+        </section>
+      )}
+
+      {continuity && continuity.warnings.length > 0 && (
+        <section className="notice continuity" aria-label="Things that may not match">
+          <b>Some scenes may not match</b>
+          <ul>{continuity.warnings.map((w) => <li key={w.kind + w.scene_ids.join()}>{w.detail}</li>)}</ul>
+          <div className="row">{[...new Set(continuity.warnings.flatMap((w) => w.scene_ids))].slice(0, 6).map((id) => {
+            const scene = continuity.scenes.find((s) => s.scene_id === id);
+            return scene ? <Link className="btn secondary" key={id} to={`/projects/${projectId}/director?scene=${id}`}>Open scene {scene.scene_number}</Link> : null;
+          })}</div>
         </section>
       )}
 

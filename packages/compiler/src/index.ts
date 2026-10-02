@@ -275,6 +275,93 @@ export function promptBudget(prompt: string, maxLength: number): PromptBudget {
   };
 }
 
+// ── Video template (docs/video-optimisation-plan.md §5.1) ───────────────────
+
+/**
+ * The video template's version, recorded on every clip's snapshot. It is separate from
+ * TEMPLATE_VERSION: the still prompt on the shot is unchanged and still feeds pictures.
+ */
+export const VIDEO_TEMPLATE_VERSION = 'video-v1';
+
+export interface VideoCompileInput extends CompileInput {
+  video: {
+    /** A `camera_movement` vocabulary value (§4.3); emitted only here, never in a still (PC-2c). */
+    cameraMovement: string | null;
+    /**
+     * Each character's picture tokens ("@Image1", "Image 2") in manifest order, matched by name.
+     * The server numbers them from the manifest; this function never numbers anything (CR-03).
+     */
+    characterTokens: readonly { name: string; tokens: readonly string[] }[];
+    /** Token of the cartoon's style picture, or `''` when none is sent. */
+    styleToken: string;
+    /** `field`: the model takes a negative prompt; `fold`: say the keep-outs in the prompt instead. */
+    negative: 'field' | 'fold';
+    /** Sound is on: ask for effects and background sound, never voices (V6). */
+    audio: boolean;
+  };
+}
+
+/**
+ * Compile one shot for a video model. Motion-first: who is in it and what happens, then how the
+ * camera sees and moves, then where and when, then the look. The style comes last because the
+ * opening words steer content most, and the style picture (when sent) carries the look.
+ */
+export function compileVideoShot(input: VideoCompileInput): CompileResult {
+  const { bible, scene, shot, video } = input;
+
+  const tokensFor = (name: string) => video.characterTokens.find((c) => clean(c.name) === clean(name))?.tokens.filter((t) => clean(t) !== '') ?? [];
+  const characters = dedupeCharacters(shot.characters);
+  const subjects = join([
+    ...characters.map((c) => {
+      const tokens = tokensFor(c.name);
+      return tokens.length ? describeCharacter({ ...c, name: `${clean(c.name)} (${tokens.join(', ')})` }) : describeCharacter(c);
+    }),
+    shot.expressionNote,
+  ], '; ');
+
+  const action = firstNonEmpty([shot.actionBeat, scene.description]);
+  const camera = join([
+    phrase('shot_type', shot.shotType),
+    phrase('camera_angle', scene.cameraAngle),
+    phrase('camera_movement', video.cameraMovement),
+    phrase('lens_focal_length', shot.lensFocalLength),
+    phrase('depth_of_field', shot.depthOfField),
+  ], ', ');
+  const placement = clean(shot.subjectPlacement);
+  const setting = join([describeLocation(scene.locationName, scene.locationDescription), scene.sceneryDescription, join(shot.propTokens, ', ')], ', ');
+  const timeAndWeather = join([phrase('time_of_day', scene.timeOfDay), scene.weather ?? ''], ', ');
+  const lighting = firstNonEmpty([shot.lightingOverride ?? '', phrase('lighting_preset', scene.lightingPreset), scene.lighting, scene.locationDefaultLighting, bible.defaultLighting]);
+  const mood = phrase('mood_atmosphere', scene.moodAtmosphere);
+
+  const style = firstNonEmpty([scene.styleOverride ?? '', phrase('art_style', bible.artStyle)]);
+  const palette = join(bible.colourPalette, ', ');
+  const styleReference = clean(video.styleToken) === '' ? '' : `${phrase('video_direction', 'style_reference')} ${clean(video.styleToken)}`;
+  const look = join([style, bible.lineTreatment, palette === '' ? '' : `colour palette: ${palette}`, bible.renderQualityTokens, styleReference], ', ');
+
+  const sections = [
+    subjects,
+    action,
+    camera,
+    placement,
+    setting,
+    timeAndWeather,
+    lighting,
+    mood,
+    look,
+    clean(shot.userPromptAddendum),
+    video.audio ? phrase('video_direction', 'ambient_sound') : '',
+    video.negative === 'fold' ? phrase('video_direction', 'keep_out') : '',
+  ].map(stripTrailingStops).filter((s) => s !== '');
+
+  const bibleNegative = clean(bible.negativePrompt);
+  return {
+    prompt: sections.length === 0 ? '' : `${sections.join('. ')}.`,
+    negativePrompt: video.negative === 'fold' ? '' : bibleNegative === '' ? STANDARD_NEGATIVE : `${bibleNegative}, ${STANDARD_NEGATIVE}`,
+    templateVersion: VIDEO_TEMPLATE_VERSION,
+    characterCount: characters.length,
+  };
+}
+
 // ── Character sheets (Character Studio CS-02, CS-06) ────────────────────────
 
 export const CHARACTER_SHEET_VERSION = 'cs1';

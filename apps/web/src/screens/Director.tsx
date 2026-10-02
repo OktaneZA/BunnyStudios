@@ -160,7 +160,14 @@ export function Director({ account }: { account: Account }) {
           castList={(cast?.data ?? []).map((c) => ({ id: c.id, name: c.name, lookId: c.look?.id ?? null }))}
           addJob={addJob} onShot={(shot) => setShots((prev) => new Map(prev).set(selected.id, shot))}
           onScene={(updated) => setScenes((prev) => prev?.map((s) => s.id === updated.id ? updated : s) ?? null)}
-          afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} openStudio={openStudio} />
+          afterHero={() => { void refreshTimeline().catch(() => {}); }} refreshSettings={refreshSettings} openStudio={openStudio}
+          onCartoonChanged={async () => {
+            // A new cartoon look changes other scenes too: reload them and their instructions.
+            const s = await api.listScenes(project.id);
+            setScenes(s.data);
+            const pairs = await Promise.all(s.data.map(async (scene) => [scene.id, (await director.shots(scene.id)).data[0]] as const));
+            setShots(new Map(pairs.filter((x): x is readonly [string, Shot] => Boolean(x[1]))));
+          }} />
           : null}
       </div>
 

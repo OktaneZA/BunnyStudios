@@ -173,8 +173,6 @@ export const MODELS = [
       "start_frame": "image_url",
       "duration": "duration",
       "duration_format": "string_seconds",
-      "aspect_ratio": "aspect_ratio",
-      "aspect_ratio_format": "ratio",
       "negative_prompt": "negative_prompt"
     },
     "result_shape": {
@@ -225,7 +223,12 @@ export const MODELS = [
       "aspect_ratio": "aspect_ratio",
       "aspect_ratio_format": "ratio",
       "audio": "generate_audio",
-      "resolution": "resolution"
+      "resolution": "resolution",
+      "seed": "seed",
+      "defaults": {
+        "auto_fix": false,
+        "safety_tolerance": "2"
+      }
     },
     "result_shape": {
       "files": "video"
@@ -274,7 +277,11 @@ export const MODELS = [
       "aspect_ratio": "aspect_ratio",
       "aspect_ratio_format": "ratio",
       "resolution": "resolution",
-      "negative_prompt": "negative_prompt"
+      "negative_prompt": "negative_prompt",
+      "seed": "seed",
+      "defaults": {
+        "enable_prompt_expansion": false
+      }
     },
     "result_shape": {
       "files": "video"
@@ -323,7 +330,11 @@ export const MODELS = [
       "aspect_ratio": "aspect_ratio",
       "aspect_ratio_format": "ratio",
       "resolution": "resolution",
-      "negative_prompt": "negative_prompt"
+      "negative_prompt": "negative_prompt",
+      "seed": "seed",
+      "defaults": {
+        "enable_prompt_expansion": false
+      }
     },
     "result_shape": {
       "files": "video"
@@ -367,7 +378,10 @@ export const MODELS = [
     "request_shape": {
       "prompt": "prompt",
       "duration": "duration",
-      "duration_format": "string_seconds"
+      "duration_format": "string_seconds",
+      "defaults": {
+        "prompt_optimizer": false
+      }
     },
     "result_shape": {
       "files": "video"
@@ -418,7 +432,12 @@ export const MODELS = [
       "aspect_ratio_format": "ratio",
       "audio": "generate_audio",
       "resolution": "resolution",
-      "negative_prompt": "negative_prompt"
+      "negative_prompt": "negative_prompt",
+      "defaults": {
+        "auto_fix": false,
+        "safety_tolerance": "2"
+      },
+      "seed": "seed"
     },
     "result_shape": {
       "files": "video"
@@ -554,7 +573,8 @@ export const MODELS = [
         "task": "reference"
       },
       "reference_images": "image_urls",
-      "reference_token_prefix": "@Image"
+      "reference_token_prefix": "@Image",
+      "seed": "seed"
     },
     "result_shape": {
       "files": "video"
@@ -715,7 +735,8 @@ export const MODELS = [
       "safety": "enable_safety_checker",
       "defaults": {
         "enable_prompt_expansion": false
-      }
+      },
+      "seed": "seed"
     },
     "result_shape": {
       "files": "video"
@@ -791,7 +812,8 @@ export const MODELS = [
       "safety": "enable_safety_checker",
       "defaults": {
         "enable_prompt_expansion": false
-      }
+      },
+      "seed": "seed"
     },
     "result_shape": {
       "files": "video"
@@ -870,7 +892,8 @@ export const MODELS = [
         "enable_prompt_expansion": false
       },
       "reference_images": "reference_image_urls",
-      "reference_token_prefix": "Image "
+      "reference_token_prefix": "Image ",
+      "seed": "seed"
     },
     "result_shape": {
       "files": "video"
@@ -896,6 +919,85 @@ export const MODELS = [
       "pence_per_usd": 100,
       "verified_on": "2026-09-27",
       "source": "https://fal.ai/models/alibaba/wan-3.0/reference-to-video"
+    }
+  },
+  {
+    "id": "wan_30_i2v",
+    "provider": "fal",
+    "provider_model": "alibaba/wan-3.0/image-to-video",
+    "kind": "video",
+    "tier": "high",
+    "label": "Wan 3.0 · Starting picture",
+    "friendlyLabel": "Wan 3.0 · Starting picture",
+    "help": "Starts from your chosen picture, and can end on another one. Check the finished clip: the picture guides it, it does not fix it.",
+    "icon": "model-video",
+    "capabilities": {
+      "reference_images": false,
+      "start_frame": true,
+      "end_frame": true,
+      "audio": true,
+      "multi_shot": false,
+      "image_to_video": true,
+      "text_to_video": false
+    },
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1"
+    ],
+    "resolutions": [
+      "720p",
+      "480p",
+      "1080p"
+    ],
+    "duration_seconds": {
+      "min": 2,
+      "max": 30,
+      "step": 1
+    },
+    "max_reference_images": 0,
+    "max_prompt_length": 2000,
+    "unit": "second",
+    "unit_cost_pence": 10,
+    "request_shape": {
+      "prompt": "prompt",
+      "duration": "duration",
+      "duration_format": "number",
+      "resolution": "resolution",
+      "aspect_ratio": "aspect_ratio",
+      "audio": "audio",
+      "safety": "enable_safety_checker",
+      "defaults": {
+        "enable_prompt_expansion": false
+      },
+      "start_frame": "start_image_url",
+      "end_frame": "end_image_url",
+      "seed": "seed"
+    },
+    "result_shape": {
+      "files": "video"
+    },
+    "enabled": true,
+    "video": {
+      "family": "wan_30",
+      "categories": [
+        "references"
+      ],
+      "audio_mode": "optional",
+      "documentation": "https://fal.ai/models/alibaba/wan-3.0/image-to-video/api",
+      "rollout": "advanced",
+      "verified_live": false
+    },
+    "pricing": {
+      "strategy": "per_second",
+      "rates": {
+        "720p": 0.1,
+        "480p": 0.05,
+        "1080p": 0.2
+      },
+      "pence_per_usd": 100,
+      "verified_on": "2026-09-27",
+      "source": "https://fal.ai/models/alibaba/wan-3.0/image-to-video"
     }
   },
   {
@@ -945,7 +1047,8 @@ export const MODELS = [
       "safety": "enable_safety_checker",
       "defaults": {
         "prompt_expansion_mode": "disabled"
-      }
+      },
+      "seed": "seed"
     },
     "result_shape": {
       "files": "video"
@@ -971,6 +1074,85 @@ export const MODELS = [
       "pence_per_usd": 100,
       "verified_on": "2026-09-27",
       "source": "https://fal.ai/models/minimax/h3-max/text-to-video"
+    }
+  },
+  {
+    "id": "h3_max_refs",
+    "provider": "fal",
+    "provider_model": "minimax/h3-max/reference-to-video",
+    "kind": "video",
+    "tier": "high",
+    "label": "MiniMax H3 Max · Cast pictures",
+    "friendlyLabel": "MiniMax H3 Max · Cast pictures",
+    "help": "Uses up to 9 pictures of the characters in this scene. Sound is always included. Pictures guide the result; check the finished characters.",
+    "icon": "model-video",
+    "capabilities": {
+      "reference_images": true,
+      "start_frame": false,
+      "end_frame": false,
+      "audio": true,
+      "multi_shot": false,
+      "image_to_video": false,
+      "text_to_video": false,
+      "requires_reference_images": true
+    },
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1"
+    ],
+    "resolutions": [
+      "768P",
+      "480P",
+      "1080P"
+    ],
+    "duration_seconds": {
+      "min": 5,
+      "max": 15,
+      "step": 1
+    },
+    "max_reference_images": 9,
+    "max_prompt_length": 2000,
+    "unit": "second",
+    "unit_cost_pence": 8,
+    "request_shape": {
+      "prompt": "prompt",
+      "duration": "duration",
+      "duration_format": "number",
+      "resolution": "resolution",
+      "aspect_ratio": "aspect_ratio",
+      "safety": "enable_safety_checker",
+      "defaults": {
+        "prompt_expansion_mode": "disabled"
+      },
+      "reference_images": "reference_image_urls",
+      "reference_token_prefix": "Image ",
+      "seed": "seed"
+    },
+    "result_shape": {
+      "files": "video"
+    },
+    "enabled": true,
+    "video": {
+      "family": "minimax_h3",
+      "categories": [
+        "references"
+      ],
+      "audio_mode": "always",
+      "documentation": "https://fal.ai/models/minimax/h3-max/reference-to-video/api",
+      "rollout": "advanced",
+      "verified_live": false
+    },
+    "pricing": {
+      "strategy": "per_second",
+      "rates": {
+        "768P": 0.08,
+        "480P": 0.05,
+        "1080P": 0.16
+      },
+      "pence_per_usd": 100,
+      "verified_on": "2026-09-27",
+      "source": "https://fal.ai/models/minimax/h3-max/reference-to-video"
     }
   },
   {
@@ -1018,7 +1200,8 @@ export const MODELS = [
       "audio": "generate_audio",
       "defaults": {
         "fps": 25
-      }
+      },
+      "camera_motion": "camera_motion"
     },
     "result_shape": {
       "files": "video"
@@ -1033,7 +1216,16 @@ export const MODELS = [
       "documentation": "https://fal.ai/models/lightricks/ltx-2.5/text-to-video/fast/api",
       "final_model_id": "ltx_25_pro",
       "rollout": "advanced",
-      "verified_live": false
+      "verified_live": false,
+      "camera_motion_map": {
+        "static": "static",
+        "dolly_in": "dolly_in",
+        "dolly_out": "dolly_out",
+        "truck_left": "dolly_left",
+        "truck_right": "dolly_right",
+        "crane_up": "jib_up",
+        "crane_down": "jib_down"
+      }
     },
     "pricing": {
       "strategy": "per_second",
@@ -1091,7 +1283,8 @@ export const MODELS = [
       "audio": "generate_audio",
       "defaults": {
         "fps": 25
-      }
+      },
+      "camera_motion": "camera_motion"
     },
     "result_shape": {
       "files": "video"
@@ -1105,7 +1298,16 @@ export const MODELS = [
       "audio_mode": "optional",
       "documentation": "https://fal.ai/models/lightricks/ltx-2.5/text-to-video/pro/api",
       "rollout": "advanced",
-      "verified_live": false
+      "verified_live": false,
+      "camera_motion_map": {
+        "static": "static",
+        "dolly_in": "dolly_in",
+        "dolly_out": "dolly_out",
+        "truck_left": "dolly_left",
+        "truck_right": "dolly_right",
+        "crane_up": "jib_up",
+        "crane_down": "jib_down"
+      }
     },
     "pricing": {
       "strategy": "per_second",

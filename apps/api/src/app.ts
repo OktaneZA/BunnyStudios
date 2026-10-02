@@ -15,6 +15,7 @@ import { directorRoutes } from './routes/director.ts';
 import { castRoutes } from './routes/cast.ts';
 import { timelineRoutes } from './routes/timeline.ts';
 import { productionRoutes } from './routes/production.ts';
+import { cartoonRoutes } from './routes/cartoon.ts';
 import { createDirectorServices, type DirectorOverrides, type DirectorServices } from './director.ts';
 
 declare module 'fastify' {
@@ -108,6 +109,7 @@ export async function buildApp(options: { thumbnailProvider?: ThumbnailProvider;
       await v1.register(castRoutes, director);
       await v1.register(timelineRoutes, director);
       await v1.register(productionRoutes, director);
+      await v1.register(cartoonRoutes, director);
     },
     { prefix: '/api/v1' },
   );

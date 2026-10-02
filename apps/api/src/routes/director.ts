@@ -69,6 +69,10 @@ const STEPS: Record<Job['status'], string> = {
   queued: 'Waiting', submitted: 'Making', running: 'Making', reviewing: 'Checking', ready: 'Ready', failed: 'Failed', cancelled: 'Cancelled',
 };
 
+function wordsOnly(creative: JobRequest['creative']): boolean {
+  return Boolean(creative && creative.task !== 'image-to-video' && creative.characters.length > 0 && creative.references.length === 0);
+}
+
 export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
   const visible = assets.filter((a) => j.resultAssetIds.includes(a.id) && (!hideRejected || a.reviewStatus !== 'rejected'));
   const heldBack = assets.filter((a) => j.resultAssetIds.includes(a.id) && a.reviewStatus === 'rejected').length;
@@ -84,6 +88,8 @@ export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
     intent: j.intent,
     parent_job_id: j.parentJobId,
     source_scene_version: (j.request as JobRequest).creative?.sceneVersion ?? null,
+    // Characters were in the scene but no pictures of them reached the clip maker (§1 finding 1).
+    words_only: wordsOnly((j.request as JobRequest).creative),
     attempt: j.attempt,
     error: j.status === 'failed' ? j.errorDetail : null,
     results: visible.map(presentAsset),

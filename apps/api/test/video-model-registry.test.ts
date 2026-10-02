@@ -29,7 +29,7 @@ test('reference and end-frame requirements cannot fall back to text-only models'
     assert.equal(registry.matching({ referenceImageCount }).length, 0);
   }
   const endFrames = VIDEO_MODEL_REGISTRY.matching({ endFrame: true });
-  assert.deepEqual(endFrames.map((m) => m.id), ['seedance_25_i2v']);
+  assert.deepEqual(endFrames.map((m) => m.id), ['seedance_25_i2v', 'wan_30_i2v']);
   assert.ok(endFrames.every((m) => m.capabilities.end_frame && m.capabilities.start_frame));
   assert.ok(VIDEO_MODEL_REGISTRY.matching({ task: 'reference-to-video' }).every((m) => m.capabilities.reference_images));
 });

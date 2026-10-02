@@ -20,6 +20,7 @@ import { and, eq, inArray, isNull, lt, lte, notInArray, or, sql as raw } from 'd
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { clipPlan, CLIP_LENGTHS, type GenerationModel } from '@storyboard/models';
+import { VIDEO_TEMPLATE_VERSION } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { config } from '../config.ts';
 import type { Catalogue } from '../generation/catalogue.ts';
@@ -192,6 +193,7 @@ export function createRunner(deps: RunnerDeps) {
       model, prompt: r.prompt, negativePrompt: r.negativePrompt, referenceImages: references, ...(r.referenceNames ? { referenceNames: r.referenceNames } : {}), startFrame, endFrame,
       aspectRatio: r.aspectRatio, count: r.count, durationSeconds: r.durationSeconds, audio: r.audio && model.capabilities.audio,
       resolution: r.resolution, strictSafety: r.constrained,
+      ...(creative ? { seed: creative.seed ?? null, cameraMovement: creative.cameraMovement ?? null, tokensInline: creative.compilerVersion === VIDEO_TEMPLATE_VERSION } : {}),
     };
   }
 
@@ -357,7 +359,7 @@ export function createRunner(deps: RunnerDeps) {
       });
     }
     const assetIds = pending.map((a) => a.id!);
-    const providerResult = meta ? { ...(meta.seed !== undefined ? { seed: meta.seed } : {}), ...(meta.draftId ? { draft_id: meta.draftId, draft_expires_at: new Date(Date.now() + DRAFT_LIFETIME_MS).toISOString() } : {}) } : null;
+    const providerResult = meta ? { ...(meta.seed !== undefined ? { seed: meta.seed } : {}), ...(meta.expandedPrompt ? { expanded_prompt: meta.expandedPrompt } : {}), ...(meta.draftId ? { draft_id: meta.draftId, draft_expires_at: new Date(Date.now() + DRAFT_LIFETIME_MS).toISOString() } : {}) } : null;
     const done = await db.transaction(async (tx) => {
       // Fenced: a job cancelled or taken over in the meantime is never turned into "ready".
       const updated = await tx.update(schema.generationJobs).set({ status: 'ready', resultAssetIds: assetIds, finishedAt: new Date(), updatedAt: new Date(), claimedBy: null, ...(providerResult ? { providerResult } : {}) })

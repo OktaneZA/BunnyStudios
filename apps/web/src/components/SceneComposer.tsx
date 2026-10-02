@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiProblem, type Scene } from '../api';
 import {
   director, formatPence, isActiveJob, seconds,
-  type Asset, type GenerationSettings, type Job, type NeedsChoice, type Shot, type ShotCast, type VideoBody, type VideoPlan,
+  type Asset, type CartoonStyle, type GenerationSettings, type Job, type NeedsChoice, type Shot, type ShotCast, type VideoBody, type VideoPlan,
 } from '../director-api';
 import { ART_STYLE, PROMPT_VOCABULARIES } from '@storyboard/vocabularies';
 import { uuid } from '../uuid';
@@ -24,6 +24,9 @@ const CLIP_STYLES = [
 const LENGTHS = [5, 10, 15, 30] as const;
 /** Simple mode shows a short, friendly set of moods; Advanced shows every mood in the vocabulary. */
 const SIMPLE_MOODS: readonly string[] = ['whimsical', 'cosy', 'tense', 'eerie', 'triumphant', 'melancholy'];
+/** Simple mode offers the camera moves that read well in a short cartoon clip; Advanced shows them all. */
+const SIMPLE_MOVES: readonly string[] = ['static', 'dolly_in', 'dolly_out', 'pan_left', 'pan_right', 'tilt_up', 'crane_up'];
+const styleLabel = (value: string | null | undefined) => CLIP_STYLES.find(([v]) => v === value)?.[1] ?? ART_STYLE.find((s) => s.value === value)?.friendlyLabel ?? 'Not chosen';
 const fileUrl = (id: string) => `/api/v1/assets/${id}/file`;
 
 interface Props {
@@ -42,6 +45,8 @@ interface Props {
   onShot: (shot: Shot) => void;
   onScene: (scene: Scene) => void;
   afterHero: () => void;
+  /** The cartoon's look changed: other scenes and their instructions changed with it. */
+  onCartoonChanged: () => Promise<void>;
   refreshSettings: () => Promise<void>;
   openStudio: (characterId: string) => void;
 }
@@ -55,7 +60,7 @@ type Quote = { plan: VideoPlan | null; needs: { detail: string; state: NeedsChoi
  * Every visible setting applies to that one action and its price.
  */
 export function SceneComposer(props: Props) {
-  const { scene, projectId, shot, settings, jobs, jobsLoaded, assetsById, advanced, movable, layoutReset, castList, addJob, onShot, onScene, afterHero, refreshSettings, openStudio } = props;
+  const { scene, projectId, shot, settings, jobs, jobsLoaded, assetsById, advanced, movable, layoutReset, castList, addJob, onShot, onScene, afterHero, onCartoonChanged, refreshSettings, openStudio } = props;
   /** More options: make a final straight away instead of a preview first. */
   const [skipPreview, setSkipPreview] = useState(false);
   const [duration, setDuration] = useState<number>(5);
@@ -70,6 +75,9 @@ export function SceneComposer(props: Props) {
   const [editingCast, setEditingCast] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [changingStyle, setChangingStyle] = useState(false);
+  /** Advanced only: the style cards change this scene alone instead of the whole cartoon. */
+  const [sceneOnlyStyle, setSceneOnlyStyle] = useState(false);
+  const [cartoon, setCartoon] = useState<CartoonStyle | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [retryQuote, setRetryQuote] = useState<Quote | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -100,13 +108,18 @@ export function SceneComposer(props: Props) {
   }, [shot?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const castStamp = castList.map((c) => `${c.id}:${c.lookId ?? ''}`).join();
   useEffect(() => { void loadCast().catch(setError); }, [loadCast, shot?.version, castStamp]);
+  useEffect(() => {
+    let on = true;
+    director.cartoonStyle(projectId).then((c) => { if (on) setCartoon(c); }).catch((err) => { if (on) setError(err); });
+    return () => { on = false; };
+  }, [projectId, scene.id]);
 
   const listed = new Set(cast?.characters.map((c) => c.character_id) ?? []);
   const extras = castList.filter((c) => chosen.includes(c.id) && !listed.has(c.id));
   const addable = castList.filter((c) => !chosen.includes(c.id) && !listed.has(c.id));
   const castChanged = Boolean(cast && chosen.join() !== cast.characters.map((c) => c.character_id).join());
-  const needsConfirm = Boolean(cast && !cast.saved && cast.characters.length > 0);
-  const hasCharacters = Boolean(cast?.saved && cast.characters.length > 0);
+  // The story's proposal is used as it is, and saved when the clip is made (§6.2): no confirm step.
+  const hasCharacters = Boolean(cast && cast.characters.length > 0);
   const useLooks = hasCharacters && !wordsOnly;
 
   // ── Clips of this scene ──────────────────────────────────────────────────
@@ -161,11 +174,11 @@ export function SceneComposer(props: Props) {
   useEffect(() => {
     setQuote(null);
     setQuoteFailed(false);
-    if (!shot || sceneText.pending || (!fromPreview && (!scene.description.trim() || needsConfirm || castChanged))) return;
+    if (!shot || sceneText.pending || (!fromPreview && (!scene.description.trim() || castChanged))) return;
     let on = true;
     ask(body).then((q) => { if (on) setQuote(q); }).catch((err) => { if (on) { setError(err); setQuoteFailed(true); } });
     return () => { on = false; };
-  }, [shot?.id, shot?.version, scene.description, body, needsConfirm, castChanged, ask, quoteRevision, sceneText.pending]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shot?.id, shot?.version, scene.description, scene.art_style, body, castChanged, ask, quoteRevision, sceneText.pending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabled = Boolean(settings?.enabled);
   const off = !shot || !enabled || !jobsLoaded || busy || Boolean(activeJob) || sceneText.pending;
@@ -200,13 +213,29 @@ export function SceneComposer(props: Props) {
     finally { setBusy(false); }
   }
 
-  async function chooseStyle(style: string) {
+  /** One look for the whole cartoon (§7.1): every scene uses it, so the clips match. */
+  async function chooseCartoonStyle(style: string) {
+    if (!shot || busy || sceneText.pending) return;
+    setBusy(true); setSaveNote('Saving…'); setError(null);
+    try {
+      setCartoon(await director.setCartoonStyle(projectId, style));
+      onScene(await api.getScene(scene.id));
+      await onCartoonChanged();
+      setSaveNote('Look saved for the whole cartoon'); setChangingStyle(false);
+      setQuoteRevision((n) => n + 1);
+    } catch (err) { setSaveNote(''); setError(err); }
+    finally { setBusy(false); }
+  }
+
+  /** Advanced: a look for this scene alone. Null puts the scene back on the cartoon's look. */
+  async function chooseStyle(style: string | null) {
     if (!shot || busy || sceneText.pending) return;
     setBusy(true); setSaveNote('Saving…'); setError(null);
     try {
       onScene(await api.updateScene(scene.id, { art_style: style }, scene.version));
       await refreshShot();
-      setSaveNote('Style saved for this scene'); setChangingStyle(false);
+      setSaveNote(style ? 'Look saved for this scene only' : 'This scene uses the cartoon look again'); setChangingStyle(false); setSceneOnlyStyle(false);
+      setQuoteRevision((n) => n + 1);
     } catch (err) {
       setSaveNote('');
       if (err instanceof ApiProblem && err.problem.status === 409 && err.problem.current_state) onScene(err.problem.current_state as Scene);
@@ -269,14 +298,17 @@ export function SceneComposer(props: Props) {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  const styleValue = scene.art_style ?? CLIP_STYLES.find(([v]) => shot?.compiled_prompt.startsWith(ART_STYLE.find((s) => s.value === v)!.prompt_phrase))?.[0] ?? null;
-  const styleLabel = CLIP_STYLES.find(([v]) => v === styleValue)?.[1] ?? 'Not chosen';
+  // A scene's own look (Advanced) differs from the cartoon's; otherwise the scene follows the cartoon.
+  const ownStyle = scene.art_style && scene.art_style !== cartoon?.art_style ? scene.art_style : null;
+  const styleValue = ownStyle ?? cartoon?.art_style ?? null;
+  const pickedStyle = sceneOnlyStyle ? ownStyle : cartoon?.art_style ?? null;
   const plan = quote?.plan ?? null;
   const actionLabel = purpose === 'preview' ? 'Make preview' : 'Make final clip';
   const detailSummary = ([
     ['time_of_day', sceneText.text.time_of_day],
     ['mood_atmosphere', sceneText.text.mood_atmosphere],
     ['camera_angle', sceneText.text.camera_angle ?? 'eye_level'],
+    ['camera_movement', sceneText.text.camera_movement ?? null],
   ] as const).flatMap(([vocabulary, value]) => {
     const option = PROMPT_VOCABULARIES[vocabulary].find((entry) => entry.value === value);
     return option && !('emitsNothing' in option && option.emitsNothing) ? [advanced ? option.label : option.friendlyLabel] : [];
@@ -291,8 +323,7 @@ export function SceneComposer(props: Props) {
   const blockedReason = !enabled ? (settings?.message ?? 'Generation isn’t connected yet. Ask the account owner to set it up.')
     : sceneText.pending ? 'Save the scene before making a clip.'
     : !fromPreview && !scene.description.trim() ? 'Describe what happens in this scene first.'
-      : !fromPreview && needsConfirm ? 'Check who is in this scene first.'
-        : !fromPreview && castChanged ? 'Save the characters first.'
+      : !fromPreview && castChanged ? 'Save the characters first.'
           : activeJob ? 'A clip for this scene is being made. You can work on another scene.'
             : quote && !plan ? null : !quote ? 'Checking the price…' : null;
 
@@ -347,6 +378,10 @@ export function SceneComposer(props: Props) {
                 <OptionPicker vocabulary="camera_angle" value={sceneText.text.camera_angle ?? 'eye_level'} friendly={!advanced} compact label="Camera"
                   allowedValues={['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter']}
                   onChange={(value) => { if (value) { sceneText.edit('camera_angle', value); void sceneText.flush(); } }} />
+                <span className="label-text">Camera moves</span>
+                <OptionPicker vocabulary="camera_movement" value={sceneText.text.camera_movement ?? null} friendly={!advanced} compact label="Camera moves" allowNone toggle
+                  allowedValues={advanced ? undefined : [...SIMPLE_MOVES, ...(sceneText.text.camera_movement && !SIMPLE_MOVES.includes(sceneText.text.camera_movement) ? [sceneText.text.camera_movement] : [])]}
+                  onChange={(value) => { sceneText.edit('camera_movement', value); void sceneText.flush(); }} />
               </div>
             </details>
           </div>
@@ -378,14 +413,7 @@ export function SceneComposer(props: Props) {
                     </span>
                   </div>
                 ))}
-                {needsConfirm && !editingCast && (
-                  <div className="confirm-cast">
-                    <span>Are these the characters in this scene?</span>
-                    <button type="button" disabled={busy} onClick={() => void saveCast()}>Yes</button>
-                    <button type="button" className="secondary" onClick={() => setEditingCast(true)}>Change</button>
-                  </div>
-                )}
-                {!needsConfirm && !editingCast && <button type="button" className="secondary" onClick={() => setEditingCast(true)}>Edit characters</button>}
+                {!editingCast && <button type="button" className="secondary" onClick={() => setEditingCast(true)}>Edit characters</button>}
                 {editingCast && (
                   <div className="cast-editor">
                     <ul className="shot-cast">
@@ -419,20 +447,27 @@ export function SceneComposer(props: Props) {
           </div>
 
           <div className="composer-field">
-            <span className="label-text">Style</span>
-            <span>{styleLabel}</span>
-            <button type="button" className="secondary" aria-expanded={changingStyle} disabled={!shot || shot.prompt_locked} onClick={() => setChangingStyle((v) => !v)}>Change</button>
+            <span className="label-text">Look</span>
+            <span>{ownStyle ? `${styleLabel(ownStyle)} · this scene only` : `${styleLabel(styleValue)} · whole cartoon`}</span>
+            <button type="button" className="secondary" aria-expanded={changingStyle} disabled={!shot || shot.prompt_locked || !cartoon} onClick={() => { setChangingStyle((v) => !v); setSceneOnlyStyle(false); }}>Change</button>
             <span className="save-state" aria-live="polite">{saveNote}</span>
           </div>
+          {ownStyle && !changingStyle && (
+            <p className="hint">This scene has its own look, so it will not match the rest of your cartoon.{' '}
+              <button type="button" className="link-button" disabled={busy || Boolean(activeJob) || sceneText.pending} onClick={() => void chooseStyle(null)}>Use the cartoon look</button></p>
+          )}
           {changingStyle && (
-            <div className="clip-styles" role="group" aria-label="Clip style">
+            <div className="clip-styles" role="group" aria-label={sceneOnlyStyle ? 'Look for this scene only' : 'Look for the whole cartoon'}>
               {CLIP_STYLES.map(([value, label]) => (
-                <button key={value} type="button" className={`style-card style-${value}`} aria-pressed={styleValue === value}
-                  disabled={!shot || busy || Boolean(activeJob) || sceneText.pending} onClick={() => void chooseStyle(value)}>
+                <button key={value} type="button" className={`style-card style-${value}`} aria-pressed={pickedStyle === value}
+                  disabled={!shot || busy || Boolean(activeJob) || sceneText.pending} onClick={() => void (sceneOnlyStyle ? chooseStyle(value) : chooseCartoonStyle(value))}>
                   <span className="style-swatch" aria-hidden="true">●</span><span>{label}</span>
                 </button>
               ))}
-              <p className="hint">A new style can make characters look different from their chosen pictures. Their looks do not change by themselves.</p>
+              <p className="hint">{sceneOnlyStyle
+                ? 'Only this scene changes. It will look different from the rest of your cartoon.'
+                : 'Every scene in your cartoon uses this look, so your clips match. Character pictures do not change by themselves: make new ones in Your characters if they look different.'}</p>
+              {advanced && <button type="button" className="link-button" onClick={() => setSceneOnlyStyle((v) => !v)}>{sceneOnlyStyle ? 'Change the whole cartoon instead' : 'Use a different look for this scene only'}</button>}
             </div>
           )}
 
@@ -509,7 +544,8 @@ export function SceneComposer(props: Props) {
               </section>
               <details className="prompt-details scene-settings">
                 <summary>See the clip instructions</summary>
-                <p className="prompt-box">{fromPreview ? plan?.prompt ?? 'Loading the preview’s instructions…' : shot?.compiled_prompt || 'Write what happens in this scene first.'}</p>
+                {/* The instructions the clip maker gets, written by the server for that maker. */}
+                <p className="prompt-box">{plan?.prompt ?? (fromPreview ? 'Loading the preview’s instructions…' : shot?.compiled_prompt || 'Write what happens in this scene first.')}</p>
               </details>
             </div>
           </details>
@@ -538,6 +574,7 @@ export function SceneComposer(props: Props) {
                 : previewOnScreen && fresh && <p className="hint">Makes a final clip from the scene as it is now. <button type="button" className="link-button" onClick={() => setFresh(false)}>Use the preview’s saved settings instead</button></p>}
             {quoteFailed ? <p className="hint" role="status">Could not check the price. <button type="button" className="secondary" onClick={() => setQuoteRevision((n) => n + 1)}>Check price again</button></p>
               : blockedReason && <p className="hint" role="status">{blockedReason}</p>}
+            {plan?.words_only && <p className="hint words-only" role="status">Made from the words only: {plan.characters.map((c) => c.name).join(' and ')} may not look like {plan.characters.length === 1 ? 'their picture' : 'their pictures'}.</p>}
             {leftWords && <p className="hint money-left">{leftWords}</p>}
             {plan && (
               <details className="price-details scene-settings">
@@ -563,6 +600,7 @@ export function SceneComposer(props: Props) {
                 {playing.asset.id === newClip && playing.asset.id !== heroId && <b className="new-clip">New · </b>}
                 {playing.asset.id === heroId ? <b>In your cartoon</b> : <b>Not in your cartoon yet</b>}
                 {playing.job?.intent ? ` · ${playing.job.intent === 'draft' ? 'Preview' : 'Final'}` : ''}
+                {playing.job?.words_only ? ' · Made from words only' : ''}
                 {playing.asset.duration_ms ? ` · ${seconds(playing.asset.duration_ms)}` : ''}
               </p>
             </div>

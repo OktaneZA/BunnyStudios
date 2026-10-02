@@ -41,6 +41,7 @@ export const depthOfFieldEnum = pgEnum('depth_of_field', enumValues('depth_of_fi
 export const lightingPresetEnum = pgEnum('lighting_preset', enumValues('lighting_preset'));
 export const timeOfDayEnum = pgEnum('time_of_day', enumValues('time_of_day'));
 export const moodAtmosphereEnum = pgEnum('mood_atmosphere', enumValues('mood_atmosphere'));
+export const cameraMovementEnum = pgEnum('camera_movement', enumValues('camera_movement'));
 
 // ── Structural enums (§3) ───────────────────────────────────────────────────
 export const authProviderEnum = pgEnum('auth_provider', ['email_password', 'google', 'apple']);
@@ -413,6 +414,8 @@ export const scenes = pgTable(
     /** Unified scene-writing field; null reads the legacy fields without losing their text. */
     description: text('description'),
     cameraAngle: cameraAngleEnum('camera_angle'),
+    /** §4.3, video template only (docs/video-optimisation-plan.md V5). Null: the clip maker decides. */
+    cameraMovement: cameraMovementEnum('camera_movement'),
     emotionalBeat: text('emotional_beat').notNull().default(''),
     synopsis: text('synopsis').notNull().default(''),
     actionDescription: text('action_description').notNull().default(''),

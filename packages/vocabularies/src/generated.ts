@@ -794,6 +794,152 @@ export const REFERENCE_VIEW = [
   }
 ] as const;
 
+export type CameraMovement = "static" | "pan_left" | "pan_right" | "tilt_up" | "tilt_down" | "dolly_in" | "dolly_out" | "truck_left" | "truck_right" | "crane_up" | "crane_down" | "handheld" | "zoom_in" | "zoom_out";
+export const CAMERA_MOVEMENT_VALUES = ["static", "pan_left", "pan_right", "tilt_up", "tilt_down", "dolly_in", "dolly_out", "truck_left", "truck_right", "crane_up", "crane_down", "handheld", "zoom_in", "zoom_out"] as const satisfies readonly CameraMovement[];
+export const CAMERA_MOVEMENT = [
+  {
+    "value": "static",
+    "prompt_phrase": "locked-off static camera",
+    "label": "Static",
+    "friendlyLabel": "Camera stays still",
+    "help": "The camera does not move. Good when the action is busy.",
+    "icon": "move-static"
+  },
+  {
+    "value": "pan_left",
+    "prompt_phrase": "camera pans left",
+    "label": "Pan left",
+    "friendlyLabel": "Camera turns left",
+    "help": "The camera turns to look along to the left.",
+    "icon": "move-pan-left"
+  },
+  {
+    "value": "pan_right",
+    "prompt_phrase": "camera pans right",
+    "label": "Pan right",
+    "friendlyLabel": "Camera turns right",
+    "help": "The camera turns to look along to the right.",
+    "icon": "move-pan-right"
+  },
+  {
+    "value": "tilt_up",
+    "prompt_phrase": "camera tilts upward",
+    "label": "Tilt up",
+    "friendlyLabel": "Camera looks up",
+    "help": "Starts low and looks up. Good for something tall.",
+    "icon": "move-tilt-up"
+  },
+  {
+    "value": "tilt_down",
+    "prompt_phrase": "camera tilts downward",
+    "label": "Tilt down",
+    "friendlyLabel": "Camera looks down",
+    "help": "Starts high and looks down.",
+    "icon": "move-tilt-down"
+  },
+  {
+    "value": "dolly_in",
+    "prompt_phrase": "slow dolly in toward the subject",
+    "label": "Dolly in",
+    "friendlyLabel": "Camera moves closer",
+    "help": "Slowly moves in. Makes a moment feel important.",
+    "icon": "move-dolly-in"
+  },
+  {
+    "value": "dolly_out",
+    "prompt_phrase": "slow dolly out away from the subject",
+    "label": "Dolly out",
+    "friendlyLabel": "Camera moves back",
+    "help": "Slowly moves away to show more of the place.",
+    "icon": "move-dolly-out"
+  },
+  {
+    "value": "truck_left",
+    "prompt_phrase": "camera trucks left, moving laterally",
+    "label": "Truck left",
+    "friendlyLabel": "Camera slides left",
+    "help": "The camera glides sideways to the left.",
+    "icon": "move-truck-left"
+  },
+  {
+    "value": "truck_right",
+    "prompt_phrase": "camera trucks right, moving laterally",
+    "label": "Truck right",
+    "friendlyLabel": "Camera slides right",
+    "help": "The camera glides sideways to the right.",
+    "icon": "move-truck-right"
+  },
+  {
+    "value": "crane_up",
+    "prompt_phrase": "crane shot rising upward",
+    "label": "Crane up",
+    "friendlyLabel": "Camera rises up",
+    "help": "The camera floats up high. Good for an ending.",
+    "icon": "move-crane-up"
+  },
+  {
+    "value": "crane_down",
+    "prompt_phrase": "crane shot descending",
+    "label": "Crane down",
+    "friendlyLabel": "Camera comes down",
+    "help": "The camera floats down from above.",
+    "icon": "move-crane-down"
+  },
+  {
+    "value": "handheld",
+    "prompt_phrase": "handheld camera, subtle natural shake",
+    "label": "Handheld",
+    "friendlyLabel": "Wobbly, like a phone",
+    "help": "A little shaky, like someone is holding it.",
+    "icon": "move-handheld"
+  },
+  {
+    "value": "zoom_in",
+    "prompt_phrase": "zoom in, tightening on the subject",
+    "label": "Zoom in",
+    "friendlyLabel": "Zoom in",
+    "help": "Gets closer without moving the camera.",
+    "icon": "move-zoom-in"
+  },
+  {
+    "value": "zoom_out",
+    "prompt_phrase": "zoom out, widening from the subject",
+    "label": "Zoom out",
+    "friendlyLabel": "Zoom out",
+    "help": "Shows more without moving the camera.",
+    "icon": "move-zoom-out"
+  }
+] as const;
+
+export type VideoDirection = "keep_out" | "ambient_sound" | "style_reference";
+export const VIDEO_DIRECTION_VALUES = ["keep_out", "ambient_sound", "style_reference"] as const satisfies readonly VideoDirection[];
+export const VIDEO_DIRECTION = [
+  {
+    "value": "keep_out",
+    "prompt_phrase": "clean frame with no on-screen text, captions, logos or watermarks, not photorealistic",
+    "label": "Keep-outs",
+    "friendlyLabel": "Keep the picture clean",
+    "help": "Asks for no writing or logos on the clip.",
+    "icon": "direction-keep-out"
+  },
+  {
+    "value": "ambient_sound",
+    "prompt_phrase": "sound effects and background sounds only, no talking, singing or music",
+    "label": "Ambient sound",
+    "friendlyLabel": "Sounds only",
+    "help": "Footsteps, wind and splashes, but no voices.",
+    "icon": "direction-sound"
+  },
+  {
+    "value": "style_reference",
+    "prompt_phrase": "match the art style, colours and line work shown in",
+    "label": "Style picture",
+    "friendlyLabel": "Match the cartoon look",
+    "help": "Uses the cartoon's style picture as a guide.",
+    "icon": "direction-style"
+  }
+] as const;
+
 export type MusicGenre = "orchestral" | "jazz" | "chiptune" | "synthwave" | "folk_acoustic" | "rock" | "hip_hop" | "ambient" | "circus_polka" | "lullaby" | "marching_band" | "silence";
 export const MUSIC_GENRE_VALUES = ["orchestral", "jazz", "chiptune", "synthwave", "folk_acoustic", "rock", "hip_hop", "ambient", "circus_polka", "lullaby", "marching_band", "silence"] as const satisfies readonly MusicGenre[];
 export const MUSIC_GENRE = [

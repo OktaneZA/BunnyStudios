@@ -37,6 +37,10 @@ export interface GenerationRequest {
   resolution: string;
   /** Strictest provider-side safety setting for the teen account (plan D32 gate 2). */
   strictSafety: boolean;
+  /** Video only: see CreativeVideoRequest. */
+  seed?: number | null;
+  cameraMovement?: string | null;
+  tokensInline?: boolean;
 }
 
 export type ProviderJobStatus =
@@ -78,6 +82,8 @@ export function providerError(code: ProviderError['code'], message: string, notA
 export interface ProviderResultMeta {
   seed?: number;
   draftId?: string;
+  /** What a provider's prompt rewriter actually used, when it reports it. Adults only, for diagnosis. */
+  expandedPrompt?: string;
 }
 
 export function isProviderError(error: unknown): error is ProviderError {
@@ -138,6 +144,8 @@ export function shapeResult(model: GenerationModel, response: unknown): Provider
   const meta: ProviderResultMeta = {};
   if (typeof root?.seed === 'number') meta.seed = root.seed;
   if (typeof root?.draft_id === 'string' && root.draft_id) meta.draftId = root.draft_id;
-  if (files[0] && (meta.seed !== undefined || meta.draftId)) files[0].meta = meta;
+  const expanded = root?.expanded_prompt ?? root?.actual_prompt;
+  if (typeof expanded === 'string' && expanded) meta.expandedPrompt = expanded.slice(0, 4000);
+  if (files[0] && (meta.seed !== undefined || meta.draftId || meta.expandedPrompt)) files[0].meta = meta;
   return files;
 }

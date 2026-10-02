@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiProblem, type Scene } from './api';
 
-type Text = Pick<Scene, 'title' | 'description' | 'camera_angle' | 'time_of_day' | 'mood_atmosphere'>;
-const fields = ['title', 'description', 'camera_angle', 'time_of_day', 'mood_atmosphere'] as const;
-const pick = (s: Text): Text => ({ title: s.title, description: s.description, camera_angle: s.camera_angle, time_of_day: s.time_of_day, mood_atmosphere: s.mood_atmosphere });
+type Text = Pick<Scene, 'title' | 'description' | 'camera_angle' | 'camera_movement' | 'time_of_day' | 'mood_atmosphere'>;
+const fields = ['title', 'description', 'camera_angle', 'camera_movement', 'time_of_day', 'mood_atmosphere'] as const;
+const pick = (s: Text): Text => ({ title: s.title, description: s.description, camera_angle: s.camera_angle, camera_movement: s.camera_movement ?? null, time_of_day: s.time_of_day, mood_atmosphere: s.mood_atmosphere });
 const same = (a: Text, b: Text) => fields.every((field) => a[field] === b[field]);
 
 /** Serial autosaves. Keep a local draft across scene switches and failed requests. */

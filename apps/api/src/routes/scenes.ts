@@ -9,6 +9,7 @@ import { sceneDescription } from '../scenes/description.ts';
 
 const TIME_OF_DAY = values('time_of_day') as [string, ...string[]];
 const MOOD = values('mood_atmosphere') as [string, ...string[]];
+const CAMERA_MOVES = values('camera_movement') as [string, ...string[]];
 const CAMERA_ANGLES = ['eye_level', 'low_angle', 'high_angle', 'birds_eye', 'profile', 'three_quarter'] as const;
 
 const createBody = z.object({
@@ -34,9 +35,11 @@ const createBody = z.object({
  * no default, so an absent key stays absent and is never patched.
  */
 const updateBody = z.object({
-  art_style: z.enum(values('art_style') as [string, ...string[]]).optional(),
+  /** A scene's own look (Advanced). Null puts the scene back on the cartoon's look. */
+  art_style: z.enum(values('art_style') as [string, ...string[]]).nullable().optional(),
   description: z.string().max(12000).optional(),
   camera_angle: z.enum(CAMERA_ANGLES).nullable().optional(),
+  camera_movement: z.enum(CAMERA_MOVES).nullable().optional(),
   title: z.string().min(1).max(200).optional(),
   scene_intent: z.string().optional(),
   action_description: z.string().optional(),
@@ -75,6 +78,7 @@ function present(s: typeof schema.scenes.$inferSelect) {
     description: sceneDescription(s),
     art_style: ART_STYLE.find((style) => style.prompt_phrase === s.styleOverride)?.value ?? null,
     camera_angle: s.cameraAngle,
+    camera_movement: s.cameraMovement,
     location_id: s.locationId,
     time_of_day: s.timeOfDay,
     mood_atmosphere: s.moodAtmosphere,
@@ -260,9 +264,10 @@ export async function sceneRoutes(app: FastifyInstance): Promise<void> {
       version: current.version + 1,
     };
     if (body.title !== undefined) patch.title = body.title;
-    if (body.art_style !== undefined) patch.styleOverride = promptPhrase('art_style', body.art_style);
+    if (body.art_style !== undefined) patch.styleOverride = body.art_style === null ? null : promptPhrase('art_style', body.art_style);
     if (body.description !== undefined) patch.description = body.description;
     if (body.camera_angle !== undefined) patch.cameraAngle = body.camera_angle;
+    if (body.camera_movement !== undefined) patch.cameraMovement = body.camera_movement as typeof patch.cameraMovement;
     if (body.scene_intent !== undefined) patch.sceneIntent = body.scene_intent;
     if (body.action_description !== undefined) patch.actionDescription = body.action_description;
     if (body.scenery_description !== undefined) patch.sceneryDescription = body.scenery_description;

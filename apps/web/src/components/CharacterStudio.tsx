@@ -48,6 +48,9 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   const [refinePrice, setRefinePrice] = useState<{ key: string; words: string } | null>(null);
   const making = useRef(false);
   const [editing, setEditing] = useState(false);
+  /** Scenes that still use an earlier look of this character (§6.2): offered, never changed silently. */
+  const [elsewhere, setElsewhere] = useState<{ scenes_to_update: number; scenes_kept: number } | null>(null);
+  const [elsewhereNote, setElsewhereNote] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   // Set on every mount: React's dev mode mounts twice, and a flag only ever cleared would
@@ -72,6 +75,25 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
 
   const character = studio?.character ?? null;
   const look = studio?.looks.find((l) => l.current) ?? null;
+
+  useEffect(() => {
+    setElsewhere(null); setElsewhereNote('');
+    if (!character || !look) return;
+    let on = true;
+    // Only an offer: if it cannot be checked, nothing is shown and nothing changes.
+    director.lookElsewhere(character.id, look.id).then((r) => { if (on) setElsewhere(r); }).catch(() => {});
+    return () => { on = false; };
+  }, [character?.id, look?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function useEverywhere() {
+    if (!character || !look) return;
+    const done = await run(() => director.useLookEverywhere(character.id, look.id));
+    if (done) {
+      setElsewhere(null);
+      setElsewhereNote(`${character.name} now uses this look in ${done.scenes_updated === 1 ? '1 more scene' : `${done.scenes_updated} more scenes`}.`);
+      try { await onChanged(true); } catch (err) { setError(err); }
+    }
+  }
 
   // Prices come from the server before anything is spent.
   useEffect(() => {
@@ -211,6 +233,19 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
       <ProblemBox error={error} />
       {priceFailed && <p className="hint" role="status">Some prices could not be checked. <button type="button" className="secondary" onClick={() => setPriceRevision((n) => n + 1)}>Check prices again</button></p>}
       <p className={`look-status look-${character.look_status}`} role="status">{statusWords}</p>
+      {look && elsewhere && elsewhere.scenes_to_update > 0 && (
+        <section className="notice" aria-label="Use this look in every scene">
+          <p>
+            {elsewhere.scenes_to_update === 1 ? '1 scene still uses' : `${elsewhere.scenes_to_update} scenes still use`} an earlier look of {character.name}, so they may look different there.
+            {elsewhere.scenes_kept > 0 && ` ${elsewhere.scenes_kept === 1 ? 'A scene' : `${elsewhere.scenes_kept} scenes`} with a chosen clip keep${elsewhere.scenes_kept === 1 ? 's' : ''} the look that clip was made with.`}
+          </p>
+          <div className="row">
+            <button type="button" disabled={busy} onClick={() => void useEverywhere()}>Use this look in every scene</button>
+            <button type="button" className="secondary" onClick={() => setElsewhere(null)}>Not now</button>
+          </div>
+        </section>
+      )}
+      {elsewhereNote && <p className="hint" role="status">{elsewhereNote}</p>}
 
       {character.story_suggestion && (
         <div className="card-soft story-suggestion">

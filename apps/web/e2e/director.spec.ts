@@ -18,15 +18,25 @@ test.describe('Director', () => {
     await page.getByLabel('Scene description').fill('A small rabbit carries a biscuit through a sunny garden.');
     await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
     await page.getByRole('button', { name: 'Change', exact: true }).click();
-    await expect(page.getByRole('group', { name: 'Clip style' }).getByRole('button')).toHaveCount(5);
+    await expect(page.getByRole('group', { name: 'Look for the whole cartoon' }).getByRole('button')).toHaveCount(5);
     await expect(page.getByLabel('Anything to add? (optional)')).toHaveCount(0);
     await page.getByRole('button', { name: 'Watercolour', exact: true }).click();
-    await expect(page.getByText('Style saved for this scene')).toBeVisible();
+    await expect(page.getByText('Look saved for the whole cartoon')).toBeVisible();
     await page.reload();
-    await expect(page.locator('.composer-field', { hasText: 'Style' })).toContainText('Watercolour');
+    await expect(page.locator('.composer-field').filter({ has: page.locator('.label-text', { hasText: /^Look$/ }) })).toContainText('Watercolour · whole cartoon');
     await page.getByRole('button', { name: 'Change', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Watercolour', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.prompt-box')).toContainText("children's storybook watercolour illustration");
+    // The camera move reaches the clip instructions (video template, §5.1).
+    await page.getByText('Scene details').click();
+    await page.getByRole('group', { name: 'Camera moves' }).getByRole('button', { name: /Camera moves closer/ }).click();
+    await expect(page.locator('.prompt-box')).toContainText('slow dolly in toward the subject', { timeout: 15_000 });
+    await page.getByText('Scene details').click();
+    // One look for the whole cartoon: another scene uses it too.
+    await page.getByRole('button', { name: /^2 The plan goes wrong/ }).click();
+    await expect(page.getByRole('heading', { name: 'Scene 2 · The plan goes wrong' })).toBeVisible();
+    await expect(page.locator('.composer-field').filter({ has: page.locator('.label-text', { hasText: /^Look$/ }) })).toContainText('Watercolour · whole cartoon');
+    await page.getByRole('button', { name: /^1 The biscuit escape/ }).click();
     for (const seconds of [5, 10, 15, 30]) await expect(page.getByRole('button', { name: `${seconds} seconds`, exact: true })).toBeVisible();
     // One button, no Preview/Final switch; skipping the preview is under More options.
     await expect(page.getByRole('button', { name: 'Final', exact: true })).toHaveCount(0);
@@ -148,7 +158,8 @@ test.describe('Director', () => {
     await page.getByRole('link', { name: /All scenes/ }).click();
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
 
-    const saved = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes('/scenes/'));
+    // Choosing a look sets it for the whole cartoon (docs/video-optimisation-plan.md §7.1).
+    const saved = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().endsWith('/style'));
     await page.getByRole('button', { name: 'Change', exact: true }).click();
     await page.getByRole('button', { name: 'Pixar-like 3D', exact: true }).click();
     expect((await saved).ok()).toBe(true);

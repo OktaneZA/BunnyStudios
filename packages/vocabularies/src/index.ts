@@ -16,6 +16,8 @@ import {
   ART_STYLE,
   MOOD_ATMOSPHERE,
   REFERENCE_VIEW,
+  CAMERA_MOVEMENT,
+  VIDEO_DIRECTION,
   MUSIC_GENRE,
 } from './generated.js';
 
@@ -52,6 +54,8 @@ export const PROMPT_VOCABULARIES = {
   art_style: ART_STYLE,
   mood_atmosphere: MOOD_ATMOSPHERE,
   reference_view: REFERENCE_VIEW,
+  camera_movement: CAMERA_MOVEMENT,
+  video_direction: VIDEO_DIRECTION,
 } as const satisfies Record<string, readonly PromptOption[]>;
 
 export const NON_PROMPT_VOCABULARIES = {
