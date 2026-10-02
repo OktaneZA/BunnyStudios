@@ -189,18 +189,17 @@ test('a new look asks before it changes scenes; scenes with a chosen clip keep t
   assert.equal(report.warnings.some((w: { kind: string }) => w.kind === 'mixed_looks'), false, 'every scene still agrees');
 
   const preview = await get(`/characters/${bunny.id}/looks/${newer}/use-everywhere`);
-  assert.deepEqual(preview, { scenes_to_update: 2, scenes_kept: 1 });
+  assert.deepEqual(preview, { scenes_to_update: 3, scenes_with_clips: 1 });
   const done = await call('POST', `/characters/${bunny.id}/looks/${newer}/use-everywhere`);
   assert.equal(done.statusCode, 200, done.body);
-  assert.deepEqual(done.json(), { scenes_updated: 2, scenes_kept: 1 });
-  assert.equal((await get(`/shots/${(await shotOf(0)).id}/cast`)).characters[0].look_id, bunny.look, 'the finished clip keeps its look');
-  for (const i of [1, 2]) assert.equal((await get(`/shots/${(await shotOf(i)).id}/cast`)).characters[0].look_id, newer);
+  assert.deepEqual(done.json(), { scenes_updated: 3, scenes_with_clips: 1 });
+  // Every scene now uses the new look for its next clip; the clip already in the cartoon is a frozen recipe.
+  for (const i of [0, 1, 2]) assert.equal((await get(`/shots/${(await shotOf(i)).id}/cast`)).characters[0].look_id, newer);
+  const [made] = await db.select().from(schema.generationJobs).where(eq(schema.generationJobs.targetEntityId, (await shotOf(0)).id));
+  assert.equal((made!.request as JobRequest).creative!.references[0]!.characterVisualVersionId, bunny.look, 'the finished clip keeps its look');
 
   report = await get(`/projects/${projectId}/continuity`);
-  const mixed = report.warnings.find((w: { kind: string }) => w.kind === 'mixed_looks');
-  assert.ok(mixed, 'the scene that kept its clip is named');
-  assert.deepEqual(mixed.scene_ids, [sceneIds[0]]);
-  assert.match(mixed.detail, /Bunny uses an earlier look in scene 1/);
+  assert.equal(report.warnings.some((w: { kind: string }) => w.kind === 'mixed_looks'), false, 'every scene agrees again');
 
   // Another account cannot see or move the look.
   assert.equal((await call('GET', `/characters/${bunny.id}/looks/${newer}/use-everywhere`, undefined, {}, 2)).statusCode, 404);

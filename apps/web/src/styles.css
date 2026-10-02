@@ -51,7 +51,7 @@ h1 { font-size: 1.8rem; margin: 0 0 4px; }
 h2 { font-size: 1.25rem; margin: 0 0 12px; }
 p.lede { color: var(--ink-soft); margin: 0 0 24px; }
 
-.shell { width: 100%; max-width: 1800px; margin: 0 auto; padding: clamp(16px, 2vw, 36px); }
+.shell { width: 100%; margin: 0 auto; padding: clamp(16px, 2vw, 36px); }
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -316,7 +316,7 @@ body { min-width: 320px; background: radial-gradient(ellipse at 85% 0%, #211a32 
 ::selection { background: #574479; color: #fff; }
 a { color: var(--pale); }
 h1, h2, h3, h4 { letter-spacing: -.025em; line-height: 1.25; overflow-wrap: anywhere; }
-.shell { max-width: 1800px; padding: 28px clamp(16px, 3vw, 48px) 80px; }
+.shell { padding: 28px clamp(16px, 3vw, 48px) 80px; }
 .topbar { padding: 0 0 24px; margin-bottom: 36px; }
 .wordmark { display: inline-flex; align-items: center; gap: 12px; font-size: 1.35rem; letter-spacing: -.04em; }
 .studio-mark { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #8d77c4; border-radius: 11px; background: linear-gradient(135deg, #d5c5ff, #8f70dc); color: #1b132b; }
@@ -768,7 +768,7 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* Film Strip and Scene Board — palette is independent of layout. */
 [data-director-theme] body { background: var(--bg); }
-[data-director-theme] .shell { max-width: 1600px; padding-top: 18px; }
+[data-director-theme] .shell { padding-top: 18px; }
 [data-director-theme] .topbar { margin-bottom: 16px; padding-bottom: 12px; }
 [data-director-theme] .topbar > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
 [data-director-theme] .who { margin: 0; }
@@ -846,7 +846,7 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .director-page .director-right { margin-top: 16px; }
 .director-page .director-right:has(.takes:empty) { display: none; }
 .director-page .floating-panel.director-right { display: block; }
-@media (min-width: 1100px) { .film-strip .scene-overview-wrap { flex-basis: 250px; } }
+/* Size each strip item to its card plus transition so wider cards cannot cover controls. */
 @media (max-width: 760px) {
   .director-page .step-card { grid-template-columns: minmax(0, 1fr); }
   .scene-controls { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0 0; }

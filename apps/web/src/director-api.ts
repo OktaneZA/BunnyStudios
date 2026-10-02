@@ -446,9 +446,9 @@ export const director = {
   setCartoonStyle: (projectId: string, artStyle: string, keepSceneStyles = false) =>
     request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ art_style: artStyle, keep_scene_styles: keepSceneStyles }) }),
   continuity: (projectId: string) => request<Continuity>(`/projects/${projectId}/continuity`),
-  lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_kept: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
+  lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
   useLookEverywhere: (characterId: string, lookId: string) =>
-    request<{ scenes_updated: number; scenes_kept: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`, { method: 'POST' }),
+    request<{ scenes_updated: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`, { method: 'POST' }),
 
   // Characters in a scene, starting pictures and production clips
   shotCast: (shotId: string) => request<ShotCast>(`/shots/${shotId}/cast`),

@@ -5,9 +5,10 @@
  *   PUT  /projects/:id/style                            choose the look for the whole cartoon
  *   GET  /projects/:id/continuity                       does every scene match? (style, looks, pictures, makers)
  *   GET  /characters/:id/looks/:lookId/use-everywhere   how many scenes still use an earlier look
- *   POST /characters/:id/looks/:lookId/use-everywhere   use this look in every scene without a chosen clip
+ *   POST /characters/:id/looks/:lookId/use-everywhere   use this look in every scene from now on
  *
- * Finished clips never change. A scene with a chosen clip keeps the look it was made with.
+ * Finished clips never change: a clip already in the cartoon keeps the look it was made with.
+ * The scene itself moves to the new look, so its next clip uses it.
  */
 import type { FastifyInstance } from 'fastify';
 import { and, asc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
@@ -192,8 +193,9 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const bindings = await olderLookBindings(db, request.accountId, id, lookId);
     reply.header('Cache-Control', 'no-store');
     return {
-      scenes_to_update: new Set(bindings.filter((b) => !b.shot.heroVideoAssetId).map((b) => b.scene.id)).size,
-      scenes_kept: new Set(bindings.filter((b) => b.shot.heroVideoAssetId).map((b) => b.scene.id)).size,
+      scenes_to_update: new Set(bindings.map((b) => b.scene.id)).size,
+      /** Scenes whose clip in the cartoon was made with an earlier look: it stays until a new clip is chosen. */
+      scenes_with_clips: new Set(bindings.filter((b) => b.shot.heroVideoAssetId).map((b) => b.scene.id)).size,
     };
   });
 
@@ -202,14 +204,14 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
     return db.transaction(async (tx) => {
       await ownLook(tx, request.accountId, id, lookId);
       const bindings = await olderLookBindings(tx, request.accountId, id, lookId);
-      // A scene with a chosen clip keeps the look that clip was made with (finished clips never change).
-      const update = bindings.filter((b) => !b.shot.heroVideoAssetId);
+      // Every scene moves to the new look. A clip already in the cartoon is a frozen recipe and is untouched.
+      const update = bindings;
       for (const b of update) {
         await tx.update(schema.shotCharacterBindings).set({ visualVersionId: lookId, updatedAt: new Date() }).where(eq(schema.shotCharacterBindings.id, b.binding.id));
         await tx.update(schema.shots).set({ version: b.shot.version + 1, updatedAt: new Date() }).where(eq(schema.shots.id, b.shot.id));
       }
       for (const scene of new Map(update.map((b) => [b.scene.id, b.scene])).values()) await syncSceneShots(tx, request.accountId, scene);
-      return { scenes_updated: new Set(update.map((b) => b.scene.id)).size, scenes_kept: new Set(bindings.filter((b) => b.shot.heroVideoAssetId).map((b) => b.scene.id)).size };
+      return { scenes_updated: new Set(update.map((b) => b.scene.id)).size, scenes_with_clips: new Set(bindings.filter((b) => b.shot.heroVideoAssetId).map((b) => b.scene.id)).size };
     });
   });
 

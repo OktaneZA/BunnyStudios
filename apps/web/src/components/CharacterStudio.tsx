@@ -49,7 +49,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
   const making = useRef(false);
   const [editing, setEditing] = useState(false);
   /** Scenes that still use an earlier look of this character (§6.2): offered, never changed silently. */
-  const [elsewhere, setElsewhere] = useState<{ scenes_to_update: number; scenes_kept: number } | null>(null);
+  const [elsewhere, setElsewhere] = useState<{ scenes_to_update: number; scenes_with_clips: number } | null>(null);
   const [elsewhereNote, setElsewhereNote] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
@@ -90,7 +90,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
     const done = await run(() => director.useLookEverywhere(character.id, look.id));
     if (done) {
       setElsewhere(null);
-      setElsewhereNote(`${character.name} now uses this look in ${done.scenes_updated === 1 ? '1 more scene' : `${done.scenes_updated} more scenes`}.`);
+      setElsewhereNote(`${character.name} now uses this look in ${done.scenes_updated === 1 ? '1 more scene' : `${done.scenes_updated} more scenes`}.${done.scenes_with_clips ? ' Clips already made keep the earlier look until you make new ones.' : ''}`);
       try { await onChanged(true); } catch (err) { setError(err); }
     }
   }
@@ -237,7 +237,7 @@ export function CharacterStudio({ characterId, jobs, onJob, onChanged, onReturn,
         <section className="notice" aria-label="Use this look in every scene">
           <p>
             {elsewhere.scenes_to_update === 1 ? '1 scene still uses' : `${elsewhere.scenes_to_update} scenes still use`} an earlier look of {character.name}, so they may look different there.
-            {elsewhere.scenes_kept > 0 && ` ${elsewhere.scenes_kept === 1 ? 'A scene' : `${elsewhere.scenes_kept} scenes`} with a chosen clip keep${elsewhere.scenes_kept === 1 ? 's' : ''} the look that clip was made with.`}
+            {elsewhere.scenes_with_clips > 0 && ` Clips already made keep the earlier look; make a new clip to see this one.`}
           </p>
           <div className="row">
             <button type="button" disabled={busy} onClick={() => void useEverywhere()}>Use this look in every scene</button>

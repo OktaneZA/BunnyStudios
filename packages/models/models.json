@@ -499,7 +499,6 @@
       "video": {
         "family": "seedance_25",
         "categories": [
-          "recommended",
           "cinematic"
         ],
         "audio_mode": "optional",
@@ -663,7 +662,6 @@
       "video": {
         "family": "seedance_25",
         "categories": [
-          "recommended",
           "references"
         ],
         "audio_mode": "optional",
@@ -902,12 +900,13 @@
       "video": {
         "family": "wan_30",
         "categories": [
+          "recommended",
           "references"
         ],
         "audio_mode": "optional",
         "documentation": "https://fal.ai/models/alibaba/wan-3.0/reference-to-video/api",
         "rollout": "advanced",
-        "verified_live": false
+        "verified_live": true
       },
       "pricing": {
         "strategy": "per_second",
@@ -1141,7 +1140,7 @@
         "audio_mode": "always",
         "documentation": "https://fal.ai/models/minimax/h3-max/reference-to-video/api",
         "rollout": "advanced",
-        "verified_live": false
+        "verified_live": true
       },
       "pricing": {
         "strategy": "per_second",

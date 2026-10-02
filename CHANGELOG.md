@@ -7,6 +7,9 @@ teen; the app itself explains changes in its own words.
 
 ## Unreleased
 
+- Desktop layout uses the available browser width instead of the 1600/1800px page caps.
+  Film Strip items leave room for transition buttons so adjacent cards do not cover them.
+
 - Documentation review: current architecture and tablet/desktop requirements, two-step Create
   workflow, production/registry status and submission-aware refunds. Preserve older plans as
   historical records and track remaining preview-recipe, helper-copy and quote-contract gaps.
