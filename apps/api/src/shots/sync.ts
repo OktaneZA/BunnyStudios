@@ -61,7 +61,9 @@ export async function compileInput(database: Database, accountId: string, scene:
       lighting: scene.lighting,
       styleOverride: scene.styleOverride,
       locationName: location?.name ?? '',
-      locationDescription: location?.promptToken ?? '',
+      // The cartoon's setting stands in when a scene has no location of its own, so scene 3 does
+      // not wander off the beach because its words never mentioned it.
+      locationDescription: location?.promptToken ?? bible?.defaultSetting ?? '',
       locationDefaultLighting: location?.defaultLighting ?? '',
     },
     shot: {

@@ -62,7 +62,8 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const style = await cartoonStyle(database, accountId, projectId);
     const scenes = await liveScenes(database, accountId, projectId);
     const own = scenes.filter((s) => s.styleOverride && sceneStyleValue(s.styleOverride) !== style.artStyle);
-    return { art_style: style.artStyle, chosen: style.chosen, scenes_with_own_style: own.map((s) => ({ scene_id: s.id, scene_number: s.sceneNumber, art_style: sceneStyleValue(s.styleOverride) })) };
+    const [bible] = await database.select({ setting: schema.seriesBibles.defaultSetting }).from(schema.seriesBibles).where(and(eq(schema.seriesBibles.projectId, projectId), eq(schema.seriesBibles.accountId, accountId)));
+    return { art_style: style.artStyle, chosen: style.chosen, setting: bible?.setting ?? '', scenes_with_own_style: own.map((s) => ({ scene_id: s.id, scene_number: s.sceneNumber, art_style: sceneStyleValue(s.styleOverride) })) };
   }
 
   app.get('/projects/:id/style', async (request, reply) => {
@@ -75,7 +76,10 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.put('/projects/:id/style', async (request) => {
     const { id } = idParam.parse(request.params);
     const body = z.object({
-      art_style: z.enum(ART_STYLES),
+      /** Absent: the look stays as it is (a setting-only change). */
+      art_style: z.enum(ART_STYLES).optional(),
+      /** Where the cartoon happens, in the child's words. Absent: unchanged. */
+      setting: z.string().trim().max(300).optional(),
       /** Advanced: leave scenes that have their own look alone. Simple always gives every scene the cartoon's look. */
       keep_scene_styles: z.boolean().default(false),
     }).parse(request.body);
@@ -83,10 +87,11 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
       const { project } = await isConstrained(tx as unknown as typeof db, request.accountId, id);
       const [bible] = await tx.select({ id: schema.seriesBibles.id }).from(schema.seriesBibles)
         .where(and(eq(schema.seriesBibles.projectId, project.id), eq(schema.seriesBibles.accountId, request.accountId))).for('update');
-      if (bible) await tx.update(schema.seriesBibles).set({ artStyle: body.art_style }).where(eq(schema.seriesBibles.id, bible.id));
-      else await tx.insert(schema.seriesBibles).values({ accountId: request.accountId, projectId: project.id, artStyle: body.art_style });
+      const patch = { ...(body.art_style ? { artStyle: body.art_style } : {}), ...(body.setting !== undefined ? { defaultSetting: body.setting } : {}) };
+      if (bible) await tx.update(schema.seriesBibles).set(patch).where(eq(schema.seriesBibles.id, bible.id));
+      else await tx.insert(schema.seriesBibles).values({ accountId: request.accountId, projectId: project.id, ...patch });
       const scenes = await liveScenes(tx, request.accountId, project.id);
-      if (!body.keep_scene_styles) {
+      if (body.art_style && !body.keep_scene_styles) {
         // A locked scene is left exactly as it is, like every other edit.
         for (const scene of scenes.filter((s) => s.styleOverride !== null && !s.isLocked)) {
           await tx.update(schema.scenes).set({ styleOverride: null, version: scene.version + 1, updatedAt: new Date() }).where(eq(schema.scenes.id, scene.id));

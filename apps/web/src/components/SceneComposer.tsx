@@ -80,6 +80,7 @@ export function SceneComposer(props: Props) {
   /** Advanced only: the style cards change this scene alone instead of the whole cartoon. */
   const [sceneOnlyStyle, setSceneOnlyStyle] = useState(false);
   const [cartoon, setCartoon] = useState<CartoonStyle | null>(null);
+  const [settingText, setSettingText] = useState<string | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [retryQuote, setRetryQuote] = useState<Quote | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -224,6 +225,20 @@ export function SceneComposer(props: Props) {
       onScene(await api.getScene(scene.id));
       await onCartoonChanged();
       setSaveNote('Look saved for the whole cartoon'); setChangingStyle(false);
+      setQuoteRevision((n) => n + 1);
+    } catch (err) { setSaveNote(''); setError(err); }
+    finally { setBusy(false); }
+  }
+
+  /** Where the whole cartoon happens: every scene's instructions carry it, so nobody wanders off the beach. */
+  async function saveSetting() {
+    if (!cartoon || settingText === null || settingText.trim() === cartoon.setting || busy || sceneText.pending) return;
+    setBusy(true); setSaveNote('Saving…'); setError(null);
+    try {
+      setCartoon(await director.setCartoonSetting(projectId, settingText.trim()));
+      onScene(await api.getScene(scene.id));
+      await onCartoonChanged();
+      setSaveNote('Saved for the whole cartoon');
       setQuoteRevision((n) => n + 1);
     } catch (err) { setSaveNote(''); setError(err); }
     finally { setBusy(false); }
@@ -466,6 +481,12 @@ export function SceneComposer(props: Props) {
             <span>{ownStyle ? `${styleLabel(ownStyle)} · this scene only` : `${styleLabel(styleValue)} · whole cartoon`}</span>
             <button type="button" className="secondary" aria-expanded={changingStyle} disabled={!shot || shot.prompt_locked || !cartoon} onClick={() => { setChangingStyle((v) => !v); setSceneOnlyStyle(false); }}>Change</button>
             <span className="save-state" aria-live="polite">{saveNote}</span>
+          </div>
+          <div className="composer-field">
+            <label className="label-text" htmlFor={`setting-${scene.id}`}>Where</label>
+            <input id={`setting-${scene.id}`} className="setting-input" maxLength={300} placeholder="Where does your cartoon happen? e.g. a sunny beach by the sea"
+              value={settingText ?? cartoon?.setting ?? ''} disabled={!cartoon || Boolean(activeJob)}
+              onChange={(e) => setSettingText(e.target.value)} onBlur={() => void saveSetting()} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
           </div>
           {ownStyle && !changingStyle && (
             <p className="hint">This scene has its own look, so it will not match the rest of your cartoon.{' '}

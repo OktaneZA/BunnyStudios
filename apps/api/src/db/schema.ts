@@ -192,6 +192,8 @@ export const seriesBibles = pgTable('series_bibles', {
   projectId: uuid('project_id').notNull().unique()
     .references(() => projects.id, { onDelete: 'cascade' }),
   artStyle: text('art_style').notNull().default(''),
+  /** Where the cartoon happens, in the child's words ("a sunny beach by the sea"). Every scene without its own location uses it. */
+  defaultSetting: text('default_setting').notNull().default(''),
   styleReferenceAssetIds: uuid('style_reference_asset_ids').array().notNull().default([]),
   /** [{name, hex, role}] — role ∈ primary|secondary|accent|shadow|highlight */
   colourPalette: jsonb('colour_palette').notNull().default([]),

@@ -151,6 +151,19 @@ test('the cartoon look is inferred until chosen, then applies to every scene and
   assert.equal((await call('PUT', `/projects/${projectId}/style`, { art_style: 'not_a_style' })).statusCode, 422);
 });
 
+test('where the cartoon happens is carried into every scene that has no place of its own', async () => {
+  assert.equal((await get(`/projects/${projectId}/style`)).setting, '');
+  const set = await call('PUT', `/projects/${projectId}/style`, { setting: 'a sunny beach by the sea' });
+  assert.equal(set.statusCode, 200, set.body);
+  assert.equal(set.json().setting, 'a sunny beach by the sea');
+  assert.equal(set.json().art_style, '2d_flat_vector', 'a setting-only change leaves the look alone');
+  for (const i of [0, 1, 2]) assert.ok((await shotOf(i)).compiled_prompt.includes('a sunny beach by the sea'), `scene ${i + 1} carries the setting`);
+  const quote = await call('POST', `/shots/${(await shotOf(2)).id}/videos/quote`, { purpose: 'final', continuity: false, duration_seconds: 5 });
+  assert.ok(quote.json().prompt.includes('a sunny beach by the sea'), 'and so do the clip instructions');
+  assert.equal((await call('PUT', `/projects/${projectId}/style`, { setting: 'x'.repeat(301) })).statusCode, 422);
+  assert.equal((await call('PUT', `/projects/${projectId}/style`, { setting: 'elsewhere' }, {}, 2)).statusCode, 404);
+});
+
 // ── §6 The same characters in every scene ──────────────────────────────────
 test('every scene sends the same pinned pictures of a character, in the same place, with tokens inline', async () => {
   const bunny = await bunnyWithLook();

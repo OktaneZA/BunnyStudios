@@ -273,6 +273,8 @@ export interface VideoPlan {
 export interface CartoonStyle {
   art_style: string;
   chosen: boolean;
+  /** Where the cartoon happens, in the child's words; '' until chosen. */
+  setting: string;
   scenes_with_own_style: { scene_id: string; scene_number: number; art_style: string | null }[];
 }
 
@@ -445,6 +447,8 @@ export const director = {
   cartoonStyle: (projectId: string) => request<CartoonStyle>(`/projects/${projectId}/style`),
   setCartoonStyle: (projectId: string, artStyle: string, keepSceneStyles = false) =>
     request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ art_style: artStyle, keep_scene_styles: keepSceneStyles }) }),
+  setCartoonSetting: (projectId: string, setting: string) =>
+    request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ setting }) }),
   continuity: (projectId: string) => request<Continuity>(`/projects/${projectId}/continuity`),
   lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
   useLookEverywhere: (characterId: string, lookId: string) =>
