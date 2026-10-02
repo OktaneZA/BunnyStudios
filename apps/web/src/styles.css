@@ -1035,7 +1035,8 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .composer .clip-option-group { min-width: 0; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 10px; }
 .composer .clip-option-group h4, .composer .clip-option-group p { margin: 0; }
 .composer .clip-option-group label.row { display: flex; align-items: flex-start; flex-wrap: nowrap; gap: 10px; min-height: var(--tap); }
-.composer .clip-option-group input[type="checkbox"] { flex: 0 0 auto; margin-top: 6px; }
+.composer .clip-option-group input[type="checkbox"] { width: 22px; height: 22px; min-height: 0; padding: 0; flex: 0 0 auto; margin: 11px 0 0; accent-color: var(--accent); }
+.composer .clip-option-group label.row > span, .composer .clip-option-group label.row { min-width: 0; }
 .composer .frame-row { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
 .composer .frame-slot { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 @media (max-width: 600px) {
