@@ -809,8 +809,8 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .film-strip .scene-overview-wrap { flex: 0 0 auto; }
 .film-strip .scene-overview-card { flex: 0 0 clamp(170px, 17vw, 240px); width: clamp(170px, 17vw, 240px); align-self: stretch; }
 .scene-overview-card { position: relative; }
-.scene-overview-remove { position: absolute; top: 6px; right: 6px; z-index: 1; width: 32px; height: 32px; padding: 0; border: 2px solid rgba(255, 255, 255, .85); border-radius: 50%; background: #d8323c; color: #fff; font-size: 15px; font-weight: 700; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
-.scene-overview-remove:hover, .scene-overview-remove:focus-visible { background: #b7232c; }
+.scene-overview-remove { position: absolute; bottom: 8px; right: 8px; z-index: 1; width: 32px; height: 32px; padding: 0; border: 2.5px solid #d8323c; border-radius: 50%; background: #fff; color: #d8323c; font-size: 16px; font-weight: 800; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+.scene-overview-remove:hover, .scene-overview-remove:focus-visible { background: #d8323c; color: #fff; }
 .scene-overview-remove:disabled { opacity: .35; }
 .scene-overview-select { display: flex; flex-direction: column; width: 100%; padding: 10px; gap: 10px; background: transparent; color: var(--ink); text-align: left; border: 0; border-radius: 14px; }
 .scene-overview-still { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; background: var(--control-surface); }
