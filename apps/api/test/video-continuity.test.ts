@@ -43,7 +43,9 @@ let projectId = '';
 let sceneIds: string[] = [];
 
 before(async () => {
-  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `continuity-${id}@example.com`, displayName: `Account ${i}`, isMinor: i === 0, defaultEditorMode: i === 1 ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 5000, monthlyBudgetPence: 50_000 })));
+  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `continuity-${id}@example.com`, displayName: `Account ${i}`, isMinor: i === 0, defaultEditorMode: i === 1 ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 5000 })));
+  // Pre-paid: every test account starts with a pot.
+  await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 50000, note: 'test' })));
 });
 beforeEach(async () => {
   provider.submitted.length = 0;

@@ -146,10 +146,11 @@ export const accounts = pgTable('accounts', {
    * in two taps. Not a preference — a property of who is generating.
    */
   isMinor: boolean('is_minor').notNull().default(false),
-  aiCreditBalance: integer('ai_credit_balance').notNull().default(0),
-  /** Plan D31: caps in pence, set by the adult account; the teen sees them as "about N pictures". */
+  /**
+   * Plan D31: the daily cap in pence, set by the adult account; the teen sees it as "about N
+   * pictures". The long-run limit is the pre-paid pot (credit_top_ups), not a monthly cap.
+   */
   dailyBudgetPence: integer('daily_budget_pence').notNull().default(200),
-  monthlyBudgetPence: integer('monthly_budget_pence').notNull().default(2000),
   currency: varchar('currency', { length: 3 }).notNull().default('GBP'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
@@ -727,6 +728,25 @@ export const generationJobs = pgTable(
     index('generation_jobs_status_idx').on(t.status, t.createdAt),
     index('generation_jobs_target_idx').on(t.targetEntityType, t.targetEntityId),
   ],
+);
+
+/**
+ * Pre-paid picture money. An adult adds money to an account's pot; every generation reserves
+ * from it through the ledger. The pot is never stored as a running number: it is the sum of
+ * top-ups minus everything the ledger still counts, so it cannot drift.
+ */
+export const creditTopUps = pgTable(
+  'credit_top_ups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    /** The adult who added it; null for the starting pot created by a migration. */
+    addedByAccountId: uuid('added_by_account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    pence: integer('pence').notNull(),
+    note: text('note').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('credit_top_ups_account_idx').on(t.accountId, t.createdAt)],
 );
 
 /** Plan D31: real money per generation, reserved before submit, settled or refunded after. */

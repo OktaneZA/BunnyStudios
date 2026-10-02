@@ -33,7 +33,9 @@ let projectId = '';
 let shotId = '';
 
 before(async () => {
-  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `recovery-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, dailyBudgetPence: 1000, monthlyBudgetPence: 10_000 })));
+  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `recovery-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, dailyBudgetPence: 1000 })));
+  // Pre-paid: every test account starts with a pot.
+  await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 10000, note: 'test' })));
 });
 beforeEach(async () => {
   hooks.submit = undefined; hooks.download = undefined; base.submitted.length = 0;

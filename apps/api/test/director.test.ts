@@ -53,7 +53,9 @@ before(async () => {
     testVideo = await readFile(out);
     await rm(dir, { recursive: true, force: true });
   }
-  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `director-test-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, defaultEditorMode: i ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 1000, monthlyBudgetPence: 10_000 })));
+  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `director-test-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, defaultEditorMode: i ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 1000 })));
+  // Pre-paid: every test account starts with a pot.
+  await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 10000, note: 'test' })));
 });
 beforeEach(async () => {
   rejectPromptsContaining = ''; rejectEveryImage = false; reviewCalls = []; provider.submitted.length = 0;
@@ -438,14 +440,51 @@ test('make my cartoon: the render job runs, or explains that ffmpeg is missing (
   }
 });
 
-test('adults can set the teen budget; the teen cannot see the page', async () => {
+test('adults can set the teen budget and add to the pot; the teen cannot see the page', async () => {
   const list = await app.inject({ method: 'GET', url: '/api/v1/accounts', headers: token(1) });
   assert.equal(list.statusCode, 200);
   const set = await app.inject({ method: 'PATCH', url: `/api/v1/accounts/${ids[0]}/budget`, headers: token(1), payload: { daily_budget_pence: 250 } });
   assert.equal(set.json().allowance.daily_budget_pence, 250);
-  assert.equal((await app.inject({ method: 'GET', url: '/api/v1/accounts', headers: token() })).statusCode, 404);
+  assert.equal('monthly_budget_pence' in set.json().allowance, false, 'the monthly cap is gone; the pot is the long-run limit');
+  const before = set.json().allowance.pot_pence;
+  const added = await app.inject({ method: 'POST', url: `/api/v1/accounts/${ids[0]}/top-ups`, headers: token(1), payload: { pence: 500, note: 'Birthday' } });
+  assert.equal(added.statusCode, 201, added.body);
+  assert.equal(added.json().allowance.pot_pence, before + 500);
+  const history = await app.inject({ method: 'GET', url: `/api/v1/accounts/${ids[0]}/top-ups`, headers: token(1) });
+  assert.deepEqual(history.json().data[0], { ...history.json().data[0], pence: 500, note: 'Birthday', added_by: 'Adult' });
+  for (const [method, url, payload] of [['GET', '/api/v1/accounts'], ['POST', `/api/v1/accounts/${ids[0]}/top-ups`, { pence: 500 }], ['GET', `/api/v1/accounts/${ids[0]}/top-ups`]] as const) {
+    assert.equal((await app.inject({ method, url, headers: token(), ...(payload ? { payload } : {}) })).statusCode, 404, `${method} ${url} is hidden from the teen`);
+  }
+  assert.equal((await app.inject({ method: 'POST', url: `/api/v1/accounts/${ids[0]}/top-ups`, headers: token(1), payload: { pence: 0 } })).statusCode, 422);
   await db.update(schema.accounts).set({ dailyBudgetPence: 1000 }).where(eq(schema.accounts.id, ids[0]!));
   await db.delete(schema.generationLedger).where(and(eq(schema.generationLedger.accountId, ids[0]!)));
+});
+
+test('the pot is checked before the day: an empty pot says to ask a grown-up, a refund goes back into it', async () => {
+  const pot = async () => (await app.inject({ method: 'GET', url: '/api/v1/settings/generation', headers: token() })).json().allowance.pot_pence as number;
+  const shot = await shotFor(sceneIds[0]!);
+  const price = (await app.inject({ method: 'GET', url: '/api/v1/settings/estimate?model_id=quick_picture&count=1', headers: token() })).json().pence as number;
+  // Spend the pot down to less than one picture, with the day still wide open.
+  const start = await pot();
+  await db.insert(schema.generationLedger).values({ accountId: ids[0]!, projectId, jobId: (await db.select().from(schema.generationJobs).where(eq(schema.generationJobs.accountId, ids[0]!)).limit(1))[0]!.id, modelId: 'quick_picture', units: 1, unitCostPence: '1', estimatedPence: start - price + 1, status: 'settled', costState: 'estimated', createdAt: new Date(Date.now() - 3 * 86_400_000) });
+  try {
+    assert.equal(await pot(), price - 1);
+    const over = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });
+    assert.equal(over.statusCode, 402, over.body);
+    assert.match(over.json().detail, /left in the pot. Ask a grown-up/);
+    assert.equal(over.json().current_state.needs_top_up, true);
+    assert.equal(over.json().current_state.resets_at, null, 'waiting for tomorrow will not help');
+    // A top-up makes room; a job that never reaches the provider gives the money back.
+    await db.insert(schema.creditTopUps).values({ accountId: ids[0]!, pence: price, note: 'test' });
+    const ok = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });
+    assert.equal(ok.statusCode, 202, ok.body);
+    assert.equal(await pot(), price - 1, 'reserved from the pot straight away');
+    await db.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0, costState: 'not_incurred' }).where(eq(schema.generationLedger.jobId, ok.json().id));
+    assert.equal(await pot(), 2 * price - 1, 'a refund is back in the pot');
+    await runner.drain();
+  } finally {
+    await db.delete(schema.generationLedger).where(eq(schema.generationLedger.accountId, ids[0]!));
+  }
 });
 
 test('every job keeps a step trail; the teen sees the current step, the adult sees everything', async () => {

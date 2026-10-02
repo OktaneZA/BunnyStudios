@@ -9,7 +9,7 @@ import { estimatePence, clipPlan, CLIP_LENGTHS, type GenerationModel } from '@st
 import { promptBudget } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
-import { allowance, allowanceInWords, keepAsUnknown, pence, reachedProvider, refund, reserve } from '../generation/budget.ts';
+import { allowance, allowanceInWords, keepAsUnknown, pence, reachedProvider, refund, reserve, topUp } from '../generation/budget.ts';
 import { presentModel, type Catalogue } from '../generation/catalogue.ts';
 import type { ReviewProvider } from '../generation/review.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
@@ -423,15 +423,37 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.patch('/accounts/:id/budget', async (request) => {
     const { id } = idParam.parse(request.params);
-    const body = z.object({ daily_budget_pence: z.number().int().min(0).max(100_000).optional(), monthly_budget_pence: z.number().int().min(0).max(1_000_000).optional() }).parse(request.body);
+    const body = z.object({ daily_budget_pence: z.number().int().min(0).max(100_000).optional() }).parse(request.body);
     const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     if (!me || me.isMinor) throw ApiError.notFound('Page');
     const [updated] = await db.update(schema.accounts).set({
       ...(body.daily_budget_pence !== undefined ? { dailyBudgetPence: body.daily_budget_pence } : {}),
-      ...(body.monthly_budget_pence !== undefined ? { monthlyBudgetPence: body.monthly_budget_pence } : {}),
-    }).where(eq(schema.accounts.id, id)).returning();
+    }).where(and(eq(schema.accounts.id, id), isNull(schema.accounts.deletedAt))).returning();
     if (!updated) throw ApiError.notFound('Account');
     return { id: updated.id, display_name: updated.displayName, is_minor: updated.isMinor, allowance: await allowance(updated.id) };
+  });
+
+  /** Pre-paid picture money: an adult adds to an account's pot, and sees what was added before. */
+  app.post('/accounts/:id/top-ups', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const body = z.object({ pence: z.number().int().min(1).max(50_000), note: z.string().trim().max(120).default('') }).parse(request.body);
+    const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    if (!me || me.isMinor) throw ApiError.notFound('Page');
+    const [target] = await db.select({ id: schema.accounts.id }).from(schema.accounts).where(and(eq(schema.accounts.id, id), isNull(schema.accounts.deletedAt)));
+    if (!target) throw ApiError.notFound('Account');
+    const row = await topUp({ accountId: id, addedBy: me.id, pence: body.pence, note: body.note });
+    return reply.code(201).send({ id: row.id, pence: row.pence, note: row.note, created_at: row.createdAt.toISOString(), allowance: await allowance(id) });
+  });
+
+  app.get('/accounts/:id/top-ups', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    if (!me || me.isMinor) throw ApiError.notFound('Page');
+    const rows = await db.select({ t: schema.creditTopUps, by: schema.accounts.displayName }).from(schema.creditTopUps)
+      .leftJoin(schema.accounts, eq(schema.accounts.id, schema.creditTopUps.addedByAccountId))
+      .where(eq(schema.creditTopUps.accountId, id)).orderBy(desc(schema.creditTopUps.createdAt)).limit(20);
+    reply.header('Cache-Control', 'no-store');
+    return { data: rows.map(({ t, by }) => ({ id: t.id, pence: t.pence, note: t.note, added_by: by, created_at: t.createdAt.toISOString() })) };
   });
 
   app.get('/settings/estimate', async (request) => {

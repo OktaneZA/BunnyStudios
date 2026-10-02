@@ -316,9 +316,9 @@ export function SceneComposer(props: Props) {
   // Money in plain words: what is left, next to the price on the button (not "about 9,000 clips").
   const allowance = settings?.allowance;
   const leftWords = allowance
-    ? allowance.remaining_this_month_pence < allowance.remaining_today_pence
-      ? `${formatPence(allowance.remaining_this_month_pence)} left this month`
-      : `${formatPence(allowance.remaining_today_pence)} left today`
+    ? allowance.pot_pence <= 0 ? 'Your pot is empty. Ask a grown-up to add more picture money.'
+      : allowance.pot_pence < allowance.remaining_today_pence ? `${formatPence(allowance.pot_pence)} left in your pot`
+        : `${formatPence(allowance.remaining_today_pence)} left today · ${formatPence(allowance.pot_pence)} in your pot`
     : '';
   const blockedReason = !enabled ? (settings?.message ?? 'Generation isn’t connected yet. Ask the account owner to set it up.')
     : sceneText.pending ? 'Save the scene before making a clip.'

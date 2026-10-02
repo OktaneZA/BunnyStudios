@@ -43,15 +43,18 @@ export interface ModelInfo {
 }
 
 export interface Allowance {
+  /** The pre-paid pot: what is left to spend until a grown-up adds more. */
+  pot_pence: number;
+  topped_up_pence: number;
+  spent_all_time_pence: number;
   daily_budget_pence: number;
-  monthly_budget_pence: number;
   spent_today_pence: number;
-  spent_this_month_pence: number;
   remaining_today_pence: number;
-  remaining_this_month_pence: number;
   resets_at: string;
   currency: string;
 }
+
+export interface TopUp { id: string; pence: number; note: string; added_by: string | null; created_at: string }
 
 export interface GenerationSettings {
   enabled: boolean;
@@ -404,7 +407,10 @@ export const director = {
 
   accounts: () => request<{ data: AccountBudget[] }>('/accounts'),
   accountJobs: (accountId: string) => request<{ data: LoggedJob[] }>(`/accounts/${accountId}/jobs`),
-  setBudget: (accountId: string, body: { daily_budget_pence?: number; monthly_budget_pence?: number }) =>
+  topUps: (accountId: string) => request<{ data: TopUp[] }>(`/accounts/${accountId}/top-ups`),
+  addTopUp: (accountId: string, body: { pence: number; note?: string }) =>
+    request<TopUp & { allowance: Allowance }>(`/accounts/${accountId}/top-ups`, { method: 'POST', body: JSON.stringify(body) }),
+  setBudget: (accountId: string, body: { daily_budget_pence?: number }) =>
     request<AccountBudget>(`/accounts/${accountId}/budget`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Cast (D39)

@@ -63,7 +63,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       display_name: account.displayName,
       default_editor_mode: account.defaultEditorMode,
       is_minor: account.isMinor,
-      ai_credit_balance: account.aiCreditBalance,
     };
   });
 }
