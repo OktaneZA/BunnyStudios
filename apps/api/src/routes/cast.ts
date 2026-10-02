@@ -17,13 +17,14 @@ import { db, schema } from '../db/client.ts';
 import { cartoonStyle } from '../cartoon/style.ts';
 import { config } from '../config.ts';
 import { ApiError } from '../errors.ts';
-import { pence, reserve } from '../generation/budget.ts';
+import { pence, type Tx } from '../generation/budget.ts';
 import { sceneDescription } from '../scenes/description.ts';
 import { validateUpload } from '../storage/uploads.ts';
 import { castUnavailable, type CastFinder, type FoundCharacter } from '../cast/finder.ts';
 import { approveLook, assetHash, loadLooks, sameTraits, selectLook, usableForLook, visualTraits, VIEW_ROLES, type Look, type ViewRole } from '../cast/looks.ts';
 import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './director.ts';
 import type { JobRequest, CandidateIntent } from '../jobs/runner.ts';
+import { createJob } from '../jobs/create.ts';
 
 const idParam = z.object({ id: z.string().uuid(), proposalId: z.string().uuid().optional(), candidateId: z.string().uuid().optional(), lookId: z.string().uuid().optional() });
 const viewSchema = z.enum(VIEW_ROLES as unknown as [ViewRole, ...ViewRole[]]);
@@ -40,8 +41,8 @@ async function ownProject(accountId: string, id: string) {
   return project;
 }
 
-async function ownCharacter(accountId: string, id: string) {
-  const [row] = await db.select().from(schema.characters).where(and(eq(schema.characters.id, id), eq(schema.characters.accountId, accountId), isNull(schema.characters.deletedAt)));
+async function ownCharacter(accountId: string, id: string, database: typeof db | Tx = db) {
+  const [row] = await database.select().from(schema.characters).where(and(eq(schema.characters.id, id), eq(schema.characters.accountId, accountId), isNull(schema.characters.deletedAt)));
   if (!row) throw ApiError.notFound('Character');
   await ownProject(accountId, row.projectId);
   return row;
@@ -480,11 +481,8 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
     const { id } = idParam.parse(request.params);
     const body = jobBody.parse(request.body);
     const requestKey = z.string().uuid().parse(request.headers['idempotency-key']);
-    const created = await db.transaction(async (tx) => {
-      await tx.select({ id: schema.accounts.id }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId)).for('update');
-      const [previous] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.accountId, request.accountId), eq(schema.generationJobs.requestKey, requestKey)));
-      if (previous) return { job: previous, fresh: false };
-      const character = await ownCharacter(request.accountId, id);
+    const created = await createJob({ accountId: request.accountId, requestKey, runner, log: request.log }, async (tx) => {
+      const character = await ownCharacter(request.accountId, id, tx);
       const { account, constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, character.projectId);
       const strict = constrained || account.isMinor;
       if (strict && !review.enabled) throw ApiError.validation('The safety checker is not set up, so pictures cannot be made on this account yet. Ask a grown-up.');
@@ -495,14 +493,15 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
         startFrameAssetId: null, aspectRatio: '1:1', count: plan.count, durationSeconds: null, audio: false, resolution: plan.model.resolutions[0]!,
         constrained: strict, assetKind: 'character_ref', candidate: plan.candidate,
       };
-      const [job] = await tx.insert(schema.generationJobs).values({
-        accountId: request.accountId, projectId: character.projectId, requestKey, kind: 'image', targetEntityType: 'character', targetEntityId: character.id,
-        modelId: plan.model.id, provider: plan.model.provider, request: jobRequest, task: `character-${body.intent}`,
-      }).returning();
-      await reserve(tx, { accountId: account.id, projectId: character.projectId, jobId: job!.id, model: plan.model, count: plan.count, referenceCount: plan.anchor ? 1 : 0 });
-      return { job: job!, fresh: true };
+      return {
+        values: {
+          projectId: character.projectId, kind: 'image', targetEntityType: 'character', targetEntityId: character.id,
+          modelId: plan.model.id, provider: plan.model.provider, request: jobRequest, task: `character-${body.intent}`,
+        },
+        reserve: { model: plan.model, count: plan.count, referenceCount: plan.anchor ? 1 : 0 },
+        extra: null,
+      };
     });
-    if (created.fresh) void runner.tick().catch((e) => request.log.error(e, 'runner tick'));
     reply.header('Cache-Control', 'no-store');
     return reply.code(created.fresh ? 202 : 200).send(presentJob(created.job, [], true));
   });

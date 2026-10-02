@@ -16,12 +16,18 @@ export function ClipLog({ accounts }: { accounts: AccountBudget[] }) {
   const [accountId, setAccountId] = useState(() => accounts.find((a) => a.is_minor)?.id ?? accounts[0]?.id ?? '');
   const [jobs, setJobs] = useState<LoggedJob[] | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [stopping, setStopping] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!accountId) return;
     try { setJobs((await director.accountJobs(accountId)).data); setError(null); } catch (err) { setError(err); }
   }, [accountId]);
   useEffect(() => { setJobs(null); void load(); }, [load]);
+  /** Stop a job that is stuck. Money already sent to the provider stays counted; the rest comes back. */
+  async function stop(id: string) {
+    setStopping(id); setError(null);
+    try { await director.cancelJob(id); await load(); } catch (err) { setError(err); } finally { setStopping(null); }
+  }
   // While something is still running, keep the log fresh.
   useEffect(() => {
     if (!jobs?.some((j) => ['queued', 'submitted', 'running', 'reviewing'].includes(j.status))) return;
@@ -66,6 +72,7 @@ export function ClipLog({ accounts }: { accounts: AccountBudget[] }) {
                   {job.events.length === 0 && <li className="muted">No steps recorded (made before the clip log existed).</li>}
                 </ol>
                 <p className="hint">Job {job.id}</p>
+                {active && <button type="button" className="secondary" disabled={stopping === job.id} onClick={() => void stop(job.id)}>Stop this job</button>}
               </details>
             </li>
           );

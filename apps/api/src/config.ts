@@ -74,6 +74,8 @@ const schema = z.object({
   GENERATION_CLAIM_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(60_000),
   /** How long one clip or picture may take at the provider before we give up on it. */
   GENERATION_JOB_TIMEOUT_MS: z.coerce.number().int().min(30_000).default(20 * 60_000),
+  /** A job nobody has picked up for this long is stopped and its money put back (review 2 Oct, P1). */
+  GENERATION_QUEUE_TIMEOUT_MS: z.coerce.number().int().min(60_000).default(2 * 60 * 60_000),
   /** Where the runner's step log is written, one line per step ('' turns the file off). */
   GENERATION_LOG_FILE: z.string().trim().default('./logs/generation.log'),
   /**

@@ -23,7 +23,7 @@ import { compileVideoShot, promptBudget, TEMPLATE_VERSION, VIDEO_TEMPLATE_VERSIO
 import { CLIP_LENGTHS, durationOptions, quoteGeneration, type GenerationModel, type VideoModelDefinition, type VideoTask } from '@storyboard/models';
 import { db, schema } from '../db/client.ts';
 import { ApiError, ProblemType } from '../errors.ts';
-import { pence, reserve, type Tx } from '../generation/budget.ts';
+import { pence, type Tx } from '../generation/budget.ts';
 import { isGated } from '../generation/catalogue.ts';
 import { validateUpload } from '../storage/uploads.ts';
 import { assetHash, usableForLook } from '../cast/looks.ts';
@@ -33,6 +33,7 @@ import { CREATIVE_SNAPSHOT_VERSION, type CreativeVideoSnapshot } from '../video/
 import { ADAPTER_VERSION, promptWithReferenceTokens } from '../video/adapters/catalogue.ts';
 import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './director.ts';
 import type { JobRequest } from '../jobs/runner.ts';
+import { createJob } from '../jobs/create.ts';
 
 const idParam = z.object({ id: z.string().uuid() });
 type Asset = typeof schema.assets.$inferSelect;
@@ -426,11 +427,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     const { id } = idParam.parse(request.params);
     const body = videoBody.parse(request.body);
     const requestKey = z.string().uuid().parse(request.headers['idempotency-key']);
-    const created = await db.transaction(async (tx) => {
-      // The account row lock serialises spending (MB-03); the idempotency key makes a double tap one job (DF-05).
-      await tx.select({ id: schema.accounts.id }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId)).for('update');
-      const [previous] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.accountId, request.accountId), eq(schema.generationJobs.requestKey, requestKey)));
-      if (previous) return { job: previous, fresh: false, planned: null };
+    const created = await createJob({ accountId: request.accountId, requestKey, runner, log: request.log }, async (tx) => {
       const c = await context(tx, request.accountId, id, true);
       if (c.constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so clips cannot be made on this account yet. Ask a grown-up.');
       const p = await plan(tx, request.accountId, c.shot, c.scene, body, c.advanced, c.constrained);
@@ -443,18 +440,19 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
         if (!('ok' in saved)) throw ApiError.conflict('The characters in this scene changed. Check the new quote before making it.', presented);
         await tx.update(schema.shots).set({ version: c.shot.version + 1, updatedAt: new Date() }).where(eq(schema.shots.id, c.shot.id));
       }
-      const [job] = await tx.insert(schema.generationJobs).values({
-        accountId: request.accountId, projectId: c.scene.projectId, requestKey, kind: 'video', targetEntityType: 'shot', targetEntityId: c.shot.id,
-        modelId: p.model.id, provider: p.model.provider, request: p.jobRequest, task: p.snapshot.task, intent: p.snapshot.intent,
-        snapshotVersion: CREATIVE_SNAPSHOT_VERSION, generationGroupId: p.parent?.generationGroupId ?? randomUUID(), parentJobId: p.parent?.id ?? null,
-      }).returning();
-      await reserve(tx, { accountId: request.accountId, projectId: c.scene.projectId, jobId: job!.id, model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length });
-      return { job: job!, fresh: true, planned: presented };
+      return {
+        values: {
+          projectId: c.scene.projectId, kind: 'video', targetEntityType: 'shot', targetEntityId: c.shot.id,
+          modelId: p.model.id, provider: p.model.provider, request: p.jobRequest, task: p.snapshot.task, intent: p.snapshot.intent,
+          snapshotVersion: CREATIVE_SNAPSHOT_VERSION, generationGroupId: p.parent?.generationGroupId ?? randomUUID(), parentJobId: p.parent?.id ?? null,
+        },
+        reserve: { model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length },
+        extra: presented,
+      };
     });
-    if (created.fresh) void runner.tick().catch((e) => request.log.error(e, 'runner tick'));
     reply.header('Cache-Control', 'no-store');
     // The shot's version moves when the cast is saved with the clip; the screen needs the new one.
     const [shot] = await db.select().from(schema.shots).where(and(eq(schema.shots.id, created.job.targetEntityId), eq(schema.shots.accountId, request.accountId)));
-    return reply.code(created.fresh ? 202 : 200).send({ ...presentJob(created.job, [], true), plan: created.planned, shot: shot ? presentShot(shot) : null });
+    return reply.code(created.fresh ? 202 : 200).send({ ...presentJob(created.job, [], true), plan: created.extra, shot: shot ? presentShot(shot) : null });
   });
 }

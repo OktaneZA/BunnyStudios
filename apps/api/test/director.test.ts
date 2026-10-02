@@ -82,6 +82,10 @@ async function startJob(shotId: string, payload: Record<string, unknown>, accoun
   const r = await app.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/jobs`, headers: { ...token(account), 'idempotency-key': key }, payload });
   return r;
 }
+/** A clip, the way the Create screen makes one: through the production route. */
+async function startClip(shotId: string, payload: Record<string, unknown>, account = 0, key = randomUUID()) {
+  return app.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/videos`, headers: { ...token(account), 'idempotency-key': key }, payload: { purpose: 'final', continuity: false, ...payload } });
+}
 async function job(id: string, account = 0) {
   const r = await app.inject({ method: 'GET', url: `/api/v1/jobs/${id}`, headers: token(account) });
   assert.equal(r.statusCode, 200, r.body);
@@ -103,7 +107,7 @@ test('a joined clip resumes after a transient second-part failure without buying
   provider.download = async (file) => (await makeTestClip((file.durationMs ?? 5000) / 1000))!;
   try {
     const shot = await shotFor(sceneIds[0]!);
-    const started = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 15 });
+    const started = await startClip(shot.id, { model_id: 'clip_low', duration_seconds: 15 });
     assert.equal(started.statusCode, 202, started.body);
     await runner.drain();
     const done = await job(started.json().id);
@@ -202,9 +206,11 @@ test('the hero pick is the accept; the media bin lists takes; the timeline picks
 
 test('a clip is made straight from the scene and drops into the story order by itself (DM-18, D35)', async () => {
   const shot = await shotFor(sceneIds[0]!);
-  const badDuration = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 7 });
+  const badDuration = await startClip(shot.id, { model_id: 'clip_low', duration_seconds: 7 });
   assert.equal(badDuration.statusCode, 422);
-  const clip = await startJob(shot.id, { kind: 'video', model_id: 'clip_high', duration_seconds: 6, audio: true });
+  const retired = await startJob(shot.id, { kind: 'video', model_id: 'clip_high', duration_seconds: 6 });
+  assert.equal(retired.statusCode, 422, 'clips are no longer made through the picture route');
+  const clip = await startClip(shot.id, { model_id: 'clip_high', duration_seconds: 6, audio: true });
   assert.equal(clip.statusCode, 202, clip.body);
   await runner.drain();
   const done = await job(clip.json().id);
@@ -229,7 +235,7 @@ test('a clip is made straight from the scene and drops into the story order by i
     assert.equal(timeline.items[0].source, 'video');
     assert.equal(timeline.items[0].asset.id, asset!.id);
     // A second clip does not replace the one already in the cartoon; the child picks.
-    const again = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 5 });
+    const again = await startClip(shot.id, { model_id: 'clip_low', duration_seconds: 5 });
     await runner.drain();
     const second = await job(again.json().id);
     assert.equal((await shotFor(sceneIds[0]!)).hero_video_asset_id, asset!.id);
@@ -244,19 +250,20 @@ test('a clip is made straight from the scene and drops into the story order by i
   assert.equal(rows[0]!.estimatedPence, 120);
 });
 
-test('an image-to-video model (Advanced) still needs a picked picture and starts from it', async () => {
+test('a clip from a starting picture needs one chosen first, then starts from it', async () => {
   const shot = await shotFor(sceneIds[1]!);
-  const noHero = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 });
-  assert.equal(noHero.statusCode, 422);
-  assert.match(noHero.json().detail, /needs a picture to start from/);
+  const noFrame = await startClip(shot.id, { model_id: 'move_maker', duration_seconds: 5, use_start_frame: true });
+  assert.equal(noFrame.statusCode, 422);
+  assert.match(noFrame.json().detail, /Choose a starting picture/);
   const picture = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
   await runner.drain();
   const takes = await job(picture.json().id);
-  await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: takes.results[0].id } });
-  const clip = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 });
+  const framed = await app.inject({ method: 'PUT', url: `/api/v1/shots/${shot.id}/frames`, headers: { ...token(), 'if-match': String((await shotFor(sceneIds[1]!)).version) }, payload: { start_asset_id: takes.results[0].id } });
+  assert.equal(framed.statusCode, 200, framed.body);
+  const clip = await startClip(shot.id, { model_id: 'move_maker', duration_seconds: 5, use_start_frame: true });
   assert.equal(clip.statusCode, 202, clip.body);
   await runner.drain();
-  assert.ok(provider.submitted.at(-1)!.startFrame, 'the clip starts from the picked picture');
+  assert.ok(provider.submitted.at(-1)!.startFrame, 'the clip starts from the chosen picture');
 });
 
 test('the daily cap is checked inside the reservation and says when it resets (DM-26)', async () => {
@@ -423,7 +430,7 @@ test('make my cartoon: the render job runs, or explains that ffmpeg is missing (
   await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: done.results[0].id } });
   // A silent clip on scene 2 joins a still on scene 1: both item kinds and the silent-audio path.
   const second = await shotFor(sceneIds[1]!);
-  await startJob(second.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 5 });
+  await startClip(second.id, { model_id: 'clip_low', duration_seconds: 5 });
   await runner.drain();
   const render = await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/timeline/render`, headers: { ...token(), 'idempotency-key': randomUUID() } });
   assert.equal(render.statusCode, 202, render.body);

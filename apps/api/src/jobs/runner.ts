@@ -26,7 +26,7 @@ import { config } from '../config.ts';
 import type { Catalogue } from '../generation/catalogue.ts';
 import { isProviderError, providerError, type BinaryImage, type GenerationRequest, type ProviderResultMeta } from '../generation/provider.ts';
 import type { ReviewProvider } from '../generation/review.ts';
-import { keepAsUnknown, reachedProvider, refund, settle } from '../generation/budget.ts';
+import { keepAsUnknown, reachedProvider, refund, settle, type Tx } from '../generation/budget.ts';
 import { posterFrame, probeDurationMs, joinClipParts, ffmpegAvailable } from '../generation/media.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
 import type { CreativeVideoSnapshot } from '../video/creativeVideoRequest.ts';
@@ -134,11 +134,11 @@ export function createRunner(deps: RunnerDeps) {
   const stage = new Map<string, string>();
 
   /** Add a step to the job's trail and the server log. Never throws: logging must not break a job. */
-  async function note(jobId: string, say: string, extra: Omit<JobEvent, 'at' | 'say'> = {}) {
+  async function note(jobId: string, say: string, extra: Omit<JobEvent, 'at' | 'say'> = {}, database: typeof db | Tx = db) {
     const event: JobEvent = { at: new Date().toISOString(), say, ...extra };
     stage.set(jobId, extra.detail ? `${say} (${extra.detail})` : say);
     log.info(`job ${jobId.slice(0, 8)} ${say}${extra.detail ? ` · ${extra.detail}` : ''}${extra.raw ? ` · ${extra.raw}` : ''}`);
-    await db.update(schema.generationJobs).set({ events: raw`${schema.generationJobs.events} || ${JSON.stringify([event])}::jsonb` })
+    await database.update(schema.generationJobs).set({ events: raw`${schema.generationJobs.events} || ${JSON.stringify([event])}::jsonb` })
       .where(eq(schema.generationJobs.id, jobId)).catch(() => {});
   }
 
@@ -469,9 +469,39 @@ export function createRunner(deps: RunnerDeps) {
     return promise;
   }
 
+  /**
+   * A job nobody picked up (runner off, provider renamed, container gone) would hold its
+   * reservation for ever. Any job still waiting after the queue timeout, with nothing sent to
+   * the provider, is stopped and its money put back. Runs for every provider on purpose: a
+   * job whose provider no longer exists is exactly the one that needs sweeping.
+   */
+  async function sweep(): Promise<number> {
+    const cutoff = new Date(Date.now() - config.GENERATION_QUEUE_TIMEOUT_MS);
+    const stale = new Date(Date.now() - config.GENERATION_CLAIM_TIMEOUT_MS);
+    return db.transaction(async (tx) => {
+      const rows = await tx.update(schema.generationJobs).set({
+        status: 'failed', claimedBy: null, errorCode: 'stale', errorDetail: 'That took too long to start, so it was stopped. Nothing was spent.', finishedAt: new Date(), updatedAt: new Date(),
+      }).where(and(
+        eq(schema.generationJobs.status, 'queued'), eq(schema.generationJobs.submissionState, 'not_submitted'), isNull(schema.generationJobs.providerJobId),
+        lt(schema.generationJobs.createdAt, cutoff), or(isNull(schema.generationJobs.claimedBy), lt(schema.generationJobs.claimedAt, stale)),
+        ...(running.size ? [notInArray(schema.generationJobs.id, [...running.keys()])] : []),
+      )).returning({ id: schema.generationJobs.id, request: schema.generationJobs.request });
+      for (const row of rows) {
+        // Parts already sent are money that may be billed; never refund those.
+        if (((row.request as JobRequest | null)?.partJobIds ?? []).length) await keepAsUnknown(row.id, tx);
+        else await refund(row.id, tx);
+        await note(row.id, 'Stopped: it waited too long. Nothing was spent.', { detail: 'stale' }, tx);
+        log.info(`job ${row.id.slice(0, 8)} swept after waiting too long; money put back`);
+      }
+      return rows.length;
+    });
+  }
+
+  let lastSweep = 0;
   /** Claim and process up to `limit` jobs. Returns how many were claimed. */
   async function tick(limit = 2): Promise<number> {
     if (stopped) return 0;
+    if (Date.now() - lastSweep > 60_000) { lastSweep = Date.now(); await sweep(); }
     const stale = new Date(Date.now() - config.GENERATION_CLAIM_TIMEOUT_MS);
     const claimed = await db.transaction(async (tx) => {
       // Only jobs for providers this runner holds: a development server sharing the database
@@ -523,7 +553,7 @@ export function createRunner(deps: RunnerDeps) {
     }
   }
 
-  return { tick, start, stop, abort, drain, instanceId, running };
+  return { tick, sweep, start, stop, abort, drain, instanceId, running };
 }
 
 export type Runner = ReturnType<typeof createRunner>;

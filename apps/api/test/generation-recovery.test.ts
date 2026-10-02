@@ -189,6 +189,31 @@ test('a shutdown while the request is in flight never sends it again: the job fa
   } finally { await second.close(); }
 });
 
+test('a job nobody picks up is swept after the queue timeout and its money put back; the adult can stop one sooner', async () => {
+  // A job for a provider this runner does not hold: exactly the kind that waits for ever.
+  const started = await start();
+  await db.update(schema.generationJobs).set({ provider: 'gone-provider', createdAt: new Date(Date.now() - 3 * 60 * 60_000) }).where(eq(schema.generationJobs.id, started.json().id));
+  assert.equal((await ledgerOf(started.json().id)).status, 'reserved');
+  await app.director.runner.sweep();
+  const swept = await row(started.json().id);
+  assert.equal(swept.status, 'failed');
+  assert.equal(swept.errorCode, 'stale');
+  assert.match(swept.errorDetail!, /Nothing was spent/);
+  assert.equal((await ledgerOf(swept.id)).status, 'refunded', 'the pot has its money back');
+
+  // A fresh one is left alone.
+  const fresh = await start();
+  await db.update(schema.generationJobs).set({ provider: 'gone-provider' }).where(eq(schema.generationJobs.id, fresh.json().id));
+  await app.director.runner.sweep();
+  assert.equal((await row(fresh.json().id)).status, 'queued');
+
+  // The adult stops it from the clip log; the teen cannot stop someone else's.
+  const teenOnAdults = await app.inject({ method: 'POST', url: `/api/v1/jobs/${fresh.json().id}/cancel`, headers: token(1) });
+  assert.equal(teenOnAdults.statusCode, 200, 'the adult may stop any job');
+  assert.equal((await row(fresh.json().id)).status, 'cancelled');
+  assert.equal((await ledgerOf(fresh.json().id)).status, 'refunded');
+});
+
 test('a refund never undoes a settled bill', async () => {
   const started = await start();
   await app.director.runner.drain();
@@ -203,7 +228,7 @@ test('a refund never undoes a settled bill', async () => {
 test('MB-01/MB-02: the quote shown is the amount reserved, with its pricing provenance', async () => {
   const quote = await app.inject({ method: 'GET', url: '/api/v1/settings/estimate?model_id=clip_low&duration_seconds=15', headers: token() });
   assert.equal(quote.statusCode, 200);
-  const started = await start({ kind: 'video', model_id: 'clip_low', duration_seconds: 15 });
+  const started = await app.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/videos`, headers: { ...token(), 'idempotency-key': randomUUID() }, payload: { purpose: 'final', continuity: false, model_id: 'clip_low', duration_seconds: 15 } });
   assert.equal(started.statusCode, 202, started.body);
   const l = await ledgerOf(started.json().id);
   assert.equal(l.estimatedPence, quote.json().pence);
