@@ -5,6 +5,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import { validateUpload } from '../storage/uploads.ts';
@@ -22,6 +23,24 @@ const TRANSITIONS = ['cut', 'fade', 'slide'] as const;
 async function ownTimeline(accountId: string, projectId: string) {
   await isConstrained(db, accountId, projectId);
   return ensureTimeline(accountId, projectId);
+}
+
+/**
+ * What the assembled file depends on (SB-35): which scenes play, in which order, with which
+ * asset for how long, the transitions, the music settings and the voiceovers. A scene's words
+ * or name are not here: changing them makes a page's clip older, not the cartoon file.
+ */
+function renderFingerprint(
+  items: Awaited<ReturnType<typeof resolveItems>>,
+  timeline: typeof schema.timelines.$inferSelect,
+  voiceovers: { assetId: string; startMs: number; volume: number }[],
+): string {
+  const inputs = {
+    items: items.map((i) => [i.sceneId, i.source, i.asset?.id ?? null, i.durationMs, i.transitionOut]),
+    music: timeline.musicAssetId ? [timeline.musicAssetId, timeline.musicVolume, timeline.musicFadeInMs, timeline.musicFadeOutMs] : null,
+    voice: voiceovers.map((v) => [v.assetId, v.startMs, v.volume]).sort(),
+  };
+  return createHash('sha256').update(JSON.stringify(inputs)).digest('hex');
 }
 
 export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
@@ -45,6 +64,11 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const [activeJob] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.targetEntityId, timeline.id), eq(schema.generationJobs.kind, 'render'), inArray(schema.generationJobs.status, ['queued', 'submitted', 'running', 'reviewing']))).limit(1);
     const [lastJob] = await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.targetEntityId, timeline.id), eq(schema.generationJobs.kind, 'render'))).orderBy(desc(schema.generationJobs.createdAt)).limit(1);
     const renders = await db.select().from(schema.assets).where(and(eq(schema.assets.ownerEntityId, timeline.id), eq(schema.assets.kind, 'final_render'), isNull(schema.assets.deletedAt))).orderBy(schema.assets.uploadedAt);
+    // SB-35: is the finished file made from what is on the pages now? The render job recorded its
+    // inputs; a render from before that was recorded cannot say, and says so rather than guessing.
+    const renderJob = renderAsset?.generationJobId ? (await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, renderAsset.generationJobId), eq(schema.generationJobs.accountId, accountId))))[0] : undefined;
+    const recorded = (renderJob?.request as { inputs_fingerprint?: string } | null)?.inputs_fingerprint ?? null;
+    const renderCurrent = renderAsset ? (recorded ? recorded === renderFingerprint(items, timeline, voiceRows) : null) : null;
     const total = totalMs(items, TRANSITION_MS);
     // start_ms walks only the items that play, so an empty scene between two playing ones
     // neither adds time nor breaks the transition overlap of the pair around it.
@@ -76,6 +100,8 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
       music: music ? { asset: presentAsset(music), volume: timeline.musicVolume, fade_in_ms: timeline.musicFadeInMs, fade_out_ms: timeline.musicFadeOutMs } : null,
       voiceovers: voiceRows.map((v) => { const a = voiceAssets.find((x) => x.id === v.assetId); return { id: v.id, start_ms: v.startMs, volume: v.volume, duration_ms: a?.durationMs ?? null, asset: a ? presentAsset(a) : null }; }),
       render: renderAsset ? presentAsset(renderAsset) : null,
+      /** True: the file matches the pages. False: something changed since. Null: no file, or an older file that did not record its inputs. */
+      render_current: renderCurrent,
       renders: renders.reverse().map(presentAsset),
       render_job: activeJob ? presentJob(activeJob, [], account.isMinor) : lastJob && lastJob.status === 'failed' ? presentJob(lastJob, [], account.isMinor) : null,
     };
@@ -223,11 +249,13 @@ export async function timelineRoutes(app: FastifyInstance, deps: DirectorDeps) {
       if (previous) return { job: previous, fresh: false };
       const [active] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.targetEntityId, timeline.id), eq(schema.generationJobs.kind, 'render'), inArray(schema.generationJobs.status, ['queued', 'submitted', 'running', 'reviewing'])));
       if (active) return { job: active, fresh: false };
-      const items = (await resolveItems(request.accountId, id, account.isMinor)).filter((i) => i.durationMs > 0);
+      const resolved = await resolveItems(request.accountId, id, account.isMinor);
+      const items = resolved.filter((i) => i.durationMs > 0);
       if (!items.length) throw ApiError.validation('There is nothing to put together yet. Make a picture for a scene first.');
+      const voiceRows = await tx.select().from(schema.timelineVoiceovers).where(and(eq(schema.timelineVoiceovers.timelineId, timeline.id), isNull(schema.timelineVoiceovers.deletedAt)));
       const [job] = await tx.insert(schema.generationJobs).values({
         accountId: request.accountId, projectId: id, requestKey, kind: 'render', targetEntityType: 'timeline', targetEntityId: timeline.id,
-        modelId: 'render', provider: 'ffmpeg', request: { constrained },
+        modelId: 'render', provider: 'ffmpeg', request: { constrained, inputs_fingerprint: renderFingerprint(resolved, timeline, voiceRows) },
       }).returning();
       return { job: job!, fresh: true };
     });

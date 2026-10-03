@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 export type CartoonStep = 'write' | 'make' | 'together';
 
 const STEPS: { id: CartoonStep; n: number; label: string; path: string }[] = [
-  { id: 'make', n: 1, label: 'Create', path: '/director' },
-  { id: 'together', n: 2, label: 'Put it together', path: '/together' },
+  { id: 'make', n: 1, label: 'Your story', path: '/director' },
+  { id: 'together', n: 2, label: 'Watch', path: '/watch' },
 ];
 
 /**

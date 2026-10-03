@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { signIn, createCartoon, addScene, unique } from './helpers';
+import { signIn, createCartoon, addPage, openPage, unique } from './helpers';
 
 /**
  * Character Studio and the scene composer end to end (docs/character-studio-requirements.md §8,
@@ -13,18 +13,19 @@ test.describe('Character Studio', () => {
     test.setTimeout(120_000);
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E portrait refresh'));
-    await addScene(page, 'Fox runs');
-    await page.getByRole('link', { name: 'Fox runs', exact: true }).click();
-    await page.getByLabel('Scene description').fill('Fox runs through the garden.');
-    await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
-    await page.getByRole('link', { name: /^Characters:/ }).click();
-    const sheet = page.getByRole('region', { name: 'Your characters' });
+    await addPage(page, 'Fox runs');
+    await page.getByLabel('What happens?').fill('Fox runs through the garden.');
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Cover', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add a character' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Your characters' });
     await sheet.getByRole('button', { name: '+ Make a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Fox');
     await sheet.getByLabel('What do they look like?').fill('An orange fox wearing a green scarf.');
     await sheet.getByRole('button', { name: 'Make Fox' }).click();
     await expect(sheet.getByText('No look chosen yet')).toBeVisible();
-    await page.getByRole('link', { name: '← Back to Create' }).click();
+    await page.keyboard.press('Escape');
+    await openPage(page, 'Fox runs');
     await page.getByRole('button', { name: 'Who’s in it' }).click();
     await page.getByLabel('Add a character to this scene').selectOption({ label: 'Fox' });
     await page.getByRole('button', { name: 'Save characters' }).click();
@@ -50,15 +51,14 @@ test.describe('Character Studio', () => {
     const shots = fileURLToPath(new URL('../../../docs/screenshots/studio', import.meta.url));
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E studio'));
-    await addScene(page, 'Carrot heist');
-    await page.getByRole('link', { name: 'Carrot heist', exact: true }).click();
-    await page.getByLabel('Scene description').fill('Bunny tiptoes past the sleeping farmer and grabs a carrot.');
-    await page.getByRole('link', { name: /All scenes/ }).click();
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
+    await addPage(page, 'Carrot heist');
+    await page.getByLabel('What happens?').fill('Bunny tiptoes past the sleeping farmer and grabs a carrot.');
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
 
     // 1. Describe.
-    await page.getByRole('link', { name: /^Characters:/ }).click();
-    const sheet = page.getByRole('region', { name: 'Your characters' });
+    await page.getByRole('button', { name: 'Cover', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add a character' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Your characters' });
     await sheet.getByRole('button', { name: '+ Make a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Bunny');
     await sheet.getByLabel('What do they look like?').fill('A small white rabbit with one floppy ear and a blue scarf.');
@@ -88,7 +88,8 @@ test.describe('Character Studio', () => {
     await sheet.getByText('Earlier looks (1)').click();
     await expect(sheet.getByRole('button', { name: 'Use this look again' })).toBeVisible();
     await page.screenshot({ path: `${shots}/02-ready.png`, fullPage: true });
-    await page.getByRole('link', { name: '← Back to Create' }).click();
+    await page.keyboard.press('Escape');
+    await openPage(page, 'Carrot heist');
 
     // 4. Bunny is in the scene; the chosen look is used automatically.
     await page.getByRole('button', { name: 'Who’s in it' }).click();
@@ -128,12 +129,10 @@ test.describe('Character Studio', () => {
     test.skip(!process.env.E2E_FAKE_GENERATION, 'needs a server started with GENERATION_FAKE=on');
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E quote recovery'));
-    await addScene(page, 'A falling leaf');
-    await page.getByRole('link', { name: 'A falling leaf', exact: true }).click();
-    await page.getByLabel('Scene description').fill('A red leaf drifts slowly onto a pond.');
-    await page.getByRole('link', { name: /All scenes/ }).click();
+    await addPage(page, 'A falling leaf');
     await page.route('**/api/v1/shots/*/videos/quote', (route) => route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ title: 'Unavailable', status: 503, detail: 'Try again.' }) }));
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
+    await page.getByLabel('What happens?').fill('A red leaf drifts slowly onto a pond.');
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Check price again' })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Make preview/ })).toBeDisabled();
     await page.unroute('**/api/v1/shots/*/videos/quote');

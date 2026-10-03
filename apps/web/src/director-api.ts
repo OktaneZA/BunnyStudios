@@ -354,6 +354,8 @@ export interface Timeline {
   music: { asset: Asset; volume: number; fade_in_ms: number; fade_out_ms: number } | null;
   voiceovers: Voiceover[];
   render: Asset | null;
+  /** True: the file matches the pages. False: something changed since. Null: no file, or an older file that did not record its inputs. */
+  render_current: boolean | null;
   renders: Asset[];
   render_job: Job | null;
 }

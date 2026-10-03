@@ -9,7 +9,7 @@ import { ProblemBox } from './ProblemBox';
  * Tapping a square puts someone in or takes them out of that scene; a scene the story only
  * proposed (not yet saved) shows its suggestion faintly until a tap saves it.
  */
-export function CastBoard({ projectId, characters, onPick }: { projectId: string; characters: Character[]; onPick?: (characterId: string) => void }) {
+export function CastBoard({ projectId, characters, onPick, compact = false }: { projectId: string; characters: Character[]; onPick?: (characterId: string) => void; compact?: boolean }) {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [shots, setShots] = useState<Map<string, Shot>>(new Map());
   const [casts, setCasts] = useState<Map<string, ShotCast>>(new Map());
@@ -57,10 +57,12 @@ export function CastBoard({ projectId, characters, onPick }: { projectId: string
   }
 
   if (!loaded) return <p className="muted">Loading your scenes…</p>;
-  if (scenes.length === 0) return <p className="hint">No scenes yet. Add scenes in Create, then choose who is in each one here.</p>;
+  if (scenes.length === 0) return <p className="hint">No pages yet. Add a page, then choose who is in it here.</p>;
+  if (characters.length === 0) return null;
 
   return (
-    <div className="cast-board card">
+    <div className={`cast-board card${compact ? ' compact' : ''}`}>
+      {compact && <h4 className="cast-board-title">Who is in which page</h4>}
       <ProblemBox error={error} />
       <div className="cast-board-grid" style={{ gridTemplateColumns: `minmax(180px, 240px) repeat(${scenes.length}, minmax(72px, 1fr))` }} role="table" aria-label="Who is in which scene">
         <div role="row" className="cast-board-row">
@@ -74,7 +76,7 @@ export function CastBoard({ projectId, characters, onPick }: { projectId: string
               <span className="cast-board-name">
                 <strong>{c.name}</strong>
                 <span className={`look-badge look-${c.look_status}`}>{c.look_status === 'approved' ? 'Look chosen' : c.look_status === 'changed' ? 'Look changed' : 'Needs a look'}</span>
-                {onPick && <button type="button" className="link-button" onClick={() => onPick(c.id)}>{c.look_status === 'none' ? `Choose ${c.name}’s look` : `Change how ${c.name} looks`}</button>}
+                {onPick && !compact && <button type="button" className="link-button" onClick={() => onPick(c.id)}>{c.look_status === 'none' ? `Choose ${c.name}’s look` : `Change how ${c.name} looks`}</button>}
               </span>
             </div>
             {scenes.map((s) => {

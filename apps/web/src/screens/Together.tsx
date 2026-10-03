@@ -170,11 +170,19 @@ export function Together() {
               {skipped.length > 0 && <> Left out: {skipped.map((i) => `scene ${i.scene_number}`).join(', ')}.</>}
               {' '}Putting it together is free and takes about a minute.
             </p>
+            {/* SB-34: a current file leads with Download; a changed cartoon leads with Update and says the file is older. */}
+            {timeline.render && timeline.render_current === false && !rendering && (
+              <p className="notice" role="status">You changed your cartoon since this video was made (a different clip, order, timing or sound). <b>Update cartoon</b> makes a new one; the video below is the older version.</p>
+            )}
+            {timeline.render && timeline.render_current === null && !rendering && (
+              <p className="hint" role="status">This video was made before the app kept track of changes, so it may not match your pages. Make it again to be sure.</p>
+            )}
             <div className="row player-actions">
-              <button type="button" onClick={() => void makeCartoon()} disabled={busy || rendering || playing.length === 0}>
-                {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? 'Make my cartoon again' : 'Make my cartoon'}
+              {timeline.render && timeline.render_current !== false && <a className="btn" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Download video</a>}
+              <button type="button" className={timeline.render && timeline.render_current !== false ? 'secondary' : ''} onClick={() => void makeCartoon()} disabled={busy || rendering || playing.length === 0}>
+                {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? (timeline.render_current === false ? 'Update cartoon' : 'Make it again') : 'Make my cartoon'}
               </button>
-              {timeline.render && <a className="btn secondary" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Save video</a>}
+              {timeline.render && timeline.render_current === false && <a className="btn secondary" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Download the older version</a>}
               {timeline.render && <span className="hint">Made {new Date(timeline.render.created_at).toLocaleString()} · {seconds(timeline.render.duration_ms ?? timeline.total_ms)}</span>}
             </div>
           </section>

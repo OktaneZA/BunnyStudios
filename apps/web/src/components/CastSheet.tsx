@@ -26,6 +26,8 @@ interface Props {
   inline?: boolean;
   /** Changes when the page asks to show a different character (the cast board's "Change how X looks"). */
   focusKey?: string | null;
+  /** Shown above the characters: the storybook puts the cast board here. */
+  lead?: ReactNode;
 }
 
 const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Needs new pictures' } as const;
@@ -34,7 +36,7 @@ const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Nee
  * Your cast (plan D39) and Character Studio: find people in the story or add someone, then
  * choose how each of them looks. Choosing a look is always a deliberate step (CS-04).
  */
-export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey }: Props) {
+export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey, lead }: Props) {
   const characters = cast?.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacterId ?? null);
   useEffect(() => { if (focusKey) setSelectedId(focusKey); }, [focusKey]);
@@ -101,6 +103,7 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
   return frame(
     <>
       <ProblemBox error={error} />
+      {lead}
       {testMode && <p className="notice" role="status">Test mode: these are coloured placeholders, not character pictures. Nothing is spent.</p>}
 
       {needsFinding && !proposal && (

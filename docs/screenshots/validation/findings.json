@@ -78,38 +78,56 @@
     "consoleErrors": []
   },
   {
-    "screen": "14-create-with-clip",
-    "width": 390,
+    "screen": "14-storybook",
+    "width": 768,
     "overflow": false,
     "consoleErrors": []
   },
   {
-    "screen": "14-create-with-clip",
+    "screen": "14-storybook",
     "width": 1440,
     "overflow": false,
     "consoleErrors": []
   },
   {
-    "screen": "15-create-white",
+    "screen": "14-storybook",
+    "width": 1920,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "14-storybook",
+    "width": 2560,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "15-storybook-white",
     "width": 1024,
     "overflow": false,
     "consoleErrors": []
   },
   {
-    "screen": "16-together",
+    "screen": "15-storybook-white",
+    "width": 1440,
+    "overflow": false,
+    "consoleErrors": []
+  },
+  {
+    "screen": "16-watch",
     "width": 1024,
     "overflow": false,
     "consoleErrors": []
   },
   {
-    "screen": "17-together-made",
+    "screen": "17-watch-made",
     "width": 1024,
     "overflow": false,
     "consoleErrors": []
   },
   {
-    "screen": "17-together-made",
-    "width": 390,
+    "screen": "17-watch-made",
+    "width": 768,
     "overflow": false,
     "consoleErrors": []
   },

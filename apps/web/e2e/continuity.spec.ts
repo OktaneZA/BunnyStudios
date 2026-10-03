@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { signIn, createCartoon, addScene, unique } from './helpers';
+import { signIn, createCartoon, addPage, openPage, unique } from './helpers';
 
 /**
  * The same characters and one look in every scene (docs/video-optimisation-plan.md §6–§7),
@@ -12,15 +12,16 @@ test.describe('Continuity', () => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E continuity'));
-    await addScene(page, 'Bunny hops');
-    await addScene(page, 'Bunny waves');
-    await page.getByRole('link', { name: 'Bunny hops', exact: true }).click();
-    await page.getByLabel('Scene description').fill('Bunny hops onto a log by the pond.');
-    await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
+    await addPage(page, 'Bunny hops');
+    await page.getByLabel('What happens?').fill('Bunny hops onto a log by the pond.');
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    await addPage(page, 'Bunny waves');
+    await openPage(page, 'Bunny hops');
 
     // A character with a chosen look, in both scenes.
-    await page.getByRole('link', { name: /^Characters:/ }).click();
-    const sheet = page.getByRole('region', { name: 'Your characters' });
+    await page.getByRole('button', { name: 'Cover', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add a character' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Your characters' });
     await sheet.getByRole('button', { name: '+ Make a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Bunny');
     await sheet.getByLabel('What do they look like?').fill('A small white rabbit with a blue scarf.');
@@ -30,18 +31,18 @@ test.describe('Continuity', () => {
     await sheet.getByRole('radio', { name: 'Pick this one' }).first().check();
     await sheet.getByRole('button', { name: 'Use this look' }).click();
     await expect(sheet.getByText('Using this look')).toBeVisible();
-    await page.getByRole('link', { name: '← Back to Create' }).click();
-    for (const scene of [/^1 Bunny hops/, /^2 Bunny waves/]) {
-      await page.getByRole('button', { name: scene }).click();
+    await page.keyboard.press('Escape');
+    for (const scene of ['Bunny hops', 'Bunny waves']) {
+      await openPage(page, scene);
       await page.getByRole('button', { name: 'Who’s in it' }).click();
       await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
       await page.getByRole('button', { name: 'Save characters' }).click();
       await expect(page.locator('.scene-faces img')).toHaveCount(1);
     }
-    await page.getByRole('button', { name: /^1 Bunny hops/ }).click();
+    await openPage(page, 'Bunny hops');
 
-    // The whole cartoon has one look; the Look row says so.
-    await expect(page.locator('.composer-field').filter({ has: page.locator('.label-text', { hasText: /^Look$/ }) })).toContainText('whole cartoon');
+    // The whole cartoon has one look, on the cover; a page only speaks up with a look of its own.
+    await expect(page.locator('.composer-field').filter({ has: page.locator('.label-text', { hasText: /^Look$/ }) })).toHaveCount(0);
 
     // Words only is an explicit choice, and the screen says what it means before and after.
     await page.getByText('More options', { exact: true }).click();
@@ -52,18 +53,17 @@ test.describe('Continuity', () => {
     await page.getByRole('button', { name: /^Make preview · about/ }).click();
     await expect(page.locator('.clip-label')).toContainText('Made from words only', { timeout: 90_000 });
 
-    // Put it together lists what may not match, with a way back to the scene.
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ }).click();
+    // Watch lists what may not match, with a way back to the page.
+    await page.getByRole('link', { name: '▶ Watch cartoon' }).click();
     const check = page.getByRole('region', { name: 'Things that may not match' });
     await expect(check).toContainText('scene 1 was made from the words only');
     await expect(check.getByRole('link', { name: 'Open scene 1' })).toBeVisible();
     await page.screenshot({ path: '.playwright-results/continuity-02-together.png', fullPage: true });
 
     // A new look for Bunny is offered for every scene; nothing changes until it is chosen.
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
-    await page.getByRole('link', { name: /^Characters:/ }).click();
-    // The cast board's link jumps to Bunny's looks below.
-    await page.getByRole('table', { name: 'Who is in which scene' }).getByRole('button', { name: 'Change how Bunny looks' }).click();
+    await page.getByRole('link', { name: '← Back to your story' }).click();
+    await page.getByRole('button', { name: 'Cover', exact: true }).click();
+    await page.getByRole('button', { name: /^Bunny: .* Open Bunny’s sheet$/ }).click();
     await sheet.getByRole('button', { name: /Change how Bunny looks/ }).click();
     await sheet.getByRole('button', { name: /^Make 2 pictures · about/ }).click();
     // The earlier picture that was not chosen is still offered, next to the two new ones.

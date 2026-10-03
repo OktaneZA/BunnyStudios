@@ -6,9 +6,9 @@ import { Login } from './screens/Login';
 import { ProjectList } from './screens/ProjectList';
 import { NewProject } from './screens/NewProject';
 import { ProjectDetail } from './screens/ProjectDetail';
-import { Characters } from './screens/Characters';
+import { Storybook } from './screens/Storybook';
+import { LegacyRedirect } from './screens/LegacyRedirect';
 import { SceneDetail } from './screens/SceneDetail';
-import { Director } from './screens/Director';
 import { Together } from './screens/Together';
 import { Grownups } from './screens/Grownups';
 
@@ -16,10 +16,9 @@ export default function App() {
   const sceneRoute = useMatch('/projects/:projectId/scenes/:sceneId');
   const togetherRoute = useMatch('/projects/:projectId/together');
   const directorRoute = useMatch('/projects/:projectId/director');
-  const charactersRoute = useMatch('/projects/:projectId/characters');
-  const storyRoute = useMatch('/projects/:projectId');
+  const watchRoute = useMatch('/projects/:projectId/watch');
+  const manageRoute = useMatch('/projects/:projectId/scenes');
   const location = useLocation();
-  const fromMake = new URLSearchParams(location.search).get('from') === 'make';
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -77,24 +76,25 @@ export default function App() {
       <main>
         <nav className="crumbs" aria-label="Back navigation">
           {/* One back link per screen. A scene opened from Make clips goes back to that scene's clip. */}
-          {sceneRoute && (fromMake
-            ? <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to Create</Link>
-            : <Link to={`/projects/${sceneRoute.params.projectId}`}>← All scenes</Link>)}
-          {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Create</Link>}
-          {charactersRoute && <Link to={`/projects/${charactersRoute.params.projectId}/director${location.search.includes('scene=') ? `?scene=${new URLSearchParams(location.search).get('scene')}` : ''}`}>← Back to Create</Link>}
-          {(directorRoute || (storyRoute && storyRoute.params.projectId !== 'new')) && <Link to="/">← All cartoons</Link>}
+          {sceneRoute && <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to the page</Link>}
+          {(watchRoute || togetherRoute) && <Link to={`/projects/${(watchRoute ?? togetherRoute)!.params.projectId}/director${location.search.includes('scene=') ? `?scene=${new URLSearchParams(location.search).get('scene')}` : ''}`}>← Back to your story</Link>}
+          {manageRoute && <Link to={`/projects/${manageRoute.params.projectId}/director`}>← Back to your story</Link>}
+          {directorRoute && null}
         </nav>
         <Routes>
           <Route path="/" element={<ProjectList />} />
           <Route path="/projects/new" element={<NewProject />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
+          {/* Old links keep working: the cartoon, Create, Characters and Put it together all open the storybook (SB-06). */}
+          <Route path="/projects/:projectId" element={<LegacyRedirect to="director" />} />
+          <Route path="/projects/:id/scenes" element={<ProjectDetail />} />
           <Route
             path="/projects/:projectId/scenes/:sceneId"
             element={<SceneDetail account={account} />}
           />
-          <Route path="/projects/:projectId/director" element={<Director account={account} />} />
-          <Route path="/projects/:projectId/together" element={<Together />} />
-          <Route path="/projects/:projectId/characters" element={<Characters />} />
+          <Route path="/projects/:projectId/director" element={<Storybook account={account} />} />
+          <Route path="/projects/:projectId/watch" element={<Together />} />
+          <Route path="/projects/:projectId/together" element={<LegacyRedirect to="watch" />} />
+          <Route path="/projects/:projectId/characters" element={<LegacyRedirect to="director" sheet />} />
           {!account.is_minor && <Route path="/grownups" element={<Grownups />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
