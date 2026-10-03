@@ -128,22 +128,19 @@ test.describe('Director', () => {
     await expect(page.getByRole('heading', { name: /Scene 2 · Follow the map/ })).toBeVisible();
   });
 
-  test('the cast sheet contains keyboard focus and returns it when closed', async ({ page }) => {
+  test('characters live on their own page, and Back to Create returns to the same scene', async ({ page }) => {
     await signIn(page, 'teen');
-    await createCartoon(page, unique('E2E cast access'));
+    await createCartoon(page, unique('E2E cast page'));
+    await addScene(page, 'First');
+    await addScene(page, 'Second');
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
-    const opener = page.locator('.cast-button');
-    await opener.click();
-    const dialog = page.getByRole('dialog', { name: 'Your characters' });
-    await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
-    await page.keyboard.press('Shift+Tab');
-    await expect(dialog).toContainText('Your characters');
-    expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
-    await page.keyboard.press('Tab');
-    await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(dialog).not.toBeVisible();
-    await expect(opener).toBeFocused();
+    await page.getByRole('button', { name: /^2 Second/ }).click();
+    await expect(page.getByRole('heading', { name: 'Scene 2 · Second' })).toBeVisible();
+    await page.getByRole('link', { name: /^Characters:/ }).click();
+    await expect(page.getByRole('heading', { name: 'Who is in which scene' })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Who is in which scene' })).toContainText('Second');
+    await page.getByRole('link', { name: '← Back to Create' }).click();
+    await expect(page.getByRole('heading', { name: 'Scene 2 · Second' })).toBeVisible();
   });
 
   test('make it move, the clip lands in the cartoon, put it together', async ({ page }) => {

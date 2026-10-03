@@ -6,6 +6,7 @@ import { Login } from './screens/Login';
 import { ProjectList } from './screens/ProjectList';
 import { NewProject } from './screens/NewProject';
 import { ProjectDetail } from './screens/ProjectDetail';
+import { Characters } from './screens/Characters';
 import { SceneDetail } from './screens/SceneDetail';
 import { Director } from './screens/Director';
 import { Together } from './screens/Together';
@@ -15,6 +16,7 @@ export default function App() {
   const sceneRoute = useMatch('/projects/:projectId/scenes/:sceneId');
   const togetherRoute = useMatch('/projects/:projectId/together');
   const directorRoute = useMatch('/projects/:projectId/director');
+  const charactersRoute = useMatch('/projects/:projectId/characters');
   const storyRoute = useMatch('/projects/:projectId');
   const location = useLocation();
   const fromMake = new URLSearchParams(location.search).get('from') === 'make';
@@ -79,6 +81,7 @@ export default function App() {
             ? <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to Create</Link>
             : <Link to={`/projects/${sceneRoute.params.projectId}`}>← All scenes</Link>)}
           {togetherRoute && <Link to={`/projects/${togetherRoute.params.projectId}/director`}>← Create</Link>}
+          {charactersRoute && <Link to={`/projects/${charactersRoute.params.projectId}/director${location.search.includes('scene=') ? `?scene=${new URLSearchParams(location.search).get('scene')}` : ''}`}>← Back to Create</Link>}
           {(directorRoute || (storyRoute && storyRoute.params.projectId !== 'new')) && <Link to="/">← All cartoons</Link>}
         </nav>
         <Routes>
@@ -91,6 +94,7 @@ export default function App() {
           />
           <Route path="/projects/:projectId/director" element={<Director account={account} />} />
           <Route path="/projects/:projectId/together" element={<Together />} />
+          <Route path="/projects/:projectId/characters" element={<Characters />} />
           {!account.is_minor && <Route path="/grownups" element={<Grownups />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

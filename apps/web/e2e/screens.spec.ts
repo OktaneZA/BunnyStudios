@@ -59,8 +59,8 @@ test.describe('screen walkthrough', () => {
     await shot(page, '05-create-scene', errors);
 
     // Characters: describe, choices, ready.
-    await page.getByRole('button', { name: /^Characters ·/ }).click();
-    const sheet = page.getByRole('dialog', { name: 'Your characters' });
+    await page.getByRole('link', { name: /^Characters:/ }).click();
+    const sheet = page.getByRole('region', { name: 'Your characters' });
     await shot(page, '06-characters-empty', errors);
     await sheet.getByRole('button', { name: '+ Make a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Bunny');
@@ -75,10 +75,10 @@ test.describe('screen walkthrough', () => {
     await sheet.getByRole('button', { name: 'Use this look' }).click();
     await expect(sheet.getByRole('heading', { name: 'Bunny is ready' })).toBeVisible();
     await shot(page, '09-studio-ready', errors);
-    await page.keyboard.press('Escape');
+    await page.getByRole('link', { name: '← Back to Create' }).click();
 
     // Bunny in the scene, then a preview.
-    await page.getByRole('button', { name: 'Edit characters' }).click();
+    await page.getByRole('button', { name: 'Who’s in it' }).click();
     await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
     await page.getByRole('button', { name: 'Save characters' }).click();
     await expect(page.locator('.portrait', { hasText: 'Bunny' })).toBeVisible();

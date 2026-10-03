@@ -362,6 +362,15 @@ export function SceneComposer(props: Props) {
         <section className="composer card" aria-labelledby={`composer-${scene.id}`}>
           <header className="work-head">
             <h3 id={`composer-${scene.id}`}>Scene {scene.scene_number} · {scene.title}</h3>
+            {/* Who is in it, as faces (mockup C); the list opens on tap, everything else about characters is on their page. */}
+            {cast && !fromPreview && (
+              <span className="scene-faces" aria-label={cast.characters.length ? `In this scene: ${cast.characters.map((c) => c.name).join(', ')}` : 'Nobody is in this scene yet'}>
+                {cast.characters.map((c) => c.main_picture
+                  ? <AssetImage key={c.character_id} url={c.main_picture.url} alt="" className={`cast-face${c.look_status === 'none' ? ' needs-look' : ''}`} />
+                  : <span key={c.character_id} className="cast-face none" title={c.name} aria-hidden="true">{c.name.slice(0, 1)}</span>)}
+                <button type="button" className="link-button" aria-expanded={editingCast} onClick={() => setEditingCast((v) => !v)}>Who’s in it</button>
+              </span>
+            )}
             <button type="button" className="link-button bin-scene" disabled={busy || Boolean(activeJob)} onClick={() => void binScene()}>Move to the bin</button>
           </header>
           <ProblemBox error={error} />
@@ -425,26 +434,20 @@ export function SceneComposer(props: Props) {
             </section>
           ) : <>
           {previewOnScreen && sceneChangedSincePreview && !skipPreview && <p className="hint">You changed this scene since the preview, so the final clip is made from the scene as it is now.</p>}
-          {/* Characters: their chosen looks are used automatically (review P1). */}
-          <div className="composer-field">
-            <span className="label-text">Characters</span>
-            {!cast ? <span className="muted">Loading…</span> : (
+          {/* Characters: their chosen looks are used automatically (review P1). Only what needs a decision is said here. */}
+          {cast && (cast.characters.some((c) => c.look_status === 'none' || c.newer_look_available) || wordsOnly || useStart) && (
+            <p className="hint scene-cast-note">
+              {cast.characters.filter((c) => c.look_status === 'none').map((c) => <button key={c.character_id} type="button" className="link-button" onClick={() => openStudio(c.character_id)}>Choose {c.name}’s look</button>)}
+              {cast.characters.filter((c) => c.look_status !== 'none' && c.newer_look_available).map((c) => <span key={c.character_id}>{c.name} is using an earlier look · <button type="button" className="link-button" disabled={busy} onClick={() => void useNewestLook(c.character_id)}>Use the newest</button></span>)}
+              {wordsOnly ? 'Character pictures are not used for this clip.' : useStart ? 'The starting picture guides this clip instead of the character pictures.' : ''}
+            </p>
+          )}
+          {cast && editingCast && (
+            <div className="composer-field">
+              <span className="label-text">Who’s in it</span>
               <div className="composer-cast">
-                {cast.characters.length === 0 && extras.length === 0 && !editingCast && <span className="hint">Nobody from your characters is in this scene.</span>}
-                {!editingCast && cast.characters.map((c) => (
-                  <div key={c.character_id} className="portrait">
-                    {c.main_picture ? <AssetImage url={c.main_picture.url} alt="" className="portrait-face" /> : <span className="portrait-face none" aria-hidden="true">?</span>}
-                    <span className="portrait-name">{c.name}</span>
-                    <span className="portrait-status">
-                      {c.look_status === 'none'
-                        ? <button type="button" className="link-button" onClick={() => openStudio(c.character_id)}>Choose {c.name}’s look</button>
-                        : c.newer_look_available ? <>Using an earlier look · <button type="button" className="link-button" disabled={busy} onClick={() => void useNewestLook(c.character_id)}>Use the newest</button></>
-                          : wordsOnly ? 'Picture not used for this clip' : useStart ? 'Using the starting picture for this clip' : 'Using your chosen look'}
-                    </span>
-                  </div>
-                ))}
-                {!editingCast && <button type="button" className="secondary" onClick={() => setEditingCast(true)}>Edit characters</button>}
-                {editingCast && (
+                {cast.characters.length === 0 && extras.length === 0 && <span className="hint">Nobody from your characters is in this scene.</span>}
+                {(
                   <div className="cast-editor">
                     <ul className="shot-cast">
                       {[...cast.characters.map((c) => ({ id: c.character_id, name: c.name })), ...extras].map((c) => (
@@ -473,8 +476,8 @@ export function SceneComposer(props: Props) {
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="composer-field">
             <span className="label-text">Look</span>

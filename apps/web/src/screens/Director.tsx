@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, type Account, type Project, type Scene } from '../api';
 import { director, type Asset, type CastList, type GenerationSettings, type Job, type Shot, type Timeline } from '../director-api';
 import { useJobs } from '../useJobs';
 import { ProblemBox } from '../components/ProblemBox';
 import { CartoonHeader } from '../components/ProjectTabs';
-import { CastSheet } from '../components/CastSheet';
+import { AssetImage } from '../components/AssetMedia';
 import { DirectorScenes } from '../components/DirectorScenes';
 import { DirectorPanel } from '../components/DirectorPanel';
 import { SceneComposer } from '../components/SceneComposer';
@@ -29,9 +29,11 @@ export function Director({ account }: { account: Account }) {
   const [cast, setCast] = useState<CastList | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [media, setMedia] = useState<Asset[]>([]);
-  const [sheet, setSheet] = useState<'cast' | null>(null);
-  const [studioFor, setStudioFor] = useState<string | null>(null);
-  const openStudio = useCallback((characterId: string) => { setStudioFor(characterId); setSheet('cast'); }, []);
+  const navigate = useNavigate();
+  /** Characters live on their own page (mockup B + C); a look is chosen there and comes back here. */
+  const openStudio = useCallback((characterId: string) => {
+    navigate(`/projects/${projectId}/characters?character=${characterId}${search.get('scene') ? `&scene=${search.get('scene')}` : ''}`);
+  }, [navigate, projectId, search]);
   const [error, setError] = useState<unknown>(null);
   const [addingScene, setAddingScene] = useState(false);
   const [design, setDesign] = useState(() => {
@@ -114,7 +116,13 @@ export function Director({ account }: { account: Account }) {
         <div className="create-controls" role="group" aria-label="Director controls">
         <div className="director-progress"><span>{inCartoon} of {scenes.length} scenes ready</span><progress aria-label="Scenes with clips" value={inCartoon} max={Math.max(1, scenes.length)} /></div>
         {settings?.test_mode && <span className="test-mode-pill" title="Pictures and clips are coloured placeholders, not AI-generated. Nothing is spent.">Test mode</span>}
-        <button type="button" className="cast-button" onClick={() => setSheet('cast')}>Characters · {castWords} ›</button>
+        <Link className="cast-button faces" to={`/projects/${project.id}/characters${selected ? `?scene=${selected.id}` : ''}`} aria-label={`Characters: ${castWords}`}>
+          <span className="cast-pile" aria-hidden="true">
+            {(cast?.data ?? []).slice(0, 4).map((c) => c.main_reference ? <AssetImage key={c.id} url={c.main_reference.url} alt="" className="cast-face" /> : <span key={c.id} className="cast-face none" />)}
+          </span>
+          <span className="cast-label">Characters ›</span>
+          <span className="hint">{castWords}</span>
+        </Link>
         <details className="view-menu">
           <summary>View</summary>
           <div className="view-menu-body">
@@ -191,23 +199,6 @@ export function Director({ account }: { account: Account }) {
           : null}
       </div>
 
-      {sheet === 'cast' && (
-        <CastSheet projectId={project.id} cast={cast} models={settings?.models ?? []} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
-          onClose={() => { setSheet(null); setStudioFor(null); }} advanced={advanced} settingsMessage={settings?.message ?? null} testMode={settings?.test_mode}
-          onLookChosen={studioFor && selected ? async (characterId) => {
-            // Approval from a scene applies only to that scene; other scenes keep their pinned looks.
-            const currentShot = (await director.shots(selected.id)).data[0];
-            if (!currentShot) return;
-            const currentCast = await director.shotCast(currentShot.id);
-            if (currentCast.saved && currentCast.characters.some((c) => c.character_id === characterId)) {
-              await director.saveShotCast(currentShot.id, currentCast.characters.map((c) => ({
-                character_id: c.character_id, look: c.character_id === characterId ? 'current' : c.look_id ?? 'none', outfit_label: c.outfit_label,
-              })), currentCast.version);
-            }
-            await refreshShot(selected.id);
-          } : undefined}
-          initialCharacterId={studioFor} returnToScene={studioFor ? selected?.title ?? 'the scene' : null} />
-      )}
     </div>
   );
 }

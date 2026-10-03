@@ -36,7 +36,9 @@ export async function shotCast(database: Database, accountId: string, shot: { id
     .orderBy(asc(schema.shotCharacterBindings.position));
   if (shot.castSaved) {
     const looks = await loadLooks(database, accountId, bindings.map((r) => r.c.id));
-    return bindings.map(({ b, c }) => ({ character: c, binding: b, look: looks.find((l) => l.id === b.visualVersionId) ?? null, proposed: false }));
+    // A binding pinned to a look keeps it (CS-10). One saved before the character had any look
+    // ("no look yet") follows the character's current look, so choosing a look later reaches the scene.
+    return bindings.map(({ b, c }) => ({ character: c, binding: b, look: looks.find((l) => l.id === (b.visualVersionId ?? c.currentVisualVersionId)) ?? null, proposed: false }));
   }
   const cast = await sceneCharacters(database, accountId, scene);
   const looks = await loadLooks(database, accountId, cast.map((c) => c.id));

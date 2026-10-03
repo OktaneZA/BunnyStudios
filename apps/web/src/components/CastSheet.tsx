@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { director, type CastList, type CastProposal, type Job, type ModelInfo } from '../director-api';
 import { uuid } from '../uuid';
 import { ProblemBox } from './ProblemBox';
@@ -22,6 +22,10 @@ interface Props {
   initialCharacterId?: string | null;
   /** Opened from a scene: the scene's name, for "Return to …". */
   returnToScene?: string | null;
+  /** On the Characters page: a plain section, not a sheet over the working area. */
+  inline?: boolean;
+  /** Changes when the page asks to show a different character (the cast board's "Change how X looks"). */
+  focusKey?: string | null;
 }
 
 const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Needs new pictures' } as const;
@@ -30,9 +34,10 @@ const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Nee
  * Your cast (plan D39) and Character Studio: find people in the story or add someone, then
  * choose how each of them looks. Choosing a look is always a deliberate step (CS-04).
  */
-export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen }: Props) {
+export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey }: Props) {
   const characters = cast?.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacterId ?? null);
+  useEffect(() => { if (focusKey) setSelectedId(focusKey); }, [focusKey]);
   const [proposal, setProposal] = useState<CastProposal | null>(null);
   const [keep, setKeep] = useState<Set<string>>(new Set());
   const [finding, setFinding] = useState(false);
@@ -88,8 +93,13 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
 
   const needsFinding = cast ? cast.never_found || cast.story_changed : false;
 
-  return (
-    <Sheet title="Your characters" lede="Describe each character and choose the picture that looks right. Chosen pictures help keep them the same in every scene; check each clip, as they can still change a little." onClose={onClose}>
+  const lede = 'Describe each character and choose the picture that looks right. Chosen pictures help keep them the same in every scene; check each clip, as they can still change a little.';
+  // The same body in a sheet or on the page; a conditional wrapper, not a component made per render.
+  const frame = (children: ReactNode) => inline
+    ? <section className="cast-inline stack" aria-label="Your characters"><p className="hint">{lede}</p>{children}</section>
+    : <Sheet title="Your characters" lede={lede} onClose={onClose}>{children}</Sheet>;
+  return frame(
+    <>
       <ProblemBox error={error} />
       {testMode && <p className="notice" role="status">Test mode: these are coloured placeholders, not character pictures. Nothing is spent.</p>}
 
@@ -173,7 +183,7 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
         <p className="muted">No characters yet. Name them in your scenes and find them here, or make a character yourself.</p>
       )}
       {settingsMessage && <p className="hint">{settingsMessage}</p>}
-    </Sheet>
+    </>,
   );
 }
 

@@ -186,6 +186,22 @@ test('every scene sends the same pinned pictures of a character, in the same pla
   }
 });
 
+test('a scene saved before a character had a look picks up the first look chosen', async () => {
+  const created = await call('POST', `/projects/${projectId}/cast`, { name: 'Bunny', description: 'a small white rabbit' });
+  const bunny = created.json();
+  const shot = await shotOf(0);
+  const saved = await call('PUT', `/shots/${shot.id}/cast`, { characters: [{ character_id: bunny.id }] }, { 'if-match': String(shot.version) });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal(saved.json().characters[0].look_status, 'none');
+  const look = await newLook(bunny.id);
+  const after = await get(`/shots/${(await shotOf(0)).id}/cast`);
+  assert.equal(after.characters[0].look_id, look, 'no look pinned means: follow the current one');
+  assert.equal(after.characters[0].newer_look_available, false);
+  const quote = await call('POST', `/shots/${(await shotOf(0)).id}/videos/quote`, { purpose: 'final', duration_seconds: 5 });
+  assert.equal(quote.statusCode, 200, quote.body);
+  assert.equal(quote.json().reference_count, 1, 'and the clip gets the picture');
+});
+
 test('a new look asks before it changes scenes; scenes with a chosen clip keep theirs', async () => {
   const bunny = await bunnyWithLook();
   // Scene 1's clip is in the cartoon; scenes 2 and 3 are saved without clips.

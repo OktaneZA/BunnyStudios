@@ -499,6 +499,31 @@ textarea { line-height: 1.75; }
 .cast-button .cast-pile { grid-row: 1 / span 2; }
 .cast-button .cast-label { font-weight: 750; font-size: 1.05rem; }
 .cast-button .hint { margin: 0; }
+.cast-button.faces { width: auto; text-decoration: none; }
+.cast-pile { display: flex; }
+.cast-pile .cast-face { margin-right: -10px; border: 2px solid var(--surface); }
+.scene-faces { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.scene-faces .cast-face { width: 30px; height: 30px; }
+.scene-faces .cast-face.needs-look { opacity: .5; }
+.scene-faces .link-button { margin-left: 8px; }
+.scene-cast-note { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; }
+.characters-page .stack { margin-bottom: 24px; }
+.characters-title { margin: 0 0 10px; font-size: 1.1rem; }
+.cast-board { padding: 16px; overflow-x: auto; }
+.cast-board-grid { display: grid; gap: 8px; align-items: center; min-width: 560px; }
+.cast-board-row { display: contents; }
+.cast-board-head { font-size: .85rem; text-align: center; color: var(--ink-soft); padding: 0 4px; overflow-wrap: anywhere; }
+.cast-board-head b { color: var(--ink); }
+.cast-board-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cast-board-who .cast-face { width: 48px; height: 48px; flex: none; }
+.cast-board-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: .9rem; }
+.cast-board-name .link-button { text-align: left; font-size: .85rem; }
+.cast-cell { display: grid; place-items: center; min-height: 52px; border-radius: 12px; border: 1px solid var(--line); background: var(--control-surface); color: var(--ink-soft); font-size: 1.3rem; }
+.cast-cell.in { background: var(--selected-surface); border-color: var(--accent); }
+.cast-cell.maybe { background: var(--selected-surface); border-color: var(--line); border-style: dashed; }
+.cast-cell.maybe .cast-tick { opacity: .45; }
+.cast-tick { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #1b132b; font-weight: 800; font-size: 1rem; }
+.cast-inline .cast-chips { margin-top: 4px; }
 .cast-pile { display: flex; }
 .cast-pile .cast-face { margin-right: -10px; }
 .cast-face { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; object-fit: cover; border: 2px solid var(--surface); background: #2a2632; overflow: hidden; }

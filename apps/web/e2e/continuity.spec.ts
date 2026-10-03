@@ -19,8 +19,8 @@ test.describe('Continuity', () => {
     await page.getByRole('button', { name: /Make this scene.s clip/ }).click();
 
     // A character with a chosen look, in both scenes.
-    await page.getByRole('button', { name: /^Characters ·/ }).click();
-    const sheet = page.getByRole('dialog', { name: 'Your characters' });
+    await page.getByRole('link', { name: /^Characters:/ }).click();
+    const sheet = page.getByRole('region', { name: 'Your characters' });
     await sheet.getByRole('button', { name: '+ Make a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Bunny');
     await sheet.getByLabel('What do they look like?').fill('A small white rabbit with a blue scarf.');
@@ -30,13 +30,13 @@ test.describe('Continuity', () => {
     await sheet.getByRole('radio', { name: 'Pick this one' }).first().check();
     await sheet.getByRole('button', { name: 'Use this look' }).click();
     await expect(sheet.getByText('Using this look')).toBeVisible();
-    await page.keyboard.press('Escape');
+    await page.getByRole('link', { name: '← Back to Create' }).click();
     for (const scene of [/^1 Bunny hops/, /^2 Bunny waves/]) {
       await page.getByRole('button', { name: scene }).click();
-      await page.getByRole('button', { name: 'Edit characters' }).click();
+      await page.getByRole('button', { name: 'Who’s in it' }).click();
       await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
       await page.getByRole('button', { name: 'Save characters' }).click();
-      await expect(page.locator('.portrait', { hasText: 'Bunny' })).toContainText('Using your chosen look');
+      await expect(page.locator('.scene-faces img')).toHaveCount(1);
     }
     await page.getByRole('button', { name: /^1 Bunny hops/ }).click();
 
@@ -61,8 +61,9 @@ test.describe('Continuity', () => {
 
     // A new look for Bunny is offered for every scene; nothing changes until it is chosen.
     await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
-    await page.getByRole('button', { name: /^Characters ·/ }).click();
-    await sheet.getByRole('button', { name: 'Bunny' }).first().click().catch(() => {});
+    await page.getByRole('link', { name: /^Characters:/ }).click();
+    // The cast board's link jumps to Bunny's looks below.
+    await page.getByRole('table', { name: 'Who is in which scene' }).getByRole('button', { name: 'Change how Bunny looks' }).click();
     await sheet.getByRole('button', { name: /Change how Bunny looks/ }).click();
     await sheet.getByRole('button', { name: /^Make 2 pictures · about/ }).click();
     // The earlier picture that was not chosen is still offered, next to the two new ones.
