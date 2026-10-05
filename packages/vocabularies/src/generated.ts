@@ -924,10 +924,10 @@ export const VIDEO_DIRECTION = [
   },
   {
     "value": "ambient_sound",
-    "prompt_phrase": "sound effects and background sounds only, no talking, singing or music",
+    "prompt_phrase": "with sound: natural sound effects and background sounds such as waves, footsteps and wind, without any voices, singing or music",
     "label": "Ambient sound",
-    "friendlyLabel": "Sounds only",
-    "help": "Footsteps, wind and splashes, but no voices.",
+    "friendlyLabel": "Sounds, no voices",
+    "help": "Footsteps, wind and splashes, but nobody talks or sings.",
     "icon": "direction-sound"
   },
   {
