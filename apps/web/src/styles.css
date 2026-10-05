@@ -1173,6 +1173,8 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .cover-summary { resize: vertical; }
 .cover-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .cover-row > .label-text { min-width: 110px; }
+.cover-found { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 12px; }
+.cover-folded .cover-found { margin-top: 10px; }
 .cover-people { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cover-person { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 12px 4px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; }
 .cover-person.look-none { border-style: dashed; }

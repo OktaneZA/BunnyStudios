@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, type Account, type Project, type Scene } from '../api';
-import { director, isActiveJob, type Asset, type CartoonStyle, type CastList, type GenerationSettings, type Job, type Shot, type ShotCast } from '../director-api';
+import { director, isActiveJob, type Asset, type CartoonStyle, type CastList, type CastProposal, type GenerationSettings, type Job, type Shot, type ShotCast } from '../director-api';
+import { uuid } from '../uuid';
 import { useJobs } from '../useJobs';
 import { ProblemBox } from '../components/ProblemBox';
 import { SceneComposer } from '../components/SceneComposer';
@@ -24,6 +25,10 @@ export function Storybook({ account }: { account: Account }) {
   const [casts, setCasts] = useState<Map<string, ShotCast>>(new Map());
   const [settings, setSettings] = useState<GenerationSettings | null>(null);
   const [cast, setCast] = useState<CastList | null>(null);
+  /** Who the story mentions, found on its own once the words settle; accepted only in the sheet (CL-03). */
+  const [found, setFound] = useState<CastProposal | null>(null);
+  const [finding, setFinding] = useState(false);
+  const lastFindKey = useRef('');
   const [style, setStyle] = useState<CartoonStyle | null>(null);
   const [media, setMedia] = useState<Asset[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -113,6 +118,23 @@ export function Storybook({ account }: { account: Account }) {
     // Let the page open first, then bring its editor to the top so the words and the make button are in view (SB-12).
     requestAnimationFrame(() => document.getElementById(`page-${selected.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, [selected]);
+
+  // Auto-detect: when nobody has been found yet, or the words changed since, read the story 1.5 s
+  // after the last save and offer who is in it. One look per version of the words; a new version
+  // after a save looks again. The sheet is where the creator says yes.
+  const wordsKey = useMemo(() => (scenes ?? []).map((s) => `${s.id}:${s.description}`).join('|'), [scenes]);
+  useEffect(() => {
+    if (!projectId || !cast || !cast.finder_enabled || !(cast.never_found || cast.story_changed)) return;
+    if (!(scenes ?? []).some((s) => s.description.trim())) return;
+    const key = `${projectId}:${wordsKey}`;
+    if (lastFindKey.current === key) return;
+    const timer = setTimeout(() => {
+      lastFindKey.current = key;
+      setFinding(true);
+      director.findCast(projectId, uuid()).then((p) => { setFound(p.characters.length ? p : null); }).catch(() => { /* the sheet still offers the button */ }).finally(() => setFinding(false));
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [projectId, cast, scenes, wordsKey]);
 
   const openSheet = useCallback((characterId?: string) => {
     setSearch((prev) => { const next = new URLSearchParams(prev); next.set('sheet', 'characters'); if (characterId) next.set('character', characterId); else next.delete('character'); return next; });
@@ -211,7 +233,8 @@ export function Storybook({ account }: { account: Account }) {
 
         <div className="story-pages">
           <StoryCover project={project} characters={cast?.data ?? []} style={style} open={coverOpen ?? true} onToggle={setCoverOpen}
-            onProject={setProject} onStyle={async (s) => { setStyle(s); await reloadScenes().then(loadShots); }} onCharacter={(id) => openSheet(id)} onAddCharacter={() => openSheet()} busyScene={anyMaking} />
+            onProject={setProject} onStyle={async (s) => { setStyle(s); await reloadScenes().then(loadShots); }} onCharacter={(id) => openSheet(id)} onAddCharacter={() => openSheet()} busyScene={anyMaking}
+            found={found} finding={finding} onReviewFound={() => openSheet()} />
 
           {scenes.length === 0 && (
             <section className="card empty-story">
@@ -253,6 +276,7 @@ export function Storybook({ account }: { account: Account }) {
 
       {sheet && (
         <CastSheet projectId={project.id} cast={cast} models={settings?.models ?? []} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
+          foundProposal={found} onProposalDone={() => setFound(null)}
           onClose={closeSheet} advanced={advanced} settingsMessage={settings?.message ?? null} testMode={settings?.test_mode}
           initialCharacterId={sheetCharacter} focusKey={sheetCharacter} style={style?.art_style ?? null}
           returnToScene={selected ? selected.title : null}

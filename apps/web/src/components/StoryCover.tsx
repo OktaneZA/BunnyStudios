@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { api, type Project } from '../api';
-import { director, type Asset, type CartoonStyle, type Character } from '../director-api';
+import { director, type Asset, type CartoonStyle, type CastProposal, type Character } from '../director-api';
 import { ART_STYLE } from '@storyboard/vocabularies';
 import { AssetImage } from './AssetMedia';
 import { ProblemBox } from './ProblemBox';
 
 /** The looks Simple mode offers; the words come from the vocabulary, never from here (CV-1). */
+/** "Timmy", "Timmy and Mum", "Timmy, Mum and Stick Man". */
+function listNames(names: string[]): string {
+  return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 const COVER_STYLES = ['2d_flat_vector', '3d_pixar_style', 'anime_ghibli_soft', 'watercolour_storybook', 'claymation_look'] as const;
 const LOOK_WORDS: Record<Character['look_status'], string> = { approved: 'Look chosen', changed: 'Look changed', none: 'Needs a look' };
 
@@ -14,11 +19,15 @@ const LOOK_WORDS: Record<Character['look_status'], string> = { approved: 'Look c
  * look and setting. Folds to one line once the child starts editing pages, so the editor is
  * never pushed down by it.
  */
-export function StoryCover({ project, characters, style, open, onToggle, onProject, onStyle, onCharacter, onAddCharacter, busyScene }: {
+export function StoryCover({ project, characters, style, open, onToggle, onProject, onStyle, onCharacter, onAddCharacter, busyScene, found = null, finding = false, onReviewFound }: {
   project: Project; characters: Character[]; style: CartoonStyle | null; open: boolean; onToggle: (open: boolean) => void;
   onProject: (p: Project) => void; onStyle: (s: CartoonStyle) => Promise<void>; onCharacter: (id: string) => void; onAddCharacter: () => void;
   /** A clip is being made somewhere: the look and setting are kept still until it is done. */
   busyScene: boolean;
+  /** Who the story mentions but the cover does not have yet, found on its own (CL-03). */
+  found?: CastProposal | null;
+  finding?: boolean;
+  onReviewFound?: () => void;
 }) {
   const [title, setTitle] = useState(project.title);
   const [summary, setSummary] = useState(project.logline);
@@ -69,6 +78,17 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
   const styleName = ART_STYLE.find((s) => s.value === style?.art_style)?.friendlyLabel ?? '…';
   const needLooks = characters.filter((c) => c.look_status === 'none').length;
 
+  const foundRow = (finding || found) && (
+    <div className="cover-row cover-found" role="status">
+      {finding && !found ? <span className="muted"><span className="ai-spinner" aria-hidden="true" /> Looking for who is in your story…</span> : found && (
+        <>
+          <span>Found in your story: <b>{listNames(found.characters.map((c) => c.name))}</b>{found.characters.some((c) => c.library_match) ? ' — some are already your characters.' : '.'}</span>
+          <button type="button" onClick={onReviewFound}>See who they are</button>
+        </>
+      )}
+    </div>
+  );
+
   if (!open) {
     return (
       <section className="cover cover-folded card" aria-label="Cover">
@@ -77,6 +97,7 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
           <span><b>Cover</b> · {characters.length ? `${characters.length} ${characters.length === 1 ? 'character' : 'characters'}${needLooks ? `, ${needLooks} ${needLooks === 1 ? 'needs' : 'need'} a look` : ''}` : 'no characters yet'} · {styleName}{style?.setting ? ` · ${style.setting}` : ''}</span>
           <span className="muted">Open</span>
         </button>
+        {foundRow}
       </section>
     );
   }
@@ -105,6 +126,7 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
           <button type="button" className="secondary" onClick={onAddCharacter}>+ Add a character</button>
         </div>
       </div>
+      {foundRow}
 
       <div className="cover-row">
         <span className="label-text">Cartoon look</span>
