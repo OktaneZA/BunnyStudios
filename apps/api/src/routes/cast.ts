@@ -11,7 +11,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, isNotNull } from 'drizzle-orm
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { compileCharacterSheet } from '@storyboard/compiler';
-import { REFERENCE_VIEW } from '@storyboard/vocabularies';
+import { ART_STYLE, REFERENCE_VIEW } from '@storyboard/vocabularies';
 import { quoteGeneration, type GenerationModel } from '@storyboard/models';
 import { db, schema } from '../db/client.ts';
 import { cartoonStyle } from '../cartoon/style.ts';
@@ -21,6 +21,7 @@ import { pence, type Tx } from '../generation/budget.ts';
 import { sceneDescription } from '../scenes/description.ts';
 import { validateUpload } from '../storage/uploads.ts';
 import { castUnavailable, type CastFinder, type FoundCharacter } from '../cast/finder.ts';
+import { copyFromLibrary, libraryEntries, matchByName, type LibraryEntry } from '../cast/library.ts';
 import { approveLook, assetHash, loadLooks, sameTraits, selectLook, usableForLook, visualTraits, VIEW_ROLES, type Look, type ViewRole } from '../cast/looks.ts';
 import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './director.ts';
 import type { JobRequest, CandidateIntent } from '../jobs/runner.ts';
@@ -130,9 +131,46 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
 
   // ── Find the cast (a proposal the user accepts) ───────────────────────────
   function presentProposal(p: typeof schema.aiProposals.$inferSelect) {
-    const payload = p.payload as { characters?: FoundCharacter[]; error?: string };
+    const payload = p.payload as { characters?: (FoundCharacter & { library_match?: LibraryMatch | null })[]; error?: string };
     return { id: p.id, status: p.status, characters: p.status === 'pending' ? payload.characters ?? [] : [], error: payload.error ?? null };
   }
+
+  /** CL-03: what the proposal says about a found name that is already one of "Your characters". */
+  interface LibraryMatch { character_id: string; project_id: string; project_title: string; art_style: string; art_style_label: string; look_chosen_at: string; main_picture: ReturnType<typeof presentAsset> | null; others: { character_id: string; project_title: string }[] }
+  function presentLibraryEntry(e: LibraryEntry, hideRejected: boolean) {
+    const main = e.look.references[0]?.asset ?? null;
+    return {
+      character_id: e.character.id, name: e.character.name, project_id: e.project.id, project_title: e.project.title,
+      art_style: e.look.artStyle, art_style_label: ART_STYLE.find((s) => s.value === e.look.artStyle)?.friendlyLabel ?? e.look.artStyle,
+      look_chosen_at: e.look.approvedAt.toISOString(), look_version: e.look.visualVersion,
+      main_picture: main && (!hideRejected || main.reviewStatus !== 'rejected') ? presentAsset(main) : null,
+      description: e.character.promptToken,
+    };
+  }
+  function libraryMatch(entries: LibraryEntry[], name: string, projectId: string, hideRejected: boolean): LibraryMatch | null {
+    const m = matchByName(entries, name, projectId);
+    if (!m) return null;
+    const { look_version: _v, name: _n, description: _d, ...best } = presentLibraryEntry(m.best, hideRejected);
+    return { ...best, others: m.others.map((o) => ({ character_id: o.character.id, project_title: o.project.title })) };
+  }
+
+  // ── Your characters (CL-01, CL-02): every character with a chosen look, in any live cartoon ──
+  app.get('/characters/library', async (request, reply) => {
+    const [account] = await db.select({ isMinor: schema.accounts.isMinor }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    const entries = await libraryEntries(db, request.accountId);
+    reply.header('Cache-Control', 'no-store');
+    return { data: entries.map((e) => presentLibraryEntry(e, Boolean(account?.isMinor))) };
+  });
+
+  /** CL-04/CL-05: copy one of "Your characters" into this cartoon, look and pictures included. */
+  app.post('/projects/:id/cast/from-library', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const body = z.object({ character_id: z.string().uuid() }).parse(request.body);
+    const { account } = await isConstrained(db, request.accountId, id);
+    const copy = await db.transaction((tx) => copyFromLibrary(tx, { accountId: request.accountId, sourceCharacterId: body.character_id, targetProjectId: id }));
+    const { fingerprint: fp } = await storySource(request.accountId, id);
+    return reply.code(201).send((await presentCharacters([copy], request.accountId, account.isMinor, fp))[0]);
+  });
 
   app.post('/projects/:id/cast/proposals', async (request, reply) => {
     const { id } = idParam.parse(request.params);
@@ -156,7 +194,13 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
       const found = await finder.find(source, constrained, AbortSignal.timeout(60_000));
       await db.update(schema.aiInteractions).set({ inputTokens: found.inputTokens, outputTokens: found.outputTokens, latencyMs: Date.now() - started }).where(eq(schema.aiInteractions.id, interaction!.id));
       const valid = scenes.map((s) => s.sceneNumber);
-      payload = { state: 'ready', fingerprint: fp, characters: found.characters.map((c) => ({ ...c, name: c.name.trim(), scene_numbers: [...new Set(c.scene_numbers.filter((n) => valid.includes(n)))] })) };
+      // CL-03: a found name that is already one of "Your characters" is offered for reuse; the creator chooses.
+      const library = await libraryEntries(db, request.accountId);
+      const [account] = await db.select({ isMinor: schema.accounts.isMinor }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+      payload = { state: 'ready', fingerprint: fp, characters: found.characters.map((c) => ({
+        ...c, name: c.name.trim(), scene_numbers: [...new Set(c.scene_numbers.filter((n) => valid.includes(n)))],
+        library_match: libraryMatch(library, c.name.trim(), id, Boolean(account?.isMinor)),
+      })) };
     } catch (error) {
       await db.update(schema.aiInteractions).set({ accepted: false, latencyMs: Date.now() - started }).where(eq(schema.aiInteractions.id, interaction!.id));
       throw error;
@@ -171,7 +215,11 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
 
   app.post('/projects/:id/cast/proposals/:proposalId/:action', async (request) => {
     const { id, proposalId, action } = idParam.extend({ action: z.enum(['accept', 'cancel']) }).parse(request.params);
-    const body = z.object({ keep: z.array(z.string().min(1).max(60)).optional() }).parse(request.body ?? {});
+    const body = z.object({
+      keep: z.array(z.string().min(1).max(60)).optional(),
+      /** CL-03: for these names, copy the chosen library character instead of making a new one. */
+      use_library: z.array(z.object({ name: z.string().min(1).max(60), character_id: z.string().uuid() })).optional(),
+    }).parse(request.body ?? {});
     await ownProject(request.accountId, id);
     const result = await db.transaction(async (tx) => {
       const [proposal] = await tx.select().from(schema.aiProposals).where(and(eq(schema.aiProposals.id, proposalId!), eq(schema.aiProposals.accountId, request.accountId), eq(schema.aiProposals.targetEntityId, id), eq(schema.aiProposals.operation, 'find_cast'))).for('update');
@@ -200,6 +248,12 @@ export async function castRoutes(app: FastifyInstance, deps: DirectorDeps & { fi
               ...(suggest ? { storySuggestion: c.description } : {}),
             }).where(eq(schema.characters.id, match.id));
           } else {
+            const fromLibrary = body.use_library?.find((u) => u.name.toLowerCase() === c.name.toLowerCase());
+            if (fromLibrary) {
+              const copy = await copyFromLibrary(tx, { accountId: request.accountId, sourceCharacterId: fromLibrary.character_id, targetProjectId: id, foundInSceneIds: sceneIds });
+              kept.add(copy.id);
+              continue;
+            }
             const [row] = await tx.insert(schema.characters).values({ accountId: request.accountId, projectId: id, name: c.name, promptToken: c.description, source: 'story', foundInSceneIds: sceneIds, descriptionFingerprint: fingerprint(c.description) }).returning();
             kept.add(row!.id);
           }

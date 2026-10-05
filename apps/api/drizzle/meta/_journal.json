@@ -127,6 +127,13 @@
       "when": 1791192440694,
       "tag": "0017_hot-path-indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791217292707,
+      "tag": "0018_character-library",
+      "breakpoints": true
     }
   ]
 }

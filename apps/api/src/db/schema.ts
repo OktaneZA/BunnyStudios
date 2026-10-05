@@ -107,7 +107,7 @@ export const generationJobStatusEnum = pgEnum('generation_job_status', [
 ]);
 export const ledgerStatusEnum = pgEnum('ledger_status', ['reserved', 'settled', 'refunded']);
 export const reviewStatusEnum = pgEnum('review_status', ['not_required', 'pending', 'allowed', 'rejected']);
-export const characterSourceEnum = pgEnum('character_source', ['manual', 'story']);
+export const characterSourceEnum = pgEnum('character_source', ['manual', 'story', 'library']);
 export const transitionOutEnum = pgEnum('transition_out', ['cut', 'fade', 'slide']);
 
 // ── Character Studio (docs/character-studio-requirements.md) ────────────────
@@ -260,6 +260,8 @@ export const characters = pgTable(
     lookOutdated: boolean('look_outdated').notNull().default(false),
     /** CS-08: what story rediscovery would have written, kept as a suggestion when a look is approved. */
     storySuggestion: text('story_suggestion'),
+    /** CL-05: the character this one was copied from ("Your characters"). Lineage only; neither side follows the other. */
+    sourceCharacterId: uuid('source_character_id'),
   },
   (t) => [index('characters_project_idx').on(t.projectId)],
 );

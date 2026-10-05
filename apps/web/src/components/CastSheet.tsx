@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { director, type CastList, type CastProposal, type Job, type ModelInfo } from '../director-api';
+import { director, type CastList, type CastProposal, type Job, type LibraryCharacter, type ModelInfo } from '../director-api';
 import { uuid } from '../uuid';
 import { ProblemBox } from './ProblemBox';
 import { Sheet } from './Sheet';
@@ -28,6 +28,8 @@ interface Props {
   focusKey?: string | null;
   /** Shown above the characters: the storybook puts the cast board here. */
   lead?: ReactNode;
+  /** The cartoon's art_style value, so a library character drawn in another look is said so (CL-07). */
+  style?: string | null;
 }
 
 const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Needs new pictures' } as const;
@@ -36,12 +38,16 @@ const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Nee
  * Your cast (plan D39) and Character Studio: find people in the story or add someone, then
  * choose how each of them looks. Choosing a look is always a deliberate step (CS-04).
  */
-export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey, lead }: Props) {
+export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey, lead, style = null }: Props) {
   const characters = cast?.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacterId ?? null);
   useEffect(() => { if (focusKey) setSelectedId(focusKey); }, [focusKey]);
   const [proposal, setProposal] = useState<CastProposal | null>(null);
   const [keep, setKeep] = useState<Set<string>>(new Set());
+  /** CL-03: for a found name with a library match, which character to reuse (absent = make a new one). */
+  const [reuse, setReuse] = useState<Map<string, string>>(new Map());
+  const [library, setLibrary] = useState<LibraryCharacter[] | null>(null);
+  const [addMode, setAddMode] = useState<'library' | 'new'>('new');
   const [finding, setFinding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -58,6 +64,8 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
       const p = await director.findCast(projectId, uuid());
       setProposal(p);
       setKeep(new Set(p.characters.map((c) => c.name)));
+      // Reusing a known character is the default; the creator can still choose a new one.
+      setReuse(new Map(p.characters.filter((c) => c.library_match).map((c) => [c.name, c.library_match!.character_id])));
     } catch (err) { setError(err); }
     finally { setFinding(false); }
   }
@@ -66,7 +74,7 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
     if (!proposal) return;
     setBusy(true); setError(null);
     try {
-      await director.resolveCast(projectId, proposal.id, 'accept', [...keep]);
+      await director.resolveCast(projectId, proposal.id, 'accept', [...keep], [...reuse].filter(([name]) => keep.has(name)).map(([name, character_id]) => ({ name, character_id })));
       setProposal(null);
       await refreshCast();
     } catch (err) { setError(err); }
@@ -79,6 +87,26 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
     try { await director.resolveCast(projectId, proposal.id, 'cancel'); } catch { /* it expires on its own */ }
     setProposal(null); setBusy(false);
   }
+
+  /** CL-04: the library, without the characters already in this cartoon. */
+  async function openAdd(mode: 'library' | 'new') {
+    setAdding(true); setAddMode(mode); setError(null);
+    if (mode === 'library' && library === null) {
+      try { setLibrary((await director.library()).data); } catch (err) { setError(err); setLibrary([]); }
+    }
+  }
+  async function addFromLibrary(characterId: string) {
+    setBusy(true); setError(null);
+    try {
+      const c = await director.addFromLibrary(projectId, characterId);
+      setAdding(false);
+      await refreshCast();
+      setSelectedId(c.id);
+    } catch (err) { setError(err); }
+    finally { setBusy(false); }
+  }
+  const here = new Set(characters.map((c) => c.name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')));
+  const offered = (library ?? []).filter((l) => l.project_id !== projectId && !here.has(l.name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')));
 
   async function addSomeone(e: FormEvent) {
     e.preventDefault();
@@ -130,6 +158,22 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
                   }} />
                   <span><strong>{c.name}</strong> <span className="muted">· {c.description}</span>{c.scene_numbers.length > 0 && <span className="muted"> · scenes {c.scene_numbers.join(', ')}</span>}</span>
                 </label>
+                {c.library_match && keep.has(c.name) && (
+                  <div className="found-match">
+                    {c.library_match.main_picture ? <AssetImage url={c.library_match.main_picture.url} alt="" className="cast-face" /> : <span className="cast-face none" aria-hidden="true" />}
+                    <div className="stack-tight">
+                      <span>You already have a <strong>{c.name}</strong> in <strong>{c.library_match.project_title}</strong>{c.library_match.art_style && c.library_match.art_style !== style ? `, drawn in ${c.library_match.art_style_label}` : ''}.</span>
+                      <div className="row" role="group" aria-label={`Which ${c.name}?`}>
+                        <button type="button" className={reuse.has(c.name) ? '' : 'secondary'} aria-pressed={reuse.has(c.name)} disabled={busy} onClick={() => setReuse(new Map(reuse).set(c.name, c.library_match!.character_id))}>Use that {c.name}</button>
+                        <button type="button" className={reuse.has(c.name) ? 'secondary' : ''} aria-pressed={!reuse.has(c.name)} disabled={busy} onClick={() => { const next = new Map(reuse); next.delete(c.name); setReuse(next); }}>Make a new {c.name}</button>
+                        {c.library_match.others.map((o) => (
+                          <button key={o.character_id} type="button" className="link-button" disabled={busy} onClick={() => setReuse(new Map(reuse).set(c.name, o.character_id))}>{reuse.get(c.name) === o.character_id ? `Using the one from ${o.project_title}` : `The one from ${o.project_title}?`}</button>
+                        ))}
+                      </div>
+                      <span className="hint">{reuse.has(c.name) ? 'Same look in both cartoons until you change it here. Changing them here never changes the other one.' : `A fresh ${c.name} with no pictures yet.`}</span>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -147,10 +191,35 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
             <span>{c.name}<span className={`look-badge look-${c.look_status}`}>{LOOK_BADGE[c.look_status]}</span></span>
           </button>
         ))}
-        <button type="button" className="cast-chip add" onClick={() => setAdding((v) => !v)} aria-expanded={adding}>+ Make a character</button>
+        <button type="button" className="cast-chip add" onClick={() => (adding ? setAdding(false) : void openAdd('new'))} aria-expanded={adding}>+ Add a character</button>
       </div>
 
       {adding && (
+        <div className="row" role="tablist" aria-label="Add a character">
+          <button type="button" role="tab" className={addMode === 'library' ? '' : 'secondary'} aria-selected={addMode === 'library'} onClick={() => void openAdd('library')}>From your characters</button>
+          <button type="button" role="tab" className={addMode === 'new' ? '' : 'secondary'} aria-selected={addMode === 'new'} onClick={() => void openAdd('new')}>New character</button>
+        </div>
+      )}
+      {adding && addMode === 'library' && (
+        <div className="card-soft stack" aria-label="Your characters from other cartoons">
+          {library === null ? <p className="muted">Finding your characters…</p> : offered.length === 0 ? (
+            <p className="muted">{library.length === 0 ? 'No characters with a chosen look yet. Make one and choose their look, and they will be here for your next cartoon.' : 'Everyone from your other cartoons is already in this one.'}</p>
+          ) : (
+            <ul className="library-list">
+              {offered.map((l) => (
+                <li key={l.character_id} className="library-row">
+                  {l.main_picture ? <AssetImage url={l.main_picture.url} alt="" className="cast-face" /> : <span className="cast-face none" aria-hidden="true" />}
+                  <span className="stack-tight"><strong>{l.name}</strong><span className="muted">{l.project_title}{l.art_style && l.art_style !== style ? ` · drawn in ${l.art_style_label}` : ''}</span></span>
+                  <button type="button" disabled={busy} onClick={() => void addFromLibrary(l.character_id)}>Add {l.name}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="hint">Adding someone copies their look and pictures into this cartoon. Changing them here never changes the other cartoon.</p>
+        </div>
+      )}
+
+      {adding && addMode === 'new' && (
         <form className="card-soft stack" onSubmit={addSomeone}>
           <div className="field">
             <label htmlFor="new-name">What is their name?</label>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Character library mockup</title>
+<style>
+  :root { --bg:#141218; --surface:#1e1b24; --line:#35303f; --ink:#f4f1f8; --soft:#a9a3b5; --accent:#c6b2ff; --accent-ink:#1a1030; --ok:#7fd8a6; --warn:#ffd58a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui, "Segoe UI", sans-serif; padding:24px 16px 60px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; } h2 { font-size:1.05rem; margin:28px 0 10px; color:var(--soft); text-transform:uppercase; letter-spacing:.06em; }
+  .frame { max-width:1024px; margin:0 auto 40px; border:1px solid var(--line); border-radius:16px; background:var(--surface); padding:18px; }
+  .frame > .label { font-size:.8rem; color:var(--soft); margin-bottom:12px; }
+  .bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .bar b { font-size:1.2rem; }
+  .btn { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 16px; border-radius:12px; border:1px solid var(--line); background:#2a2632; color:var(--ink); font:inherit; font-weight:700; }
+  .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.link { background:none; border:0; color:var(--accent); text-decoration:underline; padding:0 4px; min-height:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+  .card { border:1px solid var(--line); border-radius:14px; padding:12px; background:#231f2b; display:grid; gap:8px; }
+  .face { width:100%; aspect-ratio:1; border-radius:12px; background:linear-gradient(135deg,#4582a6,#ffc86a); display:grid; place-items:center; font-size:48px; }
+  .face.sm { width:48px; height:48px; aspect-ratio:auto; font-size:24px; border-radius:50%; flex:none; }
+  .name { font-weight:800; font-size:1.05rem; }
+  .muted { color:var(--soft); font-size:.9rem; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.78rem; font-weight:700; background:#2f2a3a; color:var(--soft); }
+  .pill.ok { background:#1f3b2e; color:var(--ok); } .pill.warn { background:#3b331f; color:var(--warn); }
+  .row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .match { border:1px solid var(--line); border-radius:14px; padding:12px; background:#231f2b; display:grid; gap:10px; }
+  .choice { display:flex; gap:10px; flex-wrap:wrap; }
+  .sheet { border:1px dashed var(--line); border-radius:14px; padding:12px; }
+  .tabs { display:flex; gap:8px; } .tabs .btn[aria-pressed="true"] { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .note { color:var(--soft); font-size:.85rem; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="label">A — "Your characters" (from My cartoons). Every character with a chosen look, from every cartoon.</div>
+  <div class="bar"><span class="btn link">← My cartoons</span><b>Your characters</b><span class="muted">4 characters in 3 cartoons</span></div>
+  <div class="grid">
+    <div class="card"><div class="face">🧍</div><div class="name">Timmy</div><div class="muted">In Sunny Beach Catch and Timmy Land</div><span class="pill ok">Look chosen · 3D animated film</span><button class="btn">Use in…</button></div>
+    <div class="card"><div class="face" style="background:linear-gradient(135deg,#e07aa0,#ffe1ef)">👧</div><div class="name">Sister</div><div class="muted">In Sunny Beach Catch</div><span class="pill ok">Look chosen · 3D animated film</span><button class="btn">Use in…</button></div>
+    <div class="card"><div class="face" style="background:linear-gradient(135deg,#444,#bbb)">🕴️</div><div class="name">Stick Man</div><div class="muted">In Timmy Land</div><span class="pill ok">Look chosen · Clean and modern</span><button class="btn">Use in…</button></div>
+    <div class="card"><div class="face" style="background:linear-gradient(135deg,#6a4,#dfe)">🐰</div><div class="name">Bunny</div><div class="muted">In Carrot Heist</div><span class="pill ok">Look chosen · Watercolour storybook</span><button class="btn">Use in…</button></div>
+  </div>
+  <p class="note">A character with no look yet is not here: there is nothing to reuse. "Use in…" lists your cartoons.</p>
+</div>
+
+<div class="frame">
+  <div class="label">B — Auto-match when the story is read ("Find who's in it" on the cover / character sheet). The finder found "Timmy", "Mum" and "Stick Man".</div>
+  <div class="bar"><b>Who's in your story</b><span class="muted">Found in the words of 3 pages</span></div>
+  <div style="display:grid; gap:10px">
+    <div class="match">
+      <div class="row"><div class="face sm">🧍</div><div><div class="name">Timmy</div><div class="muted">You already have a Timmy in <b>Sunny Beach Catch</b>, look chosen 3 Oct.</div></div></div>
+      <div class="choice"><button class="btn primary">Use that Timmy</button><button class="btn">Make a new Timmy</button><span class="btn link">Another Timmy?</span></div>
+      <div class="note">Same look in both cartoons until you change it here. Changing him here never changes the other one.</div>
+    </div>
+    <div class="match">
+      <div class="row"><div class="face sm" style="background:linear-gradient(135deg,#444,#bbb)">🕴️</div><div><div class="name">Stick Man</div><div class="muted">You have a Stick Man in <b>Timmy Land</b>, drawn in <b>Clean and modern</b>. This cartoon is <b>3D animated film</b>.</div></div></div>
+      <div class="choice"><button class="btn primary">Use that Stick Man</button><button class="btn">Make a new Stick Man</button></div>
+      <div class="note">You can use him as he is, or make new pictures from him on his sheet so he matches this cartoon's look.</div>
+    </div>
+    <div class="match">
+      <div class="row"><div class="face sm" style="background:#2f2a3a">?</div><div><div class="name">Mum</div><div class="muted">New: nobody called Mum in your other cartoons.</div></div></div>
+      <div class="choice"><button class="btn primary">Add Mum</button><button class="btn">Not a character</button></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:14px"><button class="btn primary">Add these 3 to the cartoon</button><span class="btn link">Cancel</span></div>
+</div>
+
+<div class="frame">
+  <div class="label">C — The cover's "+ Add a character" gains "From your characters".</div>
+  <div class="row" style="margin-bottom:12px"><span class="muted" style="min-width:110px">Who is in it</span><span class="pill">Timmy · Look chosen</span><span class="pill">Sister · Look chosen</span><button class="btn">+ Add a character</button></div>
+  <div class="sheet">
+    <div class="tabs"><button class="btn" aria-pressed="true">From your characters</button><button class="btn">New character</button></div>
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><div class="row"><div class="face sm" style="background:linear-gradient(135deg,#444,#bbb)">🕴️</div><div><div class="name">Stick Man</div><div class="muted">Timmy Land</div></div></div><span class="pill warn">Drawn in Clean and modern</span><button class="btn primary">Add Stick Man</button></div>
+      <div class="card"><div class="row"><div class="face sm" style="background:linear-gradient(135deg,#6a4,#dfe)">🐰</div><div><div class="name">Bunny</div><div class="muted">Carrot Heist</div></div></div><span class="pill warn">Drawn in Watercolour</span><button class="btn primary">Add Bunny</button></div>
+    </div>
+    <p class="note">Timmy and Sister are already in this cartoon, so they are not listed.</p>
+  </div>
+</div>
+
+</body>
+</html>

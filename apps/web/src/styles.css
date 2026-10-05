@@ -676,6 +676,17 @@ img.cast-face { display: inline-block; }
 .cast-foot { margin-top: 18px; }
 .found-list { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 6px; }
 .found-row { display: flex; align-items: flex-start; gap: 10px; min-height: var(--tap); font-weight: 400; }
+.found-match { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 8px 32px; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; }
+.found-match .cast-face { width: 44px; height: 44px; flex: none; }
+.stack-tight { display: grid; gap: 6px; }
+.library-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.library-row { display: flex; align-items: center; gap: 12px; }
+.library-row .cast-face { width: 44px; height: 44px; flex: none; }
+.library-row > .stack-tight { flex: 1; min-width: 0; }
+.library-card { display: grid; gap: 8px; }
+.library-face { width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: var(--control-surface); display: grid; place-items: center; font-size: 48px; font-weight: 800; }
+.library-targets { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pill.look-approved { color: var(--success); }
 .found-row input { width: 22px; height: 22px; min-height: 0; margin-top: 4px; flex: 0 0 auto; }
 
 /* Put it together */

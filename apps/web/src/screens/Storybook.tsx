@@ -254,7 +254,7 @@ export function Storybook({ account }: { account: Account }) {
       {sheet && (
         <CastSheet projectId={project.id} cast={cast} models={settings?.models ?? []} jobs={jobs} onJob={addJob} refreshCast={refreshCast}
           onClose={closeSheet} advanced={advanced} settingsMessage={settings?.message ?? null} testMode={settings?.test_mode}
-          initialCharacterId={sheetCharacter} focusKey={sheetCharacter}
+          initialCharacterId={sheetCharacter} focusKey={sheetCharacter} style={style?.art_style ?? null}
           returnToScene={selected ? selected.title : null}
           lead={<CastBoard projectId={project.id} characters={cast?.data ?? []} onPick={(id) => openSheet(id)} compact />} />
       )}

@@ -658,3 +658,90 @@ test('the previous page’s last frame starts this one, with the character pictu
   assert.equal(plain.json().task, 'image-to-video');
   assert.equal(plain.json().reference_count, 0);
 });
+
+// ── Your characters (CL-01–CL-08) ─────────────────────────────────────────
+test('a character with a chosen look is in Your characters; the story proposal offers it; accepting copies the look, pictures pinned', async () => {
+  const pip = await characterWithLook('Pip', true);
+  const pipLook = (await get(`/characters/${pip.id}`)).look;
+  await addCharacter('Dab', 'a shy mole'); // no look: not reusable
+  const first = projectId;
+
+  // Other tests leave characters in other cartoons of this account; look only at this test's cartoons.
+  const mine = (ids: string[]) => async () => (await get('/characters/library')).data.filter((e: { project_id: string }) => ids.includes(e.project_id));
+  const library = await mine([first])();
+  assert.deepEqual(library.map((e: { name: string }) => e.name), ['Pip'], 'only characters with a chosen look are offered');
+  assert.equal(library[0].project_title, 'Carrot Heist');
+  assert.equal(library[0].main_picture.id, pip.main);
+
+  // A second cartoon whose story mentions Pip and someone new.
+  const second = (await app.inject({ method: 'POST', url: '/api/v1/projects', headers: token(), payload: { title: 'Pip Goes Camping', target_audience: 'kids_6_11' } })).json();
+  await app.inject({ method: 'POST', url: `/api/v1/projects/${second.id}/scenes`, headers: token(), payload: { title: 'Tent', description: 'Pip and Quill put up a tent.' } });
+  found = [{ name: 'pip', description: 'a white rabbit with a rucksack', scene_numbers: [1] }, { name: 'Quill', description: 'a tiny orange newt', scene_numbers: [1] }];
+  const proposal = await app.inject({ method: 'POST', url: `/api/v1/projects/${second.id}/cast/proposals`, headers: { ...token(), 'idempotency-key': randomUUID() } });
+  assert.equal(proposal.statusCode, 201, proposal.body);
+  const [pBunny, pNewt] = proposal.json().characters;
+  assert.equal(pBunny.library_match.character_id, pip.id, 'the name matches ignoring case');
+  assert.equal(pBunny.library_match.project_title, 'Carrot Heist');
+  assert.equal(pBunny.library_match.main_picture.id, pip.main);
+  assert.equal(pNewt.library_match, null);
+
+  const accepted = await app.inject({ method: 'POST', url: `/api/v1/projects/${second.id}/cast/proposals/${proposal.json().id}/accept`, headers: token(), payload: { use_library: [{ name: 'pip', character_id: pip.id }] } });
+  assert.equal(accepted.statusCode, 200, accepted.body);
+  const cast = (await get(`/projects/${second.id}/cast`)).data;
+  const copy = cast.find((c: { name: string }) => c.name === 'Pip');
+  const newt = cast.find((c: { name: string }) => c.name === 'Quill');
+  assert.ok(copy && newt);
+  assert.equal(copy.source, 'library');
+  assert.equal(copy.look_status, 'approved', 'the copy arrives with a chosen look');
+  assert.equal(copy.look.visual_version, 1);
+  assert.notEqual(copy.look.id, pipLook.id, 'its own look row, not a shared one');
+  assert.equal(copy.main_reference.id, pip.main, 'the same picture');
+  assert.equal(copy.description, 'Pip, drawn simply', 'the library traits win over the story\'s new wording');
+  assert.deepEqual(copy.scene_numbers, [1]);
+  assert.equal(newt.look_status, 'none');
+  const [row] = await db.select().from(schema.characters).where(eq(schema.characters.id, copy.id));
+  assert.equal(row!.sourceCharacterId, pip.id, 'lineage is kept');
+
+  // A clip in the second cartoon sends exactly the pictures Pip's look pinned in the first.
+  const scenes2 = (await get(`/projects/${second.id}/scenes`)).data;
+  const shot2 = (await get(`/scenes/${scenes2[0].id}/shots`)).data[0];
+  const cast2 = await app.inject({ method: 'PUT', url: `/api/v1/shots/${shot2.id}/cast`, headers: { ...token(), 'if-match': String(shot2.version) }, payload: { characters: [{ character_id: copy.id }] } });
+  assert.equal(cast2.statusCode, 200, cast2.body);
+  const made = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot2.id}/videos`, headers: { ...token(), 'idempotency-key': randomUUID() }, payload: { purpose: 'final', duration_seconds: 5 } });
+  assert.equal(made.statusCode, 202, made.body);
+  await runner.drain();
+  const r = (await jobRow(made.json().id)).request as JobRequest;
+  assert.deepEqual(r.referenceAssetIds, [pip.main, pip.side], 'main then side, the same assets');
+
+  // Changing the copy's look never touches the original (CL-05).
+  const newer = await draw(copy.id, { intent: 'portrait', count: 1 });
+  const v2 = await approve(copy.id, newer.results[0].id, [{ asset_id: newer.results[0].id, role: 'main' }]);
+  assert.equal(v2.statusCode, 201, v2.body);
+  assert.equal((await get(`/characters/${pip.id}`)).look.id, pipLook.id, 'the original still has its own look');
+
+  // By hand (CL-04): a second copy of the same name is refused; a character without a look is refused.
+  const again = await app.inject({ method: 'POST', url: `/api/v1/projects/${second.id}/cast/from-library`, headers: token(), payload: { character_id: pip.id } });
+  assert.equal(again.statusCode, 422);
+  assert.match(again.json().detail, /already a Pip in this cartoon/);
+  const mole = cast.length ? (await get(`/projects/${first}/cast`)).data.find((c: { name: string }) => c.name === 'Dab') : null;
+  const noLook = await app.inject({ method: 'POST', url: `/api/v1/projects/${second.id}/cast/from-library`, headers: token(), payload: { character_id: mole.id } });
+  assert.equal(noLook.statusCode, 422);
+  assert.match(noLook.json().detail, /no chosen look yet/);
+  // Another account's character: 404, never a hint (NF-13).
+  const foreign = await app.inject({ method: 'POST', url: `/api/v1/projects/${second.id}/cast/from-library`, headers: token(1), payload: { character_id: pip.id } });
+  assert.equal(foreign.statusCode, 404);
+
+  // Both cartoons now offer a Pip; a third cartoon is offered the most recently chosen look, with the other listed (CL-06).
+  const now = await mine([first, second.id])();
+  assert.deepEqual(now.map((e: { name: string; project_title: string }) => `${e.name}@${e.project_title}`), ['Pip@Pip Goes Camping', 'Pip@Carrot Heist']);
+  const third = (await app.inject({ method: 'POST', url: '/api/v1/projects', headers: token(), payload: { title: 'Third', target_audience: 'kids_6_11' } })).json();
+  await app.inject({ method: 'POST', url: `/api/v1/projects/${third.id}/scenes`, headers: token(), payload: { title: 'A', description: 'Pip hops.' } });
+  found = [{ name: 'Pip', description: 'a rabbit', scene_numbers: [1] }];
+  const p3 = (await app.inject({ method: 'POST', url: `/api/v1/projects/${third.id}/cast/proposals`, headers: { ...token(), 'idempotency-key': randomUUID() } })).json();
+  assert.equal(p3.characters[0].library_match.character_id, copy.id, 'the newest look is offered first');
+  assert.deepEqual(p3.characters[0].library_match.others, [{ character_id: pip.id, project_title: 'Carrot Heist' }]);
+
+  // A binned cartoon's characters leave the library (CL-08).
+  await app.inject({ method: 'DELETE', url: `/api/v1/projects/${second.id}`, headers: token() });
+  assert.deepEqual((await mine([first, second.id])()).map((e: { project_title: string }) => e.project_title), ['Carrot Heist']);
+});

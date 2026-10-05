@@ -19,7 +19,7 @@ test.describe('Character Studio', () => {
     await page.getByRole('button', { name: 'Cover', exact: true }).click();
     await page.getByRole('button', { name: '+ Add a character' }).click();
     const sheet = page.getByRole('dialog', { name: 'Your characters' });
-    await sheet.getByRole('button', { name: '+ Make a character' }).click();
+    await sheet.getByRole('button', { name: '+ Add a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Fox');
     await sheet.getByLabel('What do they look like?').fill('An orange fox wearing a green scarf.');
     await sheet.getByRole('button', { name: 'Make Fox' }).click();
@@ -59,7 +59,7 @@ test.describe('Character Studio', () => {
     await page.getByRole('button', { name: 'Cover', exact: true }).click();
     await page.getByRole('button', { name: '+ Add a character' }).click();
     const sheet = page.getByRole('dialog', { name: 'Your characters' });
-    await sheet.getByRole('button', { name: '+ Make a character' }).click();
+    await sheet.getByRole('button', { name: '+ Add a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Bunny');
     await sheet.getByLabel('What do they look like?').fill('A small white rabbit with one floppy ear and a blue scarf.');
     await page.route('**/api/v1/characters/*/jobs/quote', (route) => route.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ title: 'Unavailable', status: 503, detail: 'Try again.' }) }));
