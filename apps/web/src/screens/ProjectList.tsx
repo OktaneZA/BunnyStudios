@@ -120,6 +120,7 @@ export function ProjectList() {
       <div className="section-head">
         <h2>Your cartoons</h2>
         <span className="muted">{projects.length} in total</span>
+        <Link className="btn secondary" to="/characters">Your characters</Link>
       </div>
 
       <p className="hint">Drag a card by its handle to move it left or right, or between rows. Series numbers update automatically. With a keyboard, press Space on a handle, use the arrow keys, then Space to drop.</p>

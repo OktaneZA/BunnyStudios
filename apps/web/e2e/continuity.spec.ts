@@ -22,7 +22,7 @@ test.describe('Continuity', () => {
     await page.getByRole('button', { name: 'Cover', exact: true }).click();
     await page.getByRole('button', { name: '+ Add a character' }).click();
     const sheet = page.getByRole('dialog', { name: 'Your characters' });
-    await sheet.getByRole('button', { name: '+ Make a character' }).click();
+    await sheet.getByRole('button', { name: '+ Add a character' }).click();
     await sheet.getByLabel('What is their name?').fill('Bunny');
     await sheet.getByLabel('What do they look like?').fill('A small white rabbit with a blue scarf.');
     await sheet.getByRole('button', { name: 'Make Bunny' }).click();

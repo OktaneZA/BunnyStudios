@@ -4,6 +4,7 @@ import { BunnyLogo } from './components/BunnyLogo';
 import { api, auth, type Account } from './api';
 import { Login } from './screens/Login';
 import { ProjectList } from './screens/ProjectList';
+import { Library } from './screens/Library';
 import { NewProject } from './screens/NewProject';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Storybook } from './screens/Storybook';
@@ -18,6 +19,7 @@ export default function App() {
   const directorRoute = useMatch('/projects/:projectId/director');
   const watchRoute = useMatch('/projects/:projectId/watch');
   const manageRoute = useMatch('/projects/:projectId/scenes');
+  const libraryRoute = useMatch('/characters');
   const location = useLocation();
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,11 +81,13 @@ export default function App() {
           {sceneRoute && <Link to={`/projects/${sceneRoute.params.projectId}/director?scene=${sceneRoute.params.sceneId}`}>← Back to the page</Link>}
           {(watchRoute || togetherRoute) && <Link to={`/projects/${(watchRoute ?? togetherRoute)!.params.projectId}/director${location.search.includes('scene=') ? `?scene=${new URLSearchParams(location.search).get('scene')}` : ''}`}>← Back to your story</Link>}
           {manageRoute && <Link to={`/projects/${manageRoute.params.projectId}/director`}>← Back to your story</Link>}
+          {libraryRoute && <Link to="/">← My cartoons</Link>}
           {directorRoute && null}
         </nav>
         <Routes>
           <Route path="/" element={<ProjectList />} />
           <Route path="/projects/new" element={<NewProject />} />
+          <Route path="/characters" element={<Library />} />
           {/* Old links keep working: the cartoon, Create, Characters and Put it together all open the storybook (SB-06). */}
           <Route path="/projects/:projectId" element={<LegacyRedirect to="director" />} />
           <Route path="/projects/:id/scenes" element={<ProjectDetail />} />

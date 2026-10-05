@@ -312,10 +312,37 @@ export interface CastList {
   finder_enabled: boolean;
 }
 
+/** One of "Your characters": a character with a chosen look in any cartoon (CL-01). */
+export interface LibraryCharacter {
+  character_id: string;
+  name: string;
+  project_id: string;
+  project_title: string;
+  art_style: string;
+  art_style_label: string;
+  look_chosen_at: string;
+  look_version: number;
+  main_picture: Asset | null;
+  description: string;
+}
+
+/** CL-03: a found name that is already one of "Your characters". */
+export interface LibraryMatch {
+  character_id: string;
+  project_id: string;
+  project_title: string;
+  art_style: string;
+  art_style_label: string;
+  look_chosen_at: string;
+  main_picture: Asset | null;
+  others: { character_id: string; project_title: string }[];
+}
+
 export interface FoundCharacter {
   name: string;
   description: string;
   scene_numbers: number[];
+  library_match?: LibraryMatch | null;
 }
 
 export interface CastProposal {
@@ -426,10 +453,15 @@ export const director = {
   cast: (projectId: string) => request<CastList>(`/projects/${projectId}/cast`),
   findCast: (projectId: string, requestId: string) =>
     request<CastProposal>(`/projects/${projectId}/cast/proposals`, { method: 'POST', headers: { 'Idempotency-Key': requestId } }),
-  resolveCast: (projectId: string, proposalId: string, action: 'accept' | 'cancel', keep?: string[]) =>
+  resolveCast: (projectId: string, proposalId: string, action: 'accept' | 'cancel', keep?: string[], useLibrary?: { name: string; character_id: string }[]) =>
     request<{ status: string }>(`/projects/${projectId}/cast/proposals/${proposalId}/${action}`, {
-      method: 'POST', body: JSON.stringify(keep ? { keep } : {}),
+      method: 'POST', body: JSON.stringify({ ...(keep ? { keep } : {}), ...(useLibrary?.length ? { use_library: useLibrary } : {}) }),
     }),
+  /** Every character with a chosen look, in any cartoon (CL-01). */
+  library: () => request<{ data: LibraryCharacter[] }>('/characters/library'),
+  /** Copy one of "Your characters" into a cartoon, look and pictures included (CL-04). */
+  addFromLibrary: (projectId: string, characterId: string) =>
+    request<Character>(`/projects/${projectId}/cast/from-library`, { method: 'POST', body: JSON.stringify({ character_id: characterId }) }),
   addCharacter: (projectId: string, body: { name: string; description: string }) =>
     request<Character>(`/projects/${projectId}/cast`, { method: 'POST', body: JSON.stringify(body) }),
   updateCharacter: (id: string, body: CharacterTraits, version?: number) =>
