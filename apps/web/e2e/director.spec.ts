@@ -25,7 +25,9 @@ test.describe('Storybook', () => {
     // The folded page shows its words and an honest empty state; the make button needs words first.
     await expect(page.locator('.story-page').nth(1)).toContainText('Follow the map');
     await expect(page.locator('.story-page').nth(1)).toContainText('Empty');
-    await expect(page.getByRole('button', { name: /^Make preview/ })).toBeEnabled();
+    // With a clip maker connected the priced action is live; without one the page says so instead.
+    if (process.env.E2E_FAKE_GENERATION) await expect(page.getByRole('button', { name: /^Make preview/ })).toBeEnabled();
+    else await expect(page.getByText(/Picture making isn’t switched on yet/)).toBeVisible();
     // No horizontal scroll at the tablet width.
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
