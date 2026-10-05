@@ -30,6 +30,9 @@ interface Props {
   lead?: ReactNode;
   /** The cartoon's art_style value, so a library character drawn in another look is said so (CL-07). */
   style?: string | null;
+  /** A proposal the storybook already fetched on its own; the sheet shows it straight away. */
+  foundProposal?: CastProposal | null;
+  onProposalDone?: () => void;
 }
 
 const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Needs new pictures' } as const;
@@ -38,7 +41,7 @@ const LOOK_BADGE = { none: 'No look yet', approved: 'Look chosen', changed: 'Nee
  * Your cast (plan D39) and Character Studio: find people in the story or add someone, then
  * choose how each of them looks. Choosing a look is always a deliberate step (CS-04).
  */
-export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey, lead, style = null }: Props) {
+export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, settingsMessage, initialCharacterId, returnToScene, testMode, onLookChosen, inline = false, focusKey, lead, style = null, foundProposal = null, onProposalDone }: Props) {
   const characters = cast?.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(initialCharacterId ?? null);
   useEffect(() => { if (focusKey) setSelectedId(focusKey); }, [focusKey]);
@@ -58,24 +61,31 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
   const selected = characters.find((c) => c.id === selectedId) ?? characters[0] ?? null;
   useEffect(() => { if (!selectedId && characters[0]) setSelectedId(characters[0].id); }, [characters, selectedId]);
 
+  function adopt(p: CastProposal) {
+    setProposal(p);
+    setKeep(new Set(p.characters.map((c) => c.name)));
+    // Reusing a known character is the default; the creator can still choose a new one.
+    setReuse(new Map(p.characters.filter((c) => c.library_match).map((c) => [c.name, c.library_match!.character_id])));
+  }
   async function find() {
     setFinding(true); setError(null);
-    try {
-      const p = await director.findCast(projectId, uuid());
-      setProposal(p);
-      setKeep(new Set(p.characters.map((c) => c.name)));
-      // Reusing a known character is the default; the creator can still choose a new one.
-      setReuse(new Map(p.characters.filter((c) => c.library_match).map((c) => [c.name, c.library_match!.character_id])));
-    } catch (err) { setError(err); }
+    try { adopt(await director.findCast(projectId, uuid())); }
+    catch (err) { setError(err); }
     finally { setFinding(false); }
   }
+  // The storybook may have found who is in the story already; otherwise look now rather than wait for a click.
+  useEffect(() => { if (foundProposal && foundProposal.id !== proposal?.id) adopt(foundProposal); }, [foundProposal]); // eslint-disable-line react-hooks/exhaustive-deps
+  const needsFinding = cast ? cast.never_found || cast.story_changed : false;
+  useEffect(() => {
+    if (needsFinding && !proposal && !finding && !foundProposal && cast?.finder_enabled) void find();
+  }, [needsFinding, cast?.finder_enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function useThese() {
     if (!proposal) return;
     setBusy(true); setError(null);
     try {
       await director.resolveCast(projectId, proposal.id, 'accept', [...keep], [...reuse].filter(([name]) => keep.has(name)).map(([name, character_id]) => ({ name, character_id })));
-      setProposal(null);
+      setProposal(null); onProposalDone?.();
       await refreshCast();
     } catch (err) { setError(err); }
     finally { setBusy(false); }
@@ -85,7 +95,7 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
     if (!proposal) return;
     setBusy(true);
     try { await director.resolveCast(projectId, proposal.id, 'cancel'); } catch { /* it expires on its own */ }
-    setProposal(null); setBusy(false);
+    setProposal(null); setBusy(false); onProposalDone?.();
   }
 
   /** CL-04: the library, without the characters already in this cartoon. */
@@ -120,8 +130,6 @@ export function CastSheet({ projectId, cast, jobs, onJob, refreshCast, onClose, 
     } catch (err) { setError(err); }
     finally { setBusy(false); }
   }
-
-  const needsFinding = cast ? cast.never_found || cast.story_changed : false;
 
   const lede = 'Describe each character and choose the picture that looks right. Chosen pictures help keep them the same in every scene; check each clip, as they can still change a little.';
   // The same body in a sheet or on the page; a conditional wrapper, not a component made per render.
