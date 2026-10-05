@@ -16,7 +16,8 @@
  * then asks the user to choose fewer characters.
  */
 import type { FastifyInstance } from 'fastify';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { lastFrame } from '../generation/media.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { compileVideoShot, promptBudget, TEMPLATE_VERSION, VIDEO_TEMPLATE_VERSION } from '@storyboard/compiler';
@@ -29,7 +30,8 @@ import { validateUpload } from '../storage/uploads.ts';
 import { assetHash, usableForLook } from '../cast/looks.ts';
 import { compileInput, ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
 import { buildManifest, saveShotCast, shotCast, type ShotCastEntry } from '../shots/cast.ts';
-import { CREATIVE_SNAPSHOT_VERSION, type CreativeVideoSnapshot } from '../video/creativeVideoRequest.ts';
+import { CREATIVE_SNAPSHOT_VERSION, STYLE_REFERENCE, type CreativeVideoSnapshot, type ReferenceBinding } from '../video/creativeVideoRequest.ts';
+import { stylePicture } from '../cartoon/style.ts';
 import { ADAPTER_VERSION, promptWithReferenceTokens } from '../video/adapters/catalogue.ts';
 import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './director.ts';
 import type { JobRequest } from '../jobs/runner.ts';
@@ -57,6 +59,8 @@ const videoBody = z.object({
   duration_seconds: z.number().int().min(1).max(60).optional(),
   use_start_frame: z.boolean().default(false),
   use_end_frame: z.boolean().default(false),
+  /** §7.4: with a starting picture, still send the character pictures (needs a maker that takes both). */
+  keep_cast_pictures: z.boolean().default(false),
   audio: z.boolean().optional(),
   /** Advanced only: a specific endpoint and size. */
   model_id: z.string().min(1).max(60).optional(),
@@ -165,6 +169,41 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     return reply.code(201).send(presentAsset(asset!));
   });
 
+  /**
+   * §7.4: the last frame of the previous page's chosen clip becomes this scene's starting picture.
+   * The frame inherits the clip's review verdict (it is a picture from an allowed clip, not new
+   * content). The response names the page it came from; the caller then quotes with
+   * use_start_frame and keep_cast_pictures so the identity pictures ride along.
+   */
+  app.post('/shots/:id/start-from-previous', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const version = z.coerce.number().int().positive().parse(request.headers['if-match']);
+    return db.transaction(async (tx) => {
+      const { shot, scene } = await ownShot(tx, request.accountId, id, true);
+      const { constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, scene.projectId);
+      if (shot.version !== version) throw ApiError.conflict('This scene changed somewhere else. Have a look, then choose again.', presentShot(shot));
+      const [previous] = await tx.select().from(schema.scenes)
+        .where(and(eq(schema.scenes.projectId, scene.projectId), eq(schema.scenes.accountId, request.accountId), isNull(schema.scenes.deletedAt), lt(schema.scenes.sortOrder, scene.sortOrder)))
+        .orderBy(desc(schema.scenes.sortOrder), desc(schema.scenes.sceneNumber)).limit(1);
+      if (!previous) throw needs('This is the first page, so there is no page before it to continue from.', { missing: 'previous_page' });
+      const [previousShot] = await tx.select().from(schema.shots).where(and(eq(schema.shots.sceneId, previous.id), eq(schema.shots.accountId, request.accountId))).orderBy(asc(schema.shots.sortOrder), asc(schema.shots.id)).limit(1);
+      const clipId = previousShot?.heroVideoAssetId;
+      const [clip] = clipId ? await tx.select().from(schema.assets).where(and(eq(schema.assets.id, clipId), eq(schema.assets.accountId, request.accountId), isNull(schema.assets.deletedAt))) : [];
+      if (!clip || !clip.mimeType.startsWith('video/')) throw needs(`Page ${previous.sceneNumber} has no clip chosen yet. Make its clip and choose it first.`, { missing: 'previous_clip', scene_id: previous.id });
+      if (clip.reviewStatus === 'rejected' || (constrained && clip.reviewStatus !== 'allowed')) throw ApiError.validation(`Page ${previous.sceneNumber}’s clip has not passed the check, so it cannot start this one.`);
+      const frame = await lastFrame(await store.get(clip.storageKey));
+      if (!frame) throw ApiError.validation('The last picture of that clip could not be read. Try again, or upload a starting picture instead.');
+      const stored = await store.put(frame, 'jpg', { accountId: request.accountId, projectId: scene.projectId });
+      const [asset] = await tx.insert(schema.assets).values({
+        accountId: request.accountId, projectId: scene.projectId, ownerEntityType: 'shot', ownerEntityId: shot.id, kind: 'frame_ref',
+        filename: `${shot.id}-from-page-${previous.sceneNumber}.jpg`, mimeType: 'image/jpeg', sizeBytes: stored.sizeBytes, storageKey: stored.key, contentSha256: stored.sha256,
+        reviewStatus: clip.reviewStatus, reviewReason: null,
+      }).returning();
+      const [updated] = await tx.update(schema.shots).set({ startFrameAssetId: asset!.id, version: shot.version + 1, updatedAt: new Date() }).where(eq(schema.shots.id, shot.id)).returning();
+      return reply.code(201).send({ shot: presentShot(updated!), asset: presentAsset(asset!), from_scene: { scene_id: previous.id, scene_number: previous.sceneNumber, title: previous.title } });
+    });
+  });
+
   app.put('/shots/:id/frames', async (request) => {
     const { id } = idParam.parse(request.params);
     const version = z.coerce.number().int().positive().parse(request.headers['if-match']);
@@ -225,7 +264,9 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       endFrame = base.endFrame;
     } else {
       if (body.use_end_frame && !body.use_start_frame) throw ApiError.validation('An ending picture needs a starting picture too.');
-      task = body.use_start_frame ? 'image-to-video' : body.continuity ? 'reference-to-video' : 'text-to-video';
+      // §7.4: "start where the last page ended" keeps the identity pictures as well as the frame, so
+      // errors never accumulate from chaining generated frames alone.
+      task = body.use_start_frame ? (body.keep_cast_pictures && body.continuity ? 'reference-to-video' : 'image-to-video') : body.continuity ? 'reference-to-video' : 'text-to-video';
       if (body.use_start_frame) startFrame = await frameBinding(database, accountId, shot.startFrameAssetId, scene.projectId, constrained, 'start');
       if (body.use_end_frame) endFrame = await frameBinding(database, accountId, shot.endFrameAssetId, scene.projectId, constrained, 'end');
       // CR-01 keeps production on a saved list. An unsaved scene uses the story's proposal with each
@@ -256,10 +297,23 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
         });
       }
       if (!full.references.length) throw needs('Nobody is in this scene yet. Add who is in it, or make a quick draft from the words.', { missing: 'cast', quick_draft_available: true });
+      // §7.2: the cartoon's style picture rides last, counted against the limit, never dropped on the quiet.
+      const styleAsset = await stylePicture(database, accountId, scene.projectId, constrained);
+      const styleRef: ReferenceBinding | null = styleAsset ? {
+        assetId: styleAsset.id, contentHash: await assetHash(database, store, styleAsset), modality: 'image', role: 'style',
+        characterId: STYLE_REFERENCE.id, characterName: STYLE_REFERENCE.name, characterVisualVersionId: '', view: 'style', position: 0,
+      } : null;
       for (const views of [8, 1]) {
         manifest = buildManifest(cast, views);
+        if (styleRef) manifest.references.push({ ...styleRef, position: manifest.references.length });
         candidates = catalogue.videoModels({ ...requirements, referenceImageCount: manifest.references.length }, advanced);
         if (candidates.length) break;
+      }
+      if (!candidates.length && styleRef) {
+        const without = buildManifest(cast, 1);
+        if (catalogue.videoModels({ ...requirements, referenceImageCount: without.references.length }, advanced).length) {
+          throw needs('The style picture does not fit alongside everyone’s pictures for any clip maker. Remove the style picture on the cover, or take someone out of this scene.', { missing: 'style_picture_room' });
+        }
       }
     } else if (!base) {
       // A starting picture carries the look, and words only sends none; the cast is still recorded for lineage.
@@ -317,7 +371,9 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       throw needs(task === 'text-to-video'
         ? 'No clip maker can make that right now. Try a different length.'
         : task === 'reference-to-video'
-          ? 'No clip maker that uses character pictures can make this yet. Make a quick draft from the words, or ask a grown-up.'
+          ? (startFrame
+            ? 'No clip maker can start from a picture and use the character pictures at the same time for this clip. Try a different length, or turn off “keep the character pictures”.'
+            : 'No clip maker that uses character pictures can make this yet. Make a quick draft from the words, or ask a grown-up.')
           : 'No clip maker can start from a picture like this yet. Try without the starting picture.', {
         missing: 'compatible_model', supported_durations: lengths, quick_draft_available: task !== 'text-to-video',
       });
@@ -339,14 +395,16 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     else {
       const prefix = model.request_shape.reference_token_prefix;
       const characterTokens: { id: string; name: string; tokens: string[] }[] = [];
+      let styleToken = '';
       for (const r of prefix ? references : []) {
+        if (r.role === 'style') { styleToken = `${prefix}${r.position + 1}`; continue; }
         let entry = characterTokens.find((c) => c.id === r.characterId);
         if (!entry) characterTokens.push(entry = { id: r.characterId, name: r.characterName, tokens: [] });
         entry.tokens.push(`${prefix}${r.position + 1}`);
       }
       const video = compileVideoShot({
         ...await compileInput(database, accountId, scene, shot),
-        video: { cameraMovement: scene.cameraMovement, characterTokens, styleToken: '', negative: model.request_shape.negative_prompt ? 'field' : 'fold', audio },
+        video: { cameraMovement: scene.cameraMovement, characterTokens, styleToken, negative: model.request_shape.negative_prompt ? 'field' : 'fold', audio },
       });
       compiled = { prompt: video.prompt, negativePrompt: video.negativePrompt, compilerVersion: VIDEO_TEMPLATE_VERSION };
     }

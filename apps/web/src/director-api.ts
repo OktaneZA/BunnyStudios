@@ -240,6 +240,8 @@ export interface VideoBody {
   duration_seconds?: number;
   use_start_frame?: boolean;
   use_end_frame?: boolean;
+  /** With a starting picture, still send the character pictures (a maker that takes both). */
+  keep_cast_pictures?: boolean;
   audio?: boolean;
   model_id?: string;
   from_job_id?: string;
@@ -275,6 +277,9 @@ export interface CartoonStyle {
   chosen: boolean;
   /** Where the cartoon happens, in the child's words; '' until chosen. */
   setting: string;
+  /** The cartoon's style picture (§7.2): sent last to clip makers that take pictures. Null when none, or when the chosen one can no longer be used. */
+  style_picture: Asset | null;
+  style_picture_unusable: boolean;
   scenes_with_own_style: { scene_id: string; scene_number: number; art_style: string | null }[];
 }
 
@@ -292,7 +297,7 @@ export interface Continuity {
 
 /** What a 422 "choose something first" carries, so the screen can offer the next step. */
 export interface NeedsChoice {
-  missing?: 'cast' | 'looks' | 'compatible_model' | 'start_frame' | 'end_frame' | 'resolution';
+  missing?: 'cast' | 'looks' | 'compatible_model' | 'start_frame' | 'end_frame' | 'resolution' | 'style_picture_room' | 'previous_page' | 'previous_clip';
   characters?: { character_id: string; name: string }[];
   proposed?: { character_id: string; name: string }[];
   quick_draft_available?: boolean;
@@ -451,6 +456,8 @@ export const director = {
     request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ art_style: artStyle, keep_scene_styles: keepSceneStyles }) }),
   setCartoonSetting: (projectId: string, setting: string) =>
     request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ setting }) }),
+  setStylePicture: (projectId: string, assetId: string | null) =>
+    request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ style_picture_asset_id: assetId }) }),
   continuity: (projectId: string) => request<Continuity>(`/projects/${projectId}/continuity`),
   lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
   useLookEverywhere: (characterId: string, lookId: string) =>
@@ -465,6 +472,9 @@ export const director = {
   uploadFrame: (shotId: string, file: File) => request<Asset>(`/shots/${shotId}/frames`, { method: 'POST', body: upload(file, file.name) }),
   setFrames: (shotId: string, body: { start_asset_id?: string | null; end_asset_id?: string | null }, version: number) =>
     request<Shot>(`/shots/${shotId}/frames`, { method: 'PUT', body: JSON.stringify(body), headers: { 'If-Match': String(version) } }),
+  /** The last frame of the previous page's chosen clip becomes this scene's starting picture (§7.4). */
+  startFromPrevious: (shotId: string, version: number) =>
+    request<{ shot: Shot; asset: Asset; from_scene: { scene_id: string; scene_number: number; title: string } }>(`/shots/${shotId}/start-from-previous`, { method: 'POST', headers: { 'If-Match': String(version) } }),
   quoteVideo: (shotId: string, body: VideoBody) => request<VideoPlan>(`/shots/${shotId}/videos/quote`, { method: 'POST', body: JSON.stringify(body) }),
   startVideo: (shotId: string, body: VideoBody, requestId: string) =>
     request<Job & { plan: VideoPlan | null; shot: Shot | null }>(`/shots/${shotId}/videos`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),

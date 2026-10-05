@@ -39,6 +39,22 @@ export async function posterFrame(video: Buffer, atMs = 0): Promise<Buffer | nul
   }
 }
 
+/** The last frame of a clip as a JPEG (seeks from the end, so no probe is needed). Null when ffmpeg is unavailable. */
+export async function lastFrame(video: Buffer): Promise<Buffer | null> {
+  const dir = await mkdtemp(join(tmpdir(), 'last-'));
+  try {
+    const input = join(dir, 'in.mp4');
+    const output = join(dir, 'out.jpg');
+    await writeFile(input, video);
+    await run(config.FFMPEG_PATH, ['-y', '-loglevel', 'error', '-sseof', '-0.2', '-i', input, '-update', '1', '-q:v', '3', output]);
+    return await readFile(output);
+  } catch {
+    return null;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export async function probeDurationMs(video: Buffer): Promise<number | null> {
   const dir = await mkdtemp(join(tmpdir(), 'probe-'));
   try {

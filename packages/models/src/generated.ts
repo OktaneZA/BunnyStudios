@@ -587,7 +587,7 @@ export const MODELS = [
       "audio_mode": "optional",
       "documentation": "https://fal.ai/models/bytedance/seedance-2.5/reference-to-video/api",
       "rollout": "advanced",
-      "verified_live": false
+      "verified_live": true
     },
     "pricing": {
       "strategy": "video_tokens",
@@ -1083,15 +1083,15 @@ export const MODELS = [
     "tier": "high",
     "label": "MiniMax H3 Max · Cast pictures",
     "friendlyLabel": "MiniMax H3 Max · Cast pictures",
-    "help": "Uses up to 9 pictures of the characters in this scene. Sound is always included. Pictures guide the result; check the finished characters.",
+    "help": "Uses up to 9 pictures of the characters in this scene, and can start from a picture too (where the last page ended). Sound is always included. Pictures guide the result; check the finished characters.",
     "icon": "model-video",
     "capabilities": {
       "reference_images": true,
-      "start_frame": false,
-      "end_frame": false,
+      "start_frame": true,
+      "end_frame": true,
       "audio": true,
       "multi_shot": false,
-      "image_to_video": false,
+      "image_to_video": true,
       "text_to_video": false,
       "requires_reference_images": true
     },
@@ -1125,6 +1125,8 @@ export const MODELS = [
         "prompt_expansion_mode": "disabled"
       },
       "reference_images": "reference_image_urls",
+      "start_frame": "image_url",
+      "end_frame": "end_image_url",
       "reference_token_prefix": "Image ",
       "seed": "seed"
     },

@@ -3,7 +3,7 @@
  * heroes, and the media bin (docs/director-mode-plan-v1.md §5).
  */
 import type { FastifyInstance } from 'fastify';
-import { and, asc, desc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { estimatePence, clipPlan, CLIP_LENGTHS, type GenerationModel } from '@storyboard/models';
 import { promptBudget } from '@storyboard/compiler';
@@ -397,6 +397,22 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const { id } = idParam.parse(request.params);
     const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, request.accountId), isNull(schema.assets.deletedAt)));
     if (!asset) throw ApiError.notFound('File');
+    // A picture pinned in an approved look is part of that look's identity (CS-10), and the clips
+    // made later would still need it. It stays until the look itself is replaced.
+    const pinnedBy = await db.selectDistinct({ name: schema.characters.name }).from(schema.characterVisualReferences)
+      .innerJoin(schema.characterVisualVersions, eq(schema.characterVisualVersions.id, schema.characterVisualReferences.visualVersionId))
+      .innerJoin(schema.characters, eq(schema.characters.id, schema.characterVisualVersions.characterId))
+      .where(and(eq(schema.characterVisualReferences.assetId, id), eq(schema.characterVisualReferences.accountId, request.accountId), isNull(schema.characters.deletedAt)))
+      .orderBy(asc(schema.characters.name));
+    if (pinnedBy.length) {
+      const names = pinnedBy.map((c) => c.name);
+      const who = names.length === 1 ? `${names[0]}’s look` : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}’s looks`;
+      throw ApiError.validation(`This picture is part of ${who}, so it stays. To stop using it, choose a different look in Characters first.`);
+    }
+    const [styleUse] = await db.select({ title: schema.projects.title }).from(schema.seriesBibles)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.seriesBibles.projectId))
+      .where(and(eq(schema.seriesBibles.accountId, request.accountId), sql`${id}::uuid = ANY(${schema.seriesBibles.styleReferenceAssetIds})`, isNull(schema.projects.deletedAt))).limit(1);
+    if (styleUse) throw ApiError.validation(`This picture is the style picture for “${styleUse.title}”, so it stays. Remove it as the style picture on the cover first.`);
     await db.transaction(async (tx) => {
       await tx.update(schema.assets).set({ deletedAt: new Date() }).where(eq(schema.assets.id, id));
       if (asset.ownerEntityType === 'shot' && asset.ownerEntityId) {

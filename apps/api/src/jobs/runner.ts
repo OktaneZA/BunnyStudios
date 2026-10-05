@@ -170,6 +170,7 @@ export function createRunner(deps: RunnerDeps) {
   async function loadImage(assetId: string, accountId: string, constrained: boolean, expectedHash?: string): Promise<BinaryImage> {
     const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, assetId), eq(schema.assets.accountId, accountId)));
     if (!asset || !asset.mimeType.startsWith('image/') || asset.thumbnailSvg) throw providerError('invalid', 'A picture for this clip is no longer available.', true);
+    if (asset.deletedAt) throw providerError('invalid', 'A picture for this clip is in the bin. Put it back, or choose a different look.', true);
     if (asset.reviewStatus === 'rejected' || (constrained && asset.reviewStatus !== 'allowed')) throw providerError('invalid', 'A picture for this clip has not passed the safety check.', true);
     const bytes = await deps.store.get(asset.storageKey);
     if (expectedHash && sha256(bytes) !== expectedHash) throw providerError('invalid', 'A picture for this clip has changed since it was chosen.', true);

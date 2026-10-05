@@ -18,7 +18,9 @@ import { ART_STYLE, values } from '@storyboard/vocabularies';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import type { Tx } from '../generation/budget.ts';
-import { cartoonStyle, sceneStyleValue } from '../cartoon/style.ts';
+import { cartoonStyle, sceneStyleValue, stylePicture } from '../cartoon/style.ts';
+import { usableForLook } from '../cast/looks.ts';
+import { presentAsset } from './director.ts';
 import { shotCastForScenes } from '../shots/cast.ts';
 import { syncProjectShots } from '../shots/sync.ts';
 import { isConstrained, type DirectorDeps } from './director.ts';
@@ -58,19 +60,26 @@ async function olderLookBindings(database: Database, accountId: string, characte
 export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
   app.addHook('onRequest', app.requireAuth);
 
-  async function presentStyle(database: Database, accountId: string, projectId: string) {
+  async function presentStyle(database: Database, accountId: string, projectId: string, constrained: boolean) {
     const style = await cartoonStyle(database, accountId, projectId);
     const scenes = await liveScenes(database, accountId, projectId);
     const own = scenes.filter((s) => s.styleOverride && sceneStyleValue(s.styleOverride) !== style.artStyle);
-    const [bible] = await database.select({ setting: schema.seriesBibles.defaultSetting }).from(schema.seriesBibles).where(and(eq(schema.seriesBibles.projectId, projectId), eq(schema.seriesBibles.accountId, accountId)));
-    return { art_style: style.artStyle, chosen: style.chosen, setting: bible?.setting ?? '', scenes_with_own_style: own.map((s) => ({ scene_id: s.id, scene_number: s.sceneNumber, art_style: sceneStyleValue(s.styleOverride) })) };
+    const [bible] = await database.select({ setting: schema.seriesBibles.defaultSetting, pictures: schema.seriesBibles.styleReferenceAssetIds }).from(schema.seriesBibles).where(and(eq(schema.seriesBibles.projectId, projectId), eq(schema.seriesBibles.accountId, accountId)));
+    const picture = await stylePicture(database, accountId, projectId, constrained);
+    return {
+      art_style: style.artStyle, chosen: style.chosen, setting: bible?.setting ?? '',
+      /** The chosen picture when it can still be used; `style_picture_unusable` when one is chosen but cannot be sent. */
+      style_picture: picture ? presentAsset(picture) : null,
+      style_picture_unusable: !picture && Boolean(bible?.pictures.length),
+      scenes_with_own_style: own.map((s) => ({ scene_id: s.id, scene_number: s.sceneNumber, art_style: sceneStyleValue(s.styleOverride) })),
+    };
   }
 
   app.get('/projects/:id/style', async (request, reply) => {
     const { id } = idParam.parse(request.params);
-    await isConstrained(db, request.accountId, id);
+    const { constrained } = await isConstrained(db, request.accountId, id);
     reply.header('Cache-Control', 'no-store');
-    return presentStyle(db, request.accountId, id);
+    return presentStyle(db, request.accountId, id, constrained);
   });
 
   app.put('/projects/:id/style', async (request) => {
@@ -82,12 +91,23 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
       setting: z.string().trim().max(300).optional(),
       /** Advanced: leave scenes that have their own look alone. Simple always gives every scene the cartoon's look. */
       keep_scene_styles: z.boolean().default(false),
+      /** The style picture (§7.2): one of the cartoon's own pictures, or null to stop using one. Absent: unchanged. */
+      style_picture_asset_id: z.string().uuid().nullable().optional(),
     }).parse(request.body);
     return db.transaction(async (tx) => {
-      const { project } = await isConstrained(tx as unknown as typeof db, request.accountId, id);
+      const { project, constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, id);
       const [bible] = await tx.select({ id: schema.seriesBibles.id }).from(schema.seriesBibles)
         .where(and(eq(schema.seriesBibles.projectId, project.id), eq(schema.seriesBibles.accountId, request.accountId))).for('update');
-      const patch = { ...(body.art_style ? { artStyle: body.art_style } : {}), ...(body.setting !== undefined ? { defaultSetting: body.setting } : {}) };
+      let pictures: { styleReferenceAssetIds: string[] } | Record<string, never> = {};
+      if (body.style_picture_asset_id === null) pictures = { styleReferenceAssetIds: [] };
+      else if (body.style_picture_asset_id) {
+        const [asset] = await tx.select().from(schema.assets).where(and(eq(schema.assets.id, body.style_picture_asset_id), eq(schema.assets.accountId, request.accountId)));
+        if (!asset || asset.projectId !== project.id) throw ApiError.notFound('Picture');
+        if (asset.kind === 'scene_thumbnail') throw ApiError.validation('A rough sketch cannot be the style picture. Choose a finished picture.');
+        if (!usableForLook(asset, constrained)) throw ApiError.validation('That picture cannot be the style picture. Choose a finished picture that has passed the check.');
+        pictures = { styleReferenceAssetIds: [asset.id] };
+      }
+      const patch = { ...(body.art_style ? { artStyle: body.art_style } : {}), ...(body.setting !== undefined ? { defaultSetting: body.setting } : {}), ...pictures };
       if (bible) await tx.update(schema.seriesBibles).set(patch).where(eq(schema.seriesBibles.id, bible.id));
       else await tx.insert(schema.seriesBibles).values({ accountId: request.accountId, projectId: project.id, ...patch });
       const scenes = await liveScenes(tx, request.accountId, project.id);
@@ -99,7 +119,7 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
       }
       // Every scene's instructions follow the new look straight away, from one read of the cartoon.
       await syncProjectShots(tx, request.accountId, project.id, await liveScenes(tx, request.accountId, project.id));
-      return presentStyle(tx, request.accountId, project.id);
+      return presentStyle(tx, request.accountId, project.id, constrained);
     });
   });
 
@@ -140,6 +160,8 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
           // Characters are in the scene but no pictures of them reached the clip maker.
           words_only: Boolean(creative && creative.task !== 'image-to-video' && creative.characters.length > 0 && creative.references.length === 0),
           family: model?.video?.family ?? job.modelId,
+          /** The cartoon's style picture reached this clip maker (section 7.2). */
+          style_picture: Boolean(creative?.references.some((r) => r.role === 'style')),
           ...(adult ? { model_id: job.modelId, seed: (job.providerResult as { seed?: number } | null)?.seed ?? null } : {}),
         } : null,
       });

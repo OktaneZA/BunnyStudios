@@ -72,6 +72,8 @@ export function SceneComposer(props: Props) {
   const [wordsOnly, setWordsOnly] = useState(false);
   const [useStart, setUseStart] = useState(false);
   const [useEnd, setUseEnd] = useState(false);
+  const [keepCast, setKeepCast] = useState(false);
+  const [continuedFrom, setContinuedFrom] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
   const [resolution, setResolution] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
@@ -165,8 +167,9 @@ export function SceneComposer(props: Props) {
     ? { purpose: 'final', continuity: true, from_job_id: fromPreview.id, ...(modelId ? { model_id: modelId } : {}), ...(resolution ? { resolution } : {}) }
     : {
       purpose, continuity: useLooks, duration_seconds: duration, audio, use_start_frame: useStart, use_end_frame: useEnd,
+      ...(useStart && useLooks && keepCast ? { keep_cast_pictures: true } : {}),
       ...(modelId ? { model_id: modelId } : {}), ...(resolution ? { resolution } : {}),
-    }, [fromPreview, purpose, useLooks, duration, audio, useStart, useEnd, modelId, resolution]);
+    }, [fromPreview, purpose, useLooks, duration, audio, useStart, useEnd, keepCast, modelId, resolution]);
 
   const ask = useCallback(async (b: VideoBody): Promise<Quote> => {
     if (!shot) throw new Error('no shot');
@@ -259,6 +262,17 @@ export function SceneComposer(props: Props) {
       if (which === 'start') setUseStart(Boolean(id)); else setUseEnd(Boolean(id));
     } catch (err) { setError(err); if (err instanceof ApiProblem && err.problem.status === 409) void refreshShot(); }
     finally { setBusy(false); if (startInput.current) startInput.current.value = ''; if (endInput.current) endInput.current.value = ''; }
+  }
+
+  /** §7.4: the previous page's last frame starts this one, and the character pictures stay on. */
+  async function continueFromPrevious() {
+    if (!shot) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await director.startFromPrevious(shot.id, shot.version);
+      onShot(r.shot); setUseStart(true); setKeepCast(true); setContinuedFrom(`page ${r.from_scene.scene_number}`);
+    } catch (err) { setError(err); if (err instanceof ApiProblem && err.problem.status === 409) void refreshShot(); }
+    finally { setBusy(false); }
   }
 
   /** Spend: only what was quoted. A changed recipe or price comes back as a fresh quote (409). */
@@ -429,7 +443,7 @@ export function SceneComposer(props: Props) {
             <p className="hint scene-cast-note">
               {cast.characters.filter((c) => c.look_status === 'none').map((c) => <button key={c.character_id} type="button" className="link-button" onClick={() => openStudio(c.character_id)}>Choose {c.name}’s look</button>)}
               {cast.characters.filter((c) => c.look_status !== 'none' && c.newer_look_available).map((c) => <span key={c.character_id}>{c.name} is using an earlier look · <button type="button" className="link-button" disabled={busy} onClick={() => void useNewestLook(c.character_id)}>Use the newest</button></span>)}
-              {wordsOnly ? 'Character pictures are not used for this clip.' : useStart ? 'The starting picture guides this clip instead of the character pictures.' : ''}
+              {wordsOnly ? 'Character pictures are not used for this clip.' : useStart ? (keepCast ? 'The starting picture and the character pictures both guide this clip.' : 'The starting picture guides this clip instead of the character pictures.') : ''}
             </p>
           )}
           {cast && editingCast && (
@@ -535,7 +549,16 @@ export function SceneComposer(props: Props) {
               {!fromPreview && shot && (
                 <section className="clip-option-group" aria-label="Starting and ending pictures">
                 <h4>Starting and ending pictures</h4>
-                <p className="hint">Optional: guide how the clip begins and ends. A starting picture becomes the visual guide instead of the separate character pictures. Add a starting picture before an ending picture.</p>
+                <p className="hint">Optional: guide how the clip begins and ends. A starting picture becomes the visual guide instead of the separate character pictures, unless you keep them on below. Add a starting picture before an ending picture.</p>
+                {advanced && (
+                  <div className="row">
+                    <button type="button" className="secondary" disabled={busy} onClick={() => void continueFromPrevious()}>Start where the last page ended</button>
+                    <span className="hint">{continuedFrom ? `Starting from the last moment of ${continuedFrom}.` : 'Uses the last moment of the page before this one as the starting picture.'}</span>
+                  </div>
+                )}
+                {useStart && useLooks && (
+                  <label className="row"><input type="checkbox" checked={keepCast} disabled={busy} onChange={(e) => setKeepCast(e.target.checked)} /> Keep the character pictures too (only some clip makers can do both)</label>
+                )}
                 <div className="frame-row">
                   <FrameSlot label="Starting picture" assetId={shot.start_frame_asset_id ?? null} on={useStart} disabled={busy} onToggle={setUseStart}
                     onUpload={() => startInput.current?.click()} onClear={() => void setFrame('start', undefined, null)} />

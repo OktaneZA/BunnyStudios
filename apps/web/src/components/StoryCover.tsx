@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Project } from '../api';
-import { director, type CartoonStyle, type Character } from '../director-api';
+import { director, type Asset, type CartoonStyle, type Character } from '../director-api';
 import { ART_STYLE } from '@storyboard/vocabularies';
 import { AssetImage } from './AssetMedia';
 import { ProblemBox } from './ProblemBox';
@@ -24,6 +24,8 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
   const [summary, setSummary] = useState(project.logline);
   const [setting, setSetting] = useState(style?.setting ?? '');
   const [changingStyle, setChangingStyle] = useState(false);
+  const [choosingPicture, setChoosingPicture] = useState(false);
+  const [pictures, setPictures] = useState<Asset[] | null>(null);
   const [note, setNote] = useState('');
   const [error, setError] = useState<unknown>(null);
   useEffect(() => { setTitle(project.title); setSummary(project.logline); }, [project.title, project.logline]);
@@ -47,6 +49,20 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
   async function chooseStyle(value: string) {
     setNote('Saving…'); setError(null);
     try { await onStyle(await director.setCartoonStyle(project.id, value)); setNote('Look saved for the whole cartoon'); setChangingStyle(false); }
+    catch (err) { setError(err); setNote(''); }
+  }
+  /** The cartoon's finished pictures: scene pictures and character pictures, newest first. */
+  async function openPictures() {
+    setChoosingPicture(true); setError(null);
+    if (pictures) return;
+    try {
+      const [scenes, people] = await Promise.all([director.media(project.id, { kind: 'generated_output' }), director.media(project.id, { kind: 'character_ref' })]);
+      setPictures([...scenes.data, ...people.data].filter((a) => a.mime_type.startsWith('image/') && a.review_status !== 'rejected' && a.review_status !== 'pending'));
+    } catch (err) { setError(err); setPictures([]); }
+  }
+  async function chooseStylePicture(assetId: string | null) {
+    setNote('Saving…'); setError(null);
+    try { await onStyle(await director.setStylePicture(project.id, assetId)); setNote(assetId ? 'Style picture saved for the whole cartoon' : 'Style picture removed'); setChoosingPicture(false); }
     catch (err) { setError(err); setNote(''); }
   }
 
@@ -105,6 +121,28 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
             </button>;
           })}
           <p className="hint">Every new clip in this cartoon uses this look. Clips already made do not change, and character pictures do not change by themselves: make new ones from a character’s sheet if they look different.</p>
+        </div>
+      )}
+      <div className="cover-row">
+        <span className="label-text" id="style-picture-label">Style picture</span>
+        {style?.style_picture
+          ? <AssetImage url={style.style_picture.url} alt="The cartoon’s style picture" className="style-picture-thumb" />
+          : <span className="muted">{style?.style_picture_unusable ? 'The chosen picture can’t be used any more. Choose another.' : 'None yet (optional)'}</span>}
+        <button type="button" className="secondary" aria-expanded={choosingPicture} aria-describedby="style-picture-label" disabled={!style || busyScene} onClick={() => (choosingPicture ? setChoosingPicture(false) : void openPictures())}>{style?.style_picture ? 'Change' : 'Choose'}</button>
+        {style?.style_picture && <button type="button" className="link-button" disabled={busyScene} onClick={() => void chooseStylePicture(null)}>Remove</button>}
+      </div>
+      {choosingPicture && (
+        <div className="style-pictures" role="group" aria-label="Pictures for the cartoon’s style">
+          <p className="hint">Pick one finished picture that shows the look you want. Clip makers that use pictures get it as a guide for the colours and lines, after everyone’s own pictures. Clips already made do not change.</p>
+          {pictures === null ? <p className="muted">Finding your pictures…</p> : pictures.length === 0 ? <p className="muted">No finished pictures yet. Make a picture on a page or a character first.</p> : (
+            <div className="style-picture-grid">
+              {pictures.map((a) => (
+                <button key={a.id} type="button" className="style-picture-choice" aria-pressed={style?.style_picture?.id === a.id} disabled={busyScene} onClick={() => void chooseStylePicture(a.id)} aria-label={a.kind === 'character_ref' ? 'A character picture' : 'A scene picture'}>
+                  <AssetImage url={a.url} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className="cover-row">
