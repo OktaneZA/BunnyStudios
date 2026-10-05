@@ -120,6 +120,13 @@
       "when": 1790956631676,
       "tag": "0016_cartoon-setting",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791192440694,
+      "tag": "0017_hot-path-indexes",
+      "breakpoints": true
     }
   ]
 }

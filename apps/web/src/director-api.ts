@@ -458,6 +458,8 @@ export const director = {
 
   // Characters in a scene, starting pictures and production clips
   shotCast: (shotId: string) => request<ShotCast>(`/shots/${shotId}/cast`),
+  /** Every page of a cartoon in one request: the scene's shot and who is in it. */
+  projectShots: (projectId: string) => request<{ data: { scene_id: string; shot: Shot; cast: ShotCast }[] }>(`/projects/${projectId}/shots`),
   saveShotCast: (shotId: string, characters: { character_id: string; look?: 'current' | 'none' | string; outfit_label?: string | null }[], version: number) =>
     request<ShotCast>(`/shots/${shotId}/cast`, { method: 'PUT', body: JSON.stringify({ characters }), headers: { 'If-Match': String(version) } }),
   uploadFrame: (shotId: string, file: File) => request<Asset>(`/shots/${shotId}/frames`, { method: 'POST', body: upload(file, file.name) }),

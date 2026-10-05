@@ -447,6 +447,8 @@ export const scenes = pgTable(
   },
   (t) => [
     index('scenes_episode_idx').on(t.episodeId, t.sortOrder),
+    /** Every cartoon read lists its live scenes by project (review 2 Oct, P2). */
+    index('scenes_project_idx').on(t.projectId, t.sortOrder),
     index('scenes_character_ids_idx').using('gin', t.characterIds),
   ],
 );
@@ -607,7 +609,9 @@ export const continuityFlags = pgTable(
 );
 
 // ── §3.14 AiInteraction (audit + cost) ──────────────────────────────────────
-export const aiInteractions = pgTable('ai_interactions', {
+export const aiInteractions = pgTable(
+  'ai_interactions',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
   projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
@@ -622,10 +626,15 @@ export const aiInteractions = pgTable('ai_interactions', {
   /** Set at accept/reject time, not at generation time (AI-4). */
   accepted: boolean('accepted'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+  },
+  /** The daily allowance check filters by account, operation and day on every AI call. */
+  (t) => [index('ai_interactions_account_op_idx').on(t.accountId, t.operation, t.createdAt)],
+);
 
 // ── §6.5 AiProposal — nothing reaches a domain record without an accept ─────
-export const aiProposals = pgTable('ai_proposals', {
+export const aiProposals = pgTable(
+  'ai_proposals',
+  {
   id: uuid('id').primaryKey().defaultRandom(),
   accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -642,7 +651,9 @@ export const aiProposals = pgTable('ai_proposals', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-});
+  },
+  (t) => [index('ai_proposals_target_idx').on(t.accountId, t.targetEntityId, t.operation, t.status)],
+);
 
 // ── §3.15 ExportPack ────────────────────────────────────────────────────────
 export const exportPacks = pgTable('export_packs', {
@@ -726,6 +737,8 @@ export const generationJobs = pgTable(
   },
   (t) => [
     index('generation_jobs_group_idx').on(t.generationGroupId),
+    index('generation_jobs_project_idx').on(t.projectId, t.createdAt),
+    index('generation_jobs_account_idx').on(t.accountId, t.createdAt),
     uniqueIndex('generation_jobs_request_key').on(t.accountId, t.requestKey),
     index('generation_jobs_status_idx').on(t.status, t.createdAt),
     index('generation_jobs_target_idx').on(t.targetEntityType, t.targetEntityId),

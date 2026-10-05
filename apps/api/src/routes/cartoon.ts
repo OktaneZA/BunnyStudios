@@ -19,8 +19,8 @@ import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import type { Tx } from '../generation/budget.ts';
 import { cartoonStyle, sceneStyleValue } from '../cartoon/style.ts';
-import { shotCast } from '../shots/cast.ts';
-import { syncSceneShots } from '../shots/sync.ts';
+import { shotCastForScenes } from '../shots/cast.ts';
+import { syncProjectShots } from '../shots/sync.ts';
 import { isConstrained, type DirectorDeps } from './director.ts';
 import type { JobRequest } from '../jobs/runner.ts';
 
@@ -97,8 +97,8 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
           await tx.update(schema.scenes).set({ styleOverride: null, version: scene.version + 1, updatedAt: new Date() }).where(eq(schema.scenes.id, scene.id));
         }
       }
-      // Every scene's instructions follow the new look straight away.
-      for (const scene of await liveScenes(tx, request.accountId, project.id)) await syncSceneShots(tx, request.accountId, scene);
+      // Every scene's instructions follow the new look straight away, from one read of the cartoon.
+      await syncProjectShots(tx, request.accountId, project.id, await liveScenes(tx, request.accountId, project.id));
       return presentStyle(tx, request.accountId, project.id);
     });
   });
@@ -117,10 +117,11 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const jobIds = heroAssets.map((a) => a.generationJobId).filter((v): v is string => Boolean(v));
     const jobs = jobIds.length ? await db.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.accountId, request.accountId), inArray(schema.generationJobs.id, jobIds))) : [];
 
+    const castBy = await shotCastForScenes(db, request.accountId, scenes.flatMap((scene) => { const shot = shots.find((s) => s.sceneId === scene.id); return shot ? [{ shot, scene }] : []; }));
     const rows = [];
     for (const scene of scenes) {
       const shot = shots.find((s) => s.sceneId === scene.id);
-      const entries = shot ? await shotCast(db, request.accountId, shot, scene) : [];
+      const entries = shot ? castBy.get(shot.id) ?? [] : [];
       const hero = shot?.heroVideoAssetId ? heroAssets.find((a) => a.id === shot.heroVideoAssetId) : undefined;
       const job = hero?.generationJobId ? jobs.find((j) => j.id === hero.generationJobId) : undefined;
       const creative = job ? (job.request as JobRequest).creative : undefined;
@@ -215,7 +216,8 @@ export async function cartoonRoutes(app: FastifyInstance, deps: DirectorDeps) {
         await tx.update(schema.shotCharacterBindings).set({ visualVersionId: lookId, updatedAt: new Date() }).where(eq(schema.shotCharacterBindings.id, b.binding.id));
         await tx.update(schema.shots).set({ version: b.shot.version + 1, updatedAt: new Date() }).where(eq(schema.shots.id, b.shot.id));
       }
-      for (const scene of new Map(update.map((b) => [b.scene.id, b.scene])).values()) await syncSceneShots(tx, request.accountId, scene);
+      const touched = [...new Map(update.map((b) => [b.scene.id, b.scene])).values()];
+      if (touched.length) await syncProjectShots(tx, request.accountId, touched[0]!.projectId, touched);
       return { scenes_updated: new Set(update.map((b) => b.scene.id)).size, scenes_with_clips: new Set(bindings.filter((b) => b.shot.heroVideoAssetId).map((b) => b.scene.id)).size };
     });
   });
