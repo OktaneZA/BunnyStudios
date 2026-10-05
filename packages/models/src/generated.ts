@@ -587,7 +587,7 @@ export const MODELS = [
       "audio_mode": "optional",
       "documentation": "https://fal.ai/models/bytedance/seedance-2.5/reference-to-video/api",
       "rollout": "advanced",
-      "verified_live": false
+      "verified_live": true
     },
     "pricing": {
       "strategy": "video_tokens",

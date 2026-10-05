@@ -30,7 +30,7 @@ exists for the sketch and comes back to its storybook page.
 | 7 Characters (SB-19–24) | built, fake-verified | The same sheet from the cover (a character's chip, "+ Add a character") or a page ("Choose X's look"). Cast board at the top of the sheet. Candidates stay candidates until "Use this look"; a new look offers "Use this look in every scene" and never rebinds silently. Missing looks link to the sheet; words-only is an explicit choice under More options. |
 | 8 Generation (SB-25–30) | built, fake-verified | Unchanged from the existing composer: one priced action, quote fingerprint + idempotency key, 409 on a changed quote, previews and finals with the recorded recipe or "Use my current scene settings instead", Other versions, Use this clip. |
 | 9 Watch (SB-31–36) | built, fake-verified | Route-backed (`/watch?scene=`), Back to your story returns to the page. **New server field `render_current`** (a fingerprint of the render inputs recorded on the render job: scenes in order, asset ids, durations, transitions, music, voiceovers). Download video leads when current; "Update cartoon" and "Download the older version" when not; an older file that recorded no inputs says so rather than guessing. |
-| 10 Continuity | as before | The approved-reference workflow, the continuity report in Watch, and the "words only" label are in place. Shared style picture, stored recipe, props/locations and continue-from-previous-frame: **not built** (documented in [video-optimisation-plan.md](video-optimisation-plan.md) §11). No fake Enabled/Locked indicators are shown. |
+| 10 Continuity | built, fake-verified (5 Oct) | The approved-reference workflow, the continuity report in Watch, and the "words only" label are in place. **Style picture** (cover row, §7.2) and **Start where the last page ended** (Advanced, §7.4) added 5 Oct. Stored recipe and props/locations: not built ([video-optimisation-plan.md](video-optimisation-plan.md) §11). No fake Enabled/Locked indicators are shown. |
 | 11 Visual | built, fake-verified | Screenshots in `docs/screenshots/validation/` at 1024×768, 768×1024, 1440×900, 1920×1080 and 2560×1440; white theme at 1024 and 1440. No horizontal overflow is asserted at 1024. Inactive pages render a poster image only; one `<video>` is mounted (the open page's). Reduced motion disables smooth scrolling. |
 
 ## Removed
@@ -42,7 +42,7 @@ stays as the composer's two columns.
 ## Verified
 
 - Web build, API typecheck.
-- API tests: 148 (the timeline change is covered by the existing director/timeline tests; `render_current` has no dedicated test yet).
+- API tests: 151 (the timeline change is covered by the existing director/timeline tests; `render_current` has no dedicated test yet).
 - Browser suite: 24 passed with the fake provider, plus the opt-in walkthrough that writes the screenshots. Run over the LAN address, not localhost.
 
 ## Not done, honestly

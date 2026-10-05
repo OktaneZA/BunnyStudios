@@ -427,16 +427,43 @@ Deviations from the proposal:
 
 Not built yet:
 
-- The style picture (§7.2).
 - The stored render recipe (§7.3).
 - Seedance draft completion (DF-03).
 - The Kling O3 elements adapter (V9: benchmark first).
 - Joined parts are still possible for a long words-only clip (F12).
-- Director Mode's older `POST /shots/:id/jobs` still sends the still prompt to a video maker.
-- Stage 5, the live smoke test and the benchmark, needs the spend cap (V7).
+- Director Mode's older `POST /shots/:id/jobs` is retired (422); the scene composer is the only video path.
+- The benchmark (stage 5, second half).
 
 Tests:
 
 - Compiler: 63, at 100% coverage.
-- API: 141, including `test/video-continuity.test.ts`.
-- Browser: 25 passed, including `e2e/continuity.spec.ts`, at 1024×768 over the LAN IP.
+- API: 151, including `test/video-continuity.test.ts` and the §7.2/§7.4 cases in `test/character-studio.test.ts`.
+- Browser: 24 passed, 1 opt-in walkthrough, at 1024×768 over the LAN IP.
+
+### Added 5 October 2026
+
+- **The style picture (§7.2): built, fake-verified.** `PUT /projects/:id/style` takes
+  `style_picture_asset_id` (one of the cartoon's own finished pictures, or null); the cover has a
+  "Style picture" row with a picker. `plan()` appends it as the last reference with role `style`,
+  counts it against the maker's limit, and the compiled prompt says "match the art style, colours
+  and line work shown in @ImageN". When it has no room it refuses with `missing: style_picture_room`
+  rather than dropping it. The continuity report says which clips used it. A style picture cannot be
+  binned while it is chosen.
+- **Start where the last page ended (§7.4): built, fake-verified, frame extraction checked on a real
+  clip.** `POST /shots/:id/start-from-previous` takes the last frame of the previous page's chosen
+  clip (ffmpeg `-sseof`), stores it as a `frame_ref` that inherits the clip's review verdict, and sets
+  it as the starting picture. A quote with `use_start_frame` and `keep_cast_pictures` is a
+  reference-to-video task with a start frame, so only a maker that takes both is used — today
+  MiniMax H3 Max refs (`image_url` + `reference_image_urls`; Seedance refs has one list and is not
+  used for this). On Sunny Beach Catch, page 2 from page 1's last frame quoted at 40p for 5 s with
+  two character pictures. The composer offers it under Starting and ending pictures (Advanced).
+- **Binned pictures (review 2 Oct, P2): fixed.** A picture pinned in an approved look cannot go
+  in the bin (422, naming the character), nor can the style picture; the runner refuses a binned
+  picture instead of sending it.
+- **Seedance 2.5 refs live check (stage 5): done, £2.32.** One 5 s 720p reference-to-video clip
+  of Sunny Beach Catch page 1 (Timmy, one picture, sound on). It finished in 5½ minutes, passed the
+  safety check, kept Timmy's look and the beach, but rendered a near-photoreal beach rather than the
+  cartoon's "3D animated film" look, where Wan 3.0 refs (10p/s) followed the look. **Decision:**
+  `verified_live: true`, stays Advanced-only, not recommended; Wan 3.0 refs remains the recommended
+  references maker. The ledger holds fal's listed rate ($2.31); the fal bill itself was not read back.
+  Running total of the agreed £10 cap: £9.21.
