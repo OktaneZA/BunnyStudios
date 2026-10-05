@@ -467,3 +467,13 @@ Tests:
   `verified_live: true`, stays Advanced-only, not recommended; Wan 3.0 refs remains the recommended
   references maker. The ledger holds fal's listed rate ($2.31); the fal bill itself was not read back.
   Running total of the agreed £10 cap: £9.21.
+- **Wan 3.0 text-to-video live check and promotion (later on 5 Oct): done, 25p.** One 5 s 480p clip
+  with sound, ~70 s at the provider, passed review, proper cartoon look. `wan_30` is now
+  `rollout: production`, `verified_live: true`, `recommended`, so Simple mode's plain scenes use the
+  Wan 3.0 family: preview at 480p (25p / 5 s), final at 720p (50p / 5 s) on the same maker with the
+  preview's seed. Before this the preview went to Wan 2.2 5B (8p) and the final to Veo 3 fast
+  (£1.00), two makers that looked nothing alike. The old tiers remain as makers. Cap total: £9.46.
+- **Words a clip maker would refuse:** the Claude words check now also says whether the maker's own
+  filter would refuse the wording (gunfire, blood, drugs, real people, brands) and gives a child a
+  concrete replacement; the job stops before any spend. Prompted by a real NAS clip refused by fal
+  over "heard a gun shot".

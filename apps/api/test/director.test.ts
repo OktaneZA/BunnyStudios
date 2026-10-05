@@ -27,11 +27,18 @@ let testVideo: Buffer | null = null;
 const provider = createFakeProvider({ bytesFor: (file) => (file.mimeType.startsWith('video/') ? testVideo ?? Buffer.alloc(0) : TINY_PNG) });
 const store = createMemoryStore();
 let rejectPromptsContaining = '';
+/** The words are allowed, but the fake reviewer says the clip maker's filter would refuse them. */
+let makerRefusesContaining = '';
 let rejectEveryImage = false;
 let reviewCalls: string[] = [];
 const review: ReviewProvider = {
   enabled: true, model: 'fake-review',
-  async reviewPrompt(text) { reviewCalls.push('prompt'); return rejectPromptsContaining && text.includes(rejectPromptsContaining) ? { allowed: false, reason: 'too scary' } : { allowed: true, reason: '' }; },
+  async reviewPrompt(text) {
+    reviewCalls.push('prompt');
+    if (rejectPromptsContaining && text.includes(rejectPromptsContaining)) return { allowed: false, reason: 'too scary' };
+    if (makerRefusesContaining && text.includes(makerRefusesContaining)) return { allowed: true, reason: '', maker_will_refuse: true, suggestion: 'Instead of a gunshot, say they heard a loud bang in the distance.' };
+    return { allowed: true, reason: '' };
+  },
   async reviewImage() { reviewCalls.push('image'); return rejectEveryImage ? { allowed: false, reason: 'not for children' } : { allowed: true, reason: '' }; },
 };
 let found = [{ name: 'Timmy', description: 'a skinny stick boy with a big round head', scene_numbers: [1, 2] }, { name: 'Sister', description: 'a girl with a red bow', scene_numbers: [2] }];
@@ -58,7 +65,7 @@ before(async () => {
   await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 10000, note: 'test' })));
 });
 beforeEach(async () => {
-  rejectPromptsContaining = ''; rejectEveryImage = false; reviewCalls = []; provider.submitted.length = 0;
+  rejectPromptsContaining = ''; makerRefusesContaining = ''; rejectEveryImage = false; reviewCalls = []; provider.submitted.length = 0;
   const project = await app.inject({ method: 'POST', url: '/api/v1/projects', headers: token(), payload: { title: 'Sunny Beach Catch', target_audience: 'kids_6_11' } });
   assert.equal(project.statusCode, 201); projectId = project.json().id;
   sceneIds = [];
@@ -281,6 +288,27 @@ test('the daily cap is checked inside the reservation and says when it resets (D
   } finally {
     await db.update(schema.accounts).set({ dailyBudgetPence: 1000 }).where(eq(schema.accounts.id, ids[0]!));
   }
+});
+
+test('wording the clip maker would refuse stops before any money is spent, and says what to change', async () => {
+  const scene = await app.inject({ method: 'GET', url: `/api/v1/scenes/${sceneIds[0]}`, headers: token() });
+  await app.inject({ method: 'PATCH', url: `/api/v1/scenes/${sceneIds[0]}`, headers: { ...token(), 'if-match': String(scene.json().version) }, payload: { description: 'Timmy walks happily until he hears a gunshot and runs.' } });
+  makerRefusesContaining = 'gunshot';
+  const shot = await shotFor(sceneIds[0]!);
+  const started = await startClip(shot.id, { duration_seconds: 5 });
+  assert.equal(started.statusCode, 202, started.body);
+  await runner.drain();
+  const failed = await job(started.json().id);
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.error, /clip maker would say no to this wording, so nothing was made or paid for/);
+  assert.match(failed.error, /Instead of a gunshot, say they heard a loud bang/);
+  assert.equal(provider.submitted.length, 0, 'nothing was submitted to the provider');
+  assert.equal((await ledger(started.json().id))[0]!.status, 'refunded');
+
+  // A picture is not stopped by the maker-filter verdict: it only applies to clip makers.
+  const picture = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
+  await runner.drain();
+  assert.equal((await job(picture.json().id)).status, 'ready');
 });
 
 test('gate 1 rejects the wording before any money is spent; gate 3 hides a rejected take from the teen (D32)', async () => {

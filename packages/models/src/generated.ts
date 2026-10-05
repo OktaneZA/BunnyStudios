@@ -743,12 +743,13 @@ export const MODELS = [
     "video": {
       "family": "wan_30",
       "categories": [
+        "recommended",
         "cinematic"
       ],
       "audio_mode": "optional",
       "documentation": "https://fal.ai/models/alibaba/wan-3.0/text-to-video/api",
-      "rollout": "advanced",
-      "verified_live": false
+      "rollout": "production",
+      "verified_live": true
     },
     "pricing": {
       "strategy": "per_second",

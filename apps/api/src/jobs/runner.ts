@@ -223,6 +223,12 @@ export function createRunner(deps: RunnerDeps) {
         await note(job.id, 'Checking the words');
         const verdict = await deps.review.reviewPrompt(`${r.prompt}\n${(r.referenceNames ?? []).join('\n')}\n\nNegative: ${r.negativePrompt}`, r.constrained, limit(signal, CALL_MS.review));
         if (!verdict.allowed) throw Object.assign(new Error('The safety checker did not allow this wording. Try describing the scene differently.'), { name: 'ProviderError', code: 'rejected', reason: verdict.reason });
+        // The words are fine for the child, but the maker's own filter would refuse them: stop here,
+        // before anything is paid for, and say what to change.
+        if (verdict.maker_will_refuse && model.kind === 'video') {
+          const tip = verdict.suggestion?.trim();
+          throw Object.assign(new Error(`The clip maker would say no to this wording, so nothing was made or paid for.${tip ? ` ${tip}` : ' Try leaving out anything like weapons, blood or real people.'}`), { name: 'ProviderError', code: 'rejected', notAccepted: true, reason: verdict.reason });
+        }
       }
     }
     const downloaded: { file: Awaited<ReturnType<typeof provider.fetchResult>>[number]; bytes: Buffer }[] = [];

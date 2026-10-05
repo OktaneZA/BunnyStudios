@@ -26,7 +26,7 @@ const MESSAGES = {
   auth: 'The picture maker needs its key checked by a grown-up.',
   invalid: 'The picture maker could not use this request. Try a simpler wording.',
   busy: 'The picture maker is busy. Please try again in a minute.',
-  rejected: 'The picture maker would not make this one. Try different wording.',
+  rejected: 'The maker would not make this one. It usually means a word it does not allow, like weapons, blood or a real person. Try different wording.',
   empty: 'The picture maker finished but sent nothing back. Try again with different wording.',
   unknownJob: 'That request is no longer known to the picture maker.',
 } as const;
