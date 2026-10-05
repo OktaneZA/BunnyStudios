@@ -390,6 +390,15 @@ export function SceneComposer(props: Props) {
               <button type="button" className="secondary" onClick={() => void sceneText.retry()}>{sceneText.conflict ? 'Save my changes' : 'Retry save'}</button>
               {sceneText.conflict && <button type="button" className="secondary" onClick={() => void sceneText.retry(false)}>Use saved version</button>}
             </div>}
+            {/* When the two columns stack (under 1000px) the make panel drops below the whole editor;
+                this keeps the priced action, and whatever is blocking it, next to the words (UI review 5 Oct). */}
+            <div className="make-compact" role="group" aria-label="Make your clip, next to the words">
+              <button type="button" className="main-action" disabled={off || !plan} onClick={() => void make(quote)}>
+                {busy && <span className="ai-spinner" aria-hidden="true" />}{actionLabel}{plan ? ` · ${plan.words}` : ''}
+              </button>
+              {(quote?.needs?.detail || blockedReason) && <p className="hint" role="status">{quote?.needs?.detail ?? blockedReason}</p>}
+              {quoteFailed && <p className="hint" role="status">Could not check the price. <button type="button" className="link-button" onClick={() => setQuoteRevision((n) => n + 1)}>Check price again</button></p>}
+            </div>
             <details className="let-ai-help">
               <summary>✦ Let AI help</summary>
               <div className="scene-settings-body">

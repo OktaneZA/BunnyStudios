@@ -22,7 +22,7 @@ export function StoryPage({ scene, index, count, shot, hero, activeJob, failed, 
   const status = pageStatus(shot, hero, activeJob, failed, Boolean(scene.description.trim()));
   const needLook = cast?.characters.filter((c) => c.look_status === 'none') ?? [];
   return (
-    <article id={`page-${scene.id}`} className={`story-page card${selected ? ' selected' : ''}`} aria-labelledby={`page-title-${scene.id}`} aria-current={selected ? 'true' : undefined}>
+    <article id={`page-${scene.id}`} className={`story-page card${selected ? ' selected' : ''}`} aria-labelledby={selected ? `composer-${scene.id}` : `page-title-${scene.id}`} aria-current={selected ? 'true' : undefined}>
       <header className="page-head">
         <span className="eyebrow">Page {String(index + 1).padStart(2, '0')}</span>
         <div className="page-tools" role="group" aria-label={`Page ${index + 1} tools`}>
