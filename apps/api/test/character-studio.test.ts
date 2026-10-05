@@ -519,3 +519,26 @@ test('"Make another version" keeps the clip’s characters, looks and length, an
   assert.equal(b.creative!.seed, null, 'another version gets a new seed');
   await runner.drain();
 });
+
+// ── A picture pinned in a look cannot go in the bin ───────────────────────
+test('a picture pinned in an approved look cannot be binned; a loose candidate can (CS-10, review 2 Oct P2)', async () => {
+  const bunny = await characterWithLook('Bunny', false);
+  const spare = await draw(bunny.id, { intent: 'portrait', count: 1 });
+
+  const pinned = await app.inject({ method: 'DELETE', url: `/api/v1/assets/${bunny.main}`, headers: token() });
+  assert.equal(pinned.statusCode, 422, pinned.body);
+  assert.match(pinned.json().detail, /part of Bunny’s look, so it stays/);
+  const still = await db.select().from(schema.assets).where(eq(schema.assets.id, bunny.main));
+  assert.equal(still[0]!.deletedAt, null, 'the pinned picture is untouched');
+
+  const loose = await app.inject({ method: 'DELETE', url: `/api/v1/assets/${spare.results[0].id}`, headers: token() });
+  assert.equal(loose.statusCode, 204, loose.body);
+
+  // Two characters sharing one picture are both named.
+  const fox = await addCharacter('Fox', 'a sly fox');
+  const foxLook = await approve(fox.id, bunny.main, [{ asset_id: bunny.main, role: 'main' }]);
+  if (foxLook.statusCode === 201) {
+    const both = await app.inject({ method: 'DELETE', url: `/api/v1/assets/${bunny.main}`, headers: token() });
+    assert.match(both.json().detail, /Bunny and Fox’s looks/);
+  }
+});
