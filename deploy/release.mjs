@@ -368,7 +368,9 @@ async function release() {
   log('Uploading compose file, env and scripts');
   // Synology's daemon refuses a bind mount whose host path is missing rather than creating it,
   // and the container is already recreated by then, so the site stays down until someone notices.
-  sshRun(`mkdir -p ${NAS_DIR}/backups ${NAS_DIR}/storage`);
+  // The app runs as `node` (uid 1000) in the container; a folder made over SSH carries a Synology ACL
+  // that denies it, which only shows up when the first clip is stored. chmod strips the ACL.
+  sshRun(`mkdir -p ${NAS_DIR}/backups ${NAS_DIR}/storage && chmod 777 ${NAS_DIR}/storage`);
   for (const f of ['.env', 'backup.sh', 'restore.sh']) upload(join(synology, f), `${NAS_DIR}/${f}`);
   // Container Manager saves a project's file as compose.yaml, and `docker compose` prefers
   // that name over docker-compose.yml when both exist, so the upload must replace it.
