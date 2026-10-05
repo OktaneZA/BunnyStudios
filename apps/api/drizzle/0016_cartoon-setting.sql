@@ -1,0 +1,1 @@
+ALTER TABLE "series_bibles" ADD COLUMN "default_setting" text DEFAULT '' NOT NULL;

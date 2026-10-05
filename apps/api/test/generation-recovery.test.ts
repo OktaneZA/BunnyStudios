@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
 import { buildApp } from '../src/app.ts';
+import { refund } from '../src/generation/budget.ts';
 import { db, sql, schema } from '../src/db/client.ts';
 import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL } from '../src/generation/fake.ts';
 import { createMemoryStore } from '../src/storage/objectStore.ts';
@@ -33,7 +34,9 @@ let projectId = '';
 let shotId = '';
 
 before(async () => {
-  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `recovery-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, dailyBudgetPence: 1000, monthlyBudgetPence: 10_000 })));
+  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `recovery-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, dailyBudgetPence: 1000 })));
+  // Pre-paid: every test account starts with a pot.
+  await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 10000, note: 'test' })));
 });
 beforeEach(async () => {
   hooks.submit = undefined; hooks.download = undefined; base.submitted.length = 0;
@@ -159,10 +162,73 @@ test('a shutdown hands a job back without using up an attempt, and the next runn
   } finally { await second.close(); }
 });
 
+test('a shutdown while the request is in flight never sends it again: the job fails as unknown, no refund', async () => {
+  // The provider has not answered when the shutdown arrives; the call then dies without an answer.
+  let hangUp: () => void = () => {};
+  const stuck = createFakeProvider({ onSubmit: () => new Promise((_, reject) => { hangUp = () => reject(new Error('socket hang up')); }) });
+  const first = await buildApp({ director: { providers: [stuck], models: [FAKE_IMAGE_MODEL], store, review, finder, pollMs: 5 } });
+  const started = await first.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/jobs`, headers: { authorization: `Bearer ${first.jwt.sign({ sub: ids[0] })}`, 'idempotency-key': randomUUID() }, payload: { kind: 'image', model_id: 'quick_picture' } });
+  await first.director.runner.tick();
+  for (let i = 0; i < 100 && (await row(started.json().id)).submissionState !== 'submitting'; i++) await new Promise((r) => setTimeout(r, 10));
+  const closing = first.close();
+  await new Promise((r) => setTimeout(r, 20));
+  hangUp();
+  await closing;
+  const handedBack = await row(started.json().id);
+  assert.equal(handedBack.claimedBy, null);
+  assert.equal(handedBack.submissionState, 'uncertain', 'the provider may have the request');
+  const second = await buildApp({ director: { providers: [stuck], models: [FAKE_IMAGE_MODEL], store, review, finder, pollMs: 5 } });
+  try {
+    await second.director.runner.drain();
+    const done = await row(started.json().id);
+    assert.equal(done.status, 'failed');
+    assert.equal(stuck.submitted.length, 1, 'never submitted a second time');
+    const ledger = await ledgerOf(done.id);
+    assert.equal(ledger.costState, 'unknown', 'the money is kept as unknown, not refunded');
+    assert.equal(ledger.status, 'settled');
+  } finally { await second.close(); }
+});
+
+test('a job nobody picks up is swept after the queue timeout and its money put back; the adult can stop one sooner', async () => {
+  // A job for a provider this runner does not hold: exactly the kind that waits for ever.
+  const started = await start();
+  await db.update(schema.generationJobs).set({ provider: 'gone-provider', createdAt: new Date(Date.now() - 3 * 60 * 60_000) }).where(eq(schema.generationJobs.id, started.json().id));
+  assert.equal((await ledgerOf(started.json().id)).status, 'reserved');
+  await app.director.runner.sweep();
+  const swept = await row(started.json().id);
+  assert.equal(swept.status, 'failed');
+  assert.equal(swept.errorCode, 'stale');
+  assert.match(swept.errorDetail!, /Nothing was spent/);
+  assert.equal((await ledgerOf(swept.id)).status, 'refunded', 'the pot has its money back');
+
+  // A fresh one is left alone.
+  const fresh = await start();
+  await db.update(schema.generationJobs).set({ provider: 'gone-provider' }).where(eq(schema.generationJobs.id, fresh.json().id));
+  await app.director.runner.sweep();
+  assert.equal((await row(fresh.json().id)).status, 'queued');
+
+  // The adult stops it from the clip log; the teen cannot stop someone else's.
+  const teenOnAdults = await app.inject({ method: 'POST', url: `/api/v1/jobs/${fresh.json().id}/cancel`, headers: token(1) });
+  assert.equal(teenOnAdults.statusCode, 200, 'the adult may stop any job');
+  assert.equal((await row(fresh.json().id)).status, 'cancelled');
+  assert.equal((await ledgerOf(fresh.json().id)).status, 'refunded');
+});
+
+test('a refund never undoes a settled bill', async () => {
+  const started = await start();
+  await app.director.runner.drain();
+  const before = await ledgerOf(started.json().id);
+  assert.equal(before.status, 'settled');
+  await refund(started.json().id);
+  const after = await ledgerOf(started.json().id);
+  assert.equal(after.status, 'settled');
+  assert.equal(after.actualPence, before.actualPence);
+});
+
 test('MB-01/MB-02: the quote shown is the amount reserved, with its pricing provenance', async () => {
   const quote = await app.inject({ method: 'GET', url: '/api/v1/settings/estimate?model_id=clip_low&duration_seconds=15', headers: token() });
   assert.equal(quote.statusCode, 200);
-  const started = await start({ kind: 'video', model_id: 'clip_low', duration_seconds: 15 });
+  const started = await app.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/videos`, headers: { ...token(), 'idempotency-key': randomUUID() }, payload: { purpose: 'final', continuity: false, model_id: 'clip_low', duration_seconds: 15 } });
   assert.equal(started.statusCode, 202, started.body);
   const l = await ledgerOf(started.json().id);
   assert.equal(l.estimatedPence, quote.json().pence);

@@ -78,6 +78,48 @@
       "when": 1790535548269,
       "tag": "0010_shot-cast-saved",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790928457579,
+      "tag": "0011_scene-camera-movement",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790931045968,
+      "tag": "0012_credit-top-ups",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790931047381,
+      "tag": "0013_starting-pot",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790931061428,
+      "tag": "0014_drop-monthly-budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790932000245,
+      "tag": "0015_starting-pot-correction",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790956631676,
+      "tag": "0016_cartoon-setting",
+      "breakpoints": true
     }
   ]
 }

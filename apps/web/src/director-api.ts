@@ -43,15 +43,18 @@ export interface ModelInfo {
 }
 
 export interface Allowance {
+  /** The pre-paid pot: what is left to spend until a grown-up adds more. */
+  pot_pence: number;
+  topped_up_pence: number;
+  spent_all_time_pence: number;
   daily_budget_pence: number;
-  monthly_budget_pence: number;
   spent_today_pence: number;
-  spent_this_month_pence: number;
   remaining_today_pence: number;
-  remaining_this_month_pence: number;
   resets_at: string;
   currency: string;
 }
+
+export interface TopUp { id: string; pence: number; note: string; added_by: string | null; created_at: string }
 
 export interface GenerationSettings {
   enabled: boolean;
@@ -124,6 +127,8 @@ export interface Job {
   intent?: 'draft' | 'final' | null;
   parent_job_id?: string | null;
   source_scene_version?: number | null;
+  /** Characters were in the scene but no pictures of them were sent. */
+  words_only?: boolean;
   attempt: number;
   error: string | null;
   results: Asset[];
@@ -257,9 +262,32 @@ export interface VideoPlan {
   generated_seconds: number;
   characters: { character_id: string; name: string; look_version: number | null }[];
   reference_count: number;
+  /** Characters are in the scene but this clip sends no pictures of them. */
+  words_only: boolean;
   new_render: boolean;
   native_completion: 'unavailable';
   estimate_only: boolean;
+}
+
+/** The cartoon's one look (docs/video-optimisation-plan.md §7.1). */
+export interface CartoonStyle {
+  art_style: string;
+  chosen: boolean;
+  /** Where the cartoon happens, in the child's words; '' until chosen. */
+  setting: string;
+  scenes_with_own_style: { scene_id: string; scene_number: number; art_style: string | null }[];
+}
+
+/** Does every scene match? Warnings are written for the child. */
+export interface Continuity {
+  art_style: string;
+  style_chosen: boolean;
+  scenes: {
+    scene_id: string; scene_number: number; title: string; art_style: string | null; own_style: boolean;
+    characters: { character_id: string; name: string; saved: boolean; look_id: string | null; look_version: number | null; current_look_id: string | null }[];
+    clip: { job_id: string; intent: string | null; words_only: boolean; family: string; model_id?: string; seed?: number | null } | null;
+  }[];
+  warnings: { kind: 'scene_style' | 'mixed_looks' | 'look_style' | 'words_only' | 'mixed_makers'; detail: string; scene_ids: string[] }[];
 }
 
 /** What a 422 "choose something first" carries, so the screen can offer the next step. */
@@ -326,6 +354,8 @@ export interface Timeline {
   music: { asset: Asset; volume: number; fade_in_ms: number; fade_out_ms: number } | null;
   voiceovers: Voiceover[];
   render: Asset | null;
+  /** True: the file matches the pages. False: something changed since. Null: no file, or an older file that did not record its inputs. */
+  render_current: boolean | null;
   renders: Asset[];
   render_job: Job | null;
 }
@@ -381,7 +411,10 @@ export const director = {
 
   accounts: () => request<{ data: AccountBudget[] }>('/accounts'),
   accountJobs: (accountId: string) => request<{ data: LoggedJob[] }>(`/accounts/${accountId}/jobs`),
-  setBudget: (accountId: string, body: { daily_budget_pence?: number; monthly_budget_pence?: number }) =>
+  topUps: (accountId: string) => request<{ data: TopUp[] }>(`/accounts/${accountId}/top-ups`),
+  addTopUp: (accountId: string, body: { pence: number; note?: string }) =>
+    request<TopUp & { allowance: Allowance }>(`/accounts/${accountId}/top-ups`, { method: 'POST', body: JSON.stringify(body) }),
+  setBudget: (accountId: string, body: { daily_budget_pence?: number }) =>
     request<AccountBudget>(`/accounts/${accountId}/budget`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Cast (D39)
@@ -412,6 +445,17 @@ export const director = {
   drawCharacter: (characterId: string, body: StudioJobBody, requestId: string) =>
     request<Job>(`/characters/${characterId}/jobs`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
 
+  // One look per cartoon, and the same characters in every scene
+  cartoonStyle: (projectId: string) => request<CartoonStyle>(`/projects/${projectId}/style`),
+  setCartoonStyle: (projectId: string, artStyle: string, keepSceneStyles = false) =>
+    request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ art_style: artStyle, keep_scene_styles: keepSceneStyles }) }),
+  setCartoonSetting: (projectId: string, setting: string) =>
+    request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ setting }) }),
+  continuity: (projectId: string) => request<Continuity>(`/projects/${projectId}/continuity`),
+  lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
+  useLookEverywhere: (characterId: string, lookId: string) =>
+    request<{ scenes_updated: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`, { method: 'POST' }),
+
   // Characters in a scene, starting pictures and production clips
   shotCast: (shotId: string) => request<ShotCast>(`/shots/${shotId}/cast`),
   saveShotCast: (shotId: string, characters: { character_id: string; look?: 'current' | 'none' | string; outfit_label?: string | null }[], version: number) =>
@@ -421,7 +465,7 @@ export const director = {
     request<Shot>(`/shots/${shotId}/frames`, { method: 'PUT', body: JSON.stringify(body), headers: { 'If-Match': String(version) } }),
   quoteVideo: (shotId: string, body: VideoBody) => request<VideoPlan>(`/shots/${shotId}/videos/quote`, { method: 'POST', body: JSON.stringify(body) }),
   startVideo: (shotId: string, body: VideoBody, requestId: string) =>
-    request<Job & { plan: VideoPlan | null }>(`/shots/${shotId}/videos`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
+    request<Job & { plan: VideoPlan | null; shot: Shot | null }>(`/shots/${shotId}/videos`, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': requestId } }),
 
   // Timeline (D36, D40)
   timeline: (projectId: string) => request<Timeline>(`/projects/${projectId}/timeline`),

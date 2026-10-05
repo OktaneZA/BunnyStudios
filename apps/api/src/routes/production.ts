@@ -19,20 +19,21 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { promptBudget, TEMPLATE_VERSION } from '@storyboard/compiler';
-import { CLIP_LENGTHS, durationOptions, quoteGeneration, type VideoModelDefinition, type VideoTask } from '@storyboard/models';
+import { compileVideoShot, promptBudget, TEMPLATE_VERSION, VIDEO_TEMPLATE_VERSION } from '@storyboard/compiler';
+import { CLIP_LENGTHS, durationOptions, quoteGeneration, type GenerationModel, type VideoModelDefinition, type VideoTask } from '@storyboard/models';
 import { db, schema } from '../db/client.ts';
 import { ApiError, ProblemType } from '../errors.ts';
-import { pence, reserve, type Tx } from '../generation/budget.ts';
+import { pence, type Tx } from '../generation/budget.ts';
 import { isGated } from '../generation/catalogue.ts';
 import { validateUpload } from '../storage/uploads.ts';
 import { assetHash, usableForLook } from '../cast/looks.ts';
-import { ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
+import { compileInput, ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
 import { buildManifest, saveShotCast, shotCast, type ShotCastEntry } from '../shots/cast.ts';
 import { CREATIVE_SNAPSHOT_VERSION, type CreativeVideoSnapshot } from '../video/creativeVideoRequest.ts';
 import { ADAPTER_VERSION, promptWithReferenceTokens } from '../video/adapters/catalogue.ts';
 import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './director.ts';
 import type { JobRequest } from '../jobs/runner.ts';
+import { createJob } from '../jobs/create.ts';
 
 const idParam = z.object({ id: z.string().uuid() });
 type Asset = typeof schema.assets.$inferSelect;
@@ -68,6 +69,17 @@ const videoBody = z.object({
   note: z.string().trim().max(300).optional(),
 });
 type VideoBody = z.infer<typeof videoBody>;
+
+const TIER_RANK = { high: 3, medium: 2, low: 1 } as const;
+
+/** What a final would use: a recommended maker first, else the highest cost level, else catalogue order. */
+function finalPick(candidates: VideoModelDefinition[]): VideoModelDefinition | undefined {
+  return candidates.find((m) => m.video?.categories.includes('recommended'))
+    ?? [...candidates].sort((a, b) => (TIER_RANK[b.tier ?? 'low'] ?? 0) - (TIER_RANK[a.tier ?? 'low'] ?? 0))[0];
+}
+
+/** The family a maker belongs to; a maker without one is its own family. */
+const familyOf = (m: GenerationModel) => m.video?.family ?? m.id;
 
 /** Is this picture allowed to start or end a clip? Production pictures only, never a sketch (CR-06). */
 function frameUsable(asset: Asset, projectId: string, constrained: boolean): boolean {
@@ -216,17 +228,17 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       task = body.use_start_frame ? 'image-to-video' : body.continuity ? 'reference-to-video' : 'text-to-video';
       if (body.use_start_frame) startFrame = await frameBinding(database, accountId, shot.startFrameAssetId, scene.projectId, constrained, 'start');
       if (body.use_end_frame) endFrame = await frameBinding(database, accountId, shot.endFrameAssetId, scene.projectId, constrained, 'end');
-      if (body.continuity || body.use_start_frame) {
-        cast = await shotCast(database, accountId, shot, scene);
-        // CR-01: production follows the saved choice. A story proposal must be looked at first.
-        if (body.continuity && !shot.castSaved) throw needs('Check who is in this scene first.', { missing: 'cast', proposed: cast.map((e) => ({ character_id: e.character.id, name: e.character.name })) });
-      }
+      // CR-01 keeps production on a saved list. An unsaved scene uses the story's proposal with each
+      // character's current look, and making the clip saves exactly that list (§6.2, V2). The cast is
+      // recorded on every clip, so a clip made from the words only can say so.
+      cast = await shotCast(database, accountId, shot, scene);
     }
 
     // Candidate endpoints for this task, before references are counted.
-    const nativeSeconds = body.duration_seconds ?? base?.output.durationSeconds;
+    const parentRequest = parent?.request as JobRequest | null | undefined;
+    const nativeSeconds = body.duration_seconds ?? base?.output.durationSeconds ?? parentRequest?.durationSeconds ?? undefined;
     if (!nativeSeconds) throw ApiError.validation('Choose how long the clip should be.');
-    const requestedAudio = body.audio ?? base?.output.audio ?? false;
+    const requestedAudio = body.audio ?? base?.output.audio ?? parentRequest?.audio ?? false;
     const requestedAspect = base?.output.aspectRatio ?? ((await isConstrained(database as typeof db, accountId, scene.projectId)).aspectRatio as '16:9' | '9:16' | '1:1');
     const requirements = {
       task, startFrame: Boolean(startFrame), endFrame: Boolean(endFrame), audio: requestedAudio, aspectRatio: requestedAspect,
@@ -250,7 +262,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
         if (candidates.length) break;
       }
     } else if (!base) {
-      // A starting picture carries the look; the cast is still recorded for lineage, with no references sent.
+      // A starting picture carries the look, and words only sends none; the cast is still recorded for lineage.
       manifest = { characters: buildManifest(cast, 1).characters, references: [], missingLooks: [] };
     }
     if (!candidates.length) candidates = catalogue.videoModels({ ...requirements, ...(manifest ? { referenceImageCount: manifest.references.length } : {}) }, advanced);
@@ -258,6 +270,19 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     // Simple lengths: text-to-video may be planned as joined parts (disclosed); frame/reference tasks are one native shot.
     if (task === 'text-to-video') candidates = candidates.filter((m) => CLIP_LENGTHS.includes(nativeSeconds) || durationOptions(m).includes(nativeSeconds));
     if (body.resolution) candidates = candidates.filter((m) => m.resolutions.includes(body.resolution!));
+
+    // A final made from a recipe whose prompt already names pictures inline must keep the same token wording.
+    const baseModel = base ? catalogue.find(base!.modelId) : undefined;
+    if (base && !baseModel) throw needs('That clip’s maker is not available any more. Make it from the scene as it is now instead.', { can_use_latest: true });
+    if (base?.compilerVersion === VIDEO_TEMPLATE_VERSION && base.references.length) {
+      candidates = candidates.filter((m) => m.request_shape.reference_token_prefix === baseModel?.request_shape.reference_token_prefix);
+    }
+
+    const intent = body.purpose === 'preview' ? 'draft' as const : 'final' as const;
+    const parentModel = parent ? catalogue.find(parent!.modelId) : undefined;
+    const costAt = (m: VideoModelDefinition, resolution: string) =>
+      quoteGeneration(m, { durationSeconds: nativeSeconds, resolution, native: task !== 'text-to-video', referenceCount: manifest?.references.length ?? 0 }).pence;
+    const cheapestResolution = (m: VideoModelDefinition) => [...m.resolutions].sort((a, b) => costAt(m, a) - costAt(m, b))[0]!;
 
     let model: VideoModelDefinition | undefined;
     if (body.model_id) {
@@ -270,16 +295,20 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
           missing: 'compatible_model', compatible: candidates.map((m) => m.id), supported_durations: asked.kind === 'video' ? durationOptions(asked) : [],
         });
       }
-    } else {
-      // Recommendations, not guarantees: previews go to the cheapest fit; finals follow catalogue order,
-      // recommended first. "Recommended" never picks a pricier model without this fresh quote.
-      const priced = candidates.map((m) => ({ m, p: quoteGeneration(m, { durationSeconds: nativeSeconds, native: task !== 'text-to-video', referenceCount: manifest?.references.length ?? 0 }).pence }));
-      if (body.purpose === 'preview') model = priced.sort((a, b) => a.p - b.p)[0]?.m;
+    } else if (parentModel?.video?.family) {
+      // V4: a final (or another version) stays with the clip it came from: the same maker, else its family.
+      const family = candidates.filter((m) => familyOf(m) === familyOf(parentModel));
+      model = family.find((m) => m.id === parentModel.id) ?? finalPick(family);
+    }
+    if (!model && !body.model_id) {
+      // Recommendations, not guarantees. A final follows catalogue order, recommended first. A preview is
+      // the cheapest try of the family the final would use, so the final looks like the preview (§7.3);
+      // makers without a family (the original tiers) keep the cheapest fit overall.
+      const final = finalPick(candidates);
+      if (intent === 'final') model = final;
       else {
-        // A final: a recommended maker first, else the highest cost level, else catalogue order.
-        const rank = { high: 3, medium: 2, low: 1 } as const;
-        model = candidates.find((m) => m.video?.categories.includes('recommended'))
-          ?? [...candidates].sort((a, b) => (rank[b.tier ?? 'low'] ?? 0) - (rank[a.tier ?? 'low'] ?? 0))[0];
+        const pool = final?.video?.family ? candidates.filter((m) => familyOf(m) === familyOf(final)) : candidates;
+        model = [...pool].sort((a, b) => costAt(a, cheapestResolution(a)) - costAt(b, cheapestResolution(b)))[0];
       }
     }
     if (!model) {
@@ -294,27 +323,52 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       });
     }
 
-    const resolution = body.resolution ?? base?.output.resolution ?? model.resolutions[0]!;
+    // A preview is made at the maker's cheapest size, a final at its standard size; another version keeps its size.
+    const kept = base && base.intent === intent && model.resolutions.includes(base.output.resolution) ? base.output.resolution : null;
+    const resolution = body.resolution ?? kept ?? (intent === 'draft' ? cheapestResolution(model) : model.resolutions[0]!);
     if (!model.resolutions.includes(resolution)) throw needs('That size is not available for this clip maker.', { missing: 'resolution', resolutions: model.resolutions });
     const aspectRatio = requestedAspect;
     const audio = model.video?.audio_mode === 'always' || (requestedAudio && model.capabilities.audio);
     const native = task !== 'text-to-video';
     const references = manifest?.references ?? [];
+    // §5.1: the video template, compiled for this maker, with each character's picture tokens inline.
+    // A recorded recipe keeps its words; a locked prompt is used verbatim.
+    let compiled: { prompt: string; negativePrompt: string; compilerVersion: string };
+    if (base) compiled = { prompt: base.prompt, negativePrompt: base.negativePrompt, compilerVersion: base.compilerVersion };
+    else if (shot.promptLocked) compiled = { prompt: shot.compiledPrompt, negativePrompt: shot.compiledNegativePrompt, compilerVersion: TEMPLATE_VERSION };
+    else {
+      const prefix = model.request_shape.reference_token_prefix;
+      const characterTokens: { id: string; name: string; tokens: string[] }[] = [];
+      for (const r of prefix ? references : []) {
+        let entry = characterTokens.find((c) => c.id === r.characterId);
+        if (!entry) characterTokens.push(entry = { id: r.characterId, name: r.characterName, tokens: [] });
+        entry.tokens.push(`${prefix}${r.position + 1}`);
+      }
+      const video = compileVideoShot({
+        ...await compileInput(database, accountId, scene, shot),
+        video: { cameraMovement: scene.cameraMovement, characterTokens, styleToken: '', negative: model.request_shape.negative_prompt ? 'field' : 'fold', audio },
+      });
+      compiled = { prompt: video.prompt, negativePrompt: video.negativePrompt, compilerVersion: VIDEO_TEMPLATE_VERSION };
+    }
     // The note is part of this run's recipe, reviewed and length-checked with the rest (MB-06).
-    const prompt = [base?.prompt ?? shot.compiledPrompt, body.note ?? ''].filter((s) => s.trim()).join(' ');
+    const prompt = [compiled.prompt, body.note ?? ''].filter((s) => s.trim()).join(' ');
     if (!prompt.trim()) throw ApiError.validation('Write what happens in this scene first, in Story.');
-    // MB-06: the names the adapter adds count towards the limit and are reviewed with the prompt.
-    const sent = promptWithReferenceTokens(model, prompt, references.map((r) => r.characterName));
+    // MB-06: names an older recipe's adapter appends count towards the limit and are reviewed with the prompt.
+    const sent = compiled.compilerVersion === VIDEO_TEMPLATE_VERSION ? prompt : promptWithReferenceTokens(model, prompt, references.map((r) => r.characterName));
+    // V4: a final made from its preview on the same maker reuses the preview's seed; another version gets a new one.
+    const parentSeed = (parent?.providerResult as { seed?: unknown } | null)?.seed;
+    const seed = parent?.intent === 'draft' && intent === 'final' && parent.modelId === model.id && model.request_shape.seed && typeof parentSeed === 'number' ? parentSeed : null;
     const budget = promptBudget(sent, model.max_prompt_length);
     if (budget.over) throw ApiError.validation(`The scene description is too long for this clip maker. Shorten it in Story by about ${budget.length - budget.max} letters.`);
     const quote = quoteGeneration(model, { durationSeconds: nativeSeconds, resolution, native, referenceCount: references.length });
 
     const snapshot: CreativeVideoSnapshot = {
-      schemaVersion: CREATIVE_SNAPSHOT_VERSION, shotId: shot.id, task, intent: body.purpose === 'preview' ? 'draft' : 'final',
+      schemaVersion: CREATIVE_SNAPSHOT_VERSION, shotId: shot.id, task, intent,
       ...(base ? (base.sceneVersion === undefined ? {} : { sceneVersion: base.sceneVersion }) : { sceneVersion: scene.version }),
-      prompt, negativePrompt: base?.negativePrompt ?? shot.compiledNegativePrompt, compilerVersion: base?.compilerVersion ?? TEMPLATE_VERSION,
+      prompt, negativePrompt: compiled.negativePrompt, compilerVersion: compiled.compilerVersion,
       startFrame, endFrame, references, characters: manifest?.characters ?? [],
       output: { durationSeconds: nativeSeconds, resolution, aspectRatio, audio },
+      cameraMovement: base ? base.cameraMovement ?? null : scene.cameraMovement, seed,
       modelId: model.id, adapterVersion: ADAPTER_VERSION, quotePence: quote.pence,
     };
     const jobRequest: JobRequest = {
@@ -329,6 +383,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       newRender: Boolean(parent),
       parts: native ? [nativeSeconds] : quote.parts,
       gated: isGated(model),
+      // §6.2: an unsaved scene's proposal is what this clip uses; making it saves that list.
+      saveCast: !base && body.continuity && !shot.castSaved ? cast : null,
     };
   }
 
@@ -343,6 +399,8 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       parts: p.parts, generated_seconds: generated,
       characters: p.snapshot.characters.map((c) => ({ character_id: c.characterId, name: c.name, look_version: c.visualVersion })),
       reference_count: p.snapshot.references.length,
+      // Said plainly on the screen: characters are in the scene but no pictures of them are sent.
+      words_only: p.snapshot.task !== 'image-to-video' && p.snapshot.characters.length > 0 && p.snapshot.references.length === 0,
       new_render: p.newRender,
       // Native completion of a provider draft is not offered until its endpoint and price are wired (DF-03).
       native_completion: 'unavailable' as const,
@@ -369,11 +427,7 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     const { id } = idParam.parse(request.params);
     const body = videoBody.parse(request.body);
     const requestKey = z.string().uuid().parse(request.headers['idempotency-key']);
-    const created = await db.transaction(async (tx) => {
-      // The account row lock serialises spending (MB-03); the idempotency key makes a double tap one job (DF-05).
-      await tx.select({ id: schema.accounts.id }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId)).for('update');
-      const [previous] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.accountId, request.accountId), eq(schema.generationJobs.requestKey, requestKey)));
-      if (previous) return { job: previous, fresh: false, planned: null };
+    const created = await createJob({ accountId: request.accountId, requestKey, runner, log: request.log }, async (tx) => {
       const c = await context(tx, request.accountId, id, true);
       if (c.constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so clips cannot be made on this account yet. Ask a grown-up.');
       const p = await plan(tx, request.accountId, c.shot, c.scene, body, c.advanced, c.constrained);
@@ -381,16 +435,24 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
       if (body.expected_quote_key && body.expected_quote_key !== presented.quote_key) {
         throw ApiError.conflict('The clip or its price changed. Check the new quote before making it.', presented);
       }
-      const [job] = await tx.insert(schema.generationJobs).values({
-        accountId: request.accountId, projectId: c.scene.projectId, requestKey, kind: 'video', targetEntityType: 'shot', targetEntityId: c.shot.id,
-        modelId: p.model.id, provider: p.model.provider, request: p.jobRequest, task: p.snapshot.task, intent: p.snapshot.intent,
-        snapshotVersion: CREATIVE_SNAPSHOT_VERSION, generationGroupId: p.parent?.generationGroupId ?? randomUUID(), parentJobId: p.parent?.id ?? null,
-      }).returning();
-      await reserve(tx, { accountId: request.accountId, projectId: c.scene.projectId, jobId: job!.id, model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length });
-      return { job: job!, fresh: true, planned: presented };
+      if (p.saveCast) {
+        const saved = await saveShotCast(tx, request.accountId, c.shot.id, c.scene.projectId, p.saveCast.map((e) => ({ characterId: e.character.id, look: e.look?.id ?? 'none', outfitLabel: e.binding?.outfitLabel ?? null })));
+        if (!('ok' in saved)) throw ApiError.conflict('The characters in this scene changed. Check the new quote before making it.', presented);
+        await tx.update(schema.shots).set({ version: c.shot.version + 1, updatedAt: new Date() }).where(eq(schema.shots.id, c.shot.id));
+      }
+      return {
+        values: {
+          projectId: c.scene.projectId, kind: 'video', targetEntityType: 'shot', targetEntityId: c.shot.id,
+          modelId: p.model.id, provider: p.model.provider, request: p.jobRequest, task: p.snapshot.task, intent: p.snapshot.intent,
+          snapshotVersion: CREATIVE_SNAPSHOT_VERSION, generationGroupId: p.parent?.generationGroupId ?? randomUUID(), parentJobId: p.parent?.id ?? null,
+        },
+        reserve: { model: p.model, durationSeconds: p.snapshot.output.durationSeconds, resolution: p.snapshot.output.resolution, native: p.jobRequest.native ?? false, referenceCount: p.snapshot.references.length },
+        extra: presented,
+      };
     });
-    if (created.fresh) void runner.tick().catch(() => {});
     reply.header('Cache-Control', 'no-store');
-    return reply.code(created.fresh ? 202 : 200).send({ ...presentJob(created.job, [], true), plan: created.planned });
+    // The shot's version moves when the cast is saved with the clip; the screen needs the new one.
+    const [shot] = await db.select().from(schema.shots).where(and(eq(schema.shots.id, created.job.targetEntityId), eq(schema.shots.accountId, request.accountId)));
+    return reply.code(created.fresh ? 202 : 200).send({ ...presentJob(created.job, [], true), plan: created.extra, shot: shot ? presentShot(shot) : null });
   });
 }

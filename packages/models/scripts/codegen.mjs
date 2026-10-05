@@ -79,6 +79,48 @@ for (const m of doc.models) {
   }
 }
 
+// The catalogue against fal's own input schemas (fal-schemas.json, refreshed by
+// scripts/fal-schemas.mjs). Offline: a wrong field name, an unsupported length or size, or a
+// provider prompt rewriter left on fails here rather than on a paid request.
+const REWRITERS = { prompt_optimizer: false, enable_prompt_expansion: false, prompt_expansion_mode: 'disabled', auto_fix: false };
+const MAPPED = ['prompt', 'negative_prompt', 'count', 'reference_images', 'start_frame', 'end_frame', 'duration', 'aspect_ratio', 'audio', 'resolution', 'safety', 'seed', 'camera_motion'];
+let schemas = {};
+try { schemas = JSON.parse(readFileSync(join(root, 'fal-schemas.json'), 'utf8')).endpoints; } catch { errors.push('fal-schemas.json is missing: run npm run schemas:refresh -w @storyboard/models'); }
+for (const m of doc.models.filter((x) => x.provider === 'fal')) {
+  const at = `models.${m.id}`;
+  const schema = schemas[m.provider_model];
+  if (!schema) { if (Object.keys(schemas).length) errors.push(`${at}: ${m.provider_model} is not in fal-schemas.json (run npm run schemas:refresh -w @storyboard/models)`); continue; }
+  const s = m.request_shape;
+  for (const key of MAPPED) if (s[key] && !schema.fields[s[key]]) errors.push(`${at}: request_shape.${key} "${s[key]}" is not an input of ${m.provider_model}`);
+  for (const key of Object.keys(s.defaults ?? {})) if (!schema.fields[key]) errors.push(`${at}: default "${key}" is not an input of ${m.provider_model}`);
+  for (const [field, off] of Object.entries(REWRITERS)) {
+    if (schema.fields[field] && s.defaults?.[field] !== off) errors.push(`${at}: ${field} rewrites the reviewed prompt; set request_shape.defaults.${field} to ${JSON.stringify(off)}`);
+  }
+  for (const field of schema.required) {
+    if (!Object.values(s).includes(field) && !(field in (s.defaults ?? {}))) errors.push(`${at}: ${m.provider_model} requires "${field}", which nothing sends`);
+  }
+  const allowed = (field) => schema.fields[field]?.enum?.map(String);
+  if (m.kind === 'video' && s.duration && allowed(s.duration) && m.duration_seconds) {
+    const d = m.duration_seconds;
+    for (let n = d.min; n <= d.max; n += d.step) {
+      const sent = s.duration_format === 'string_seconds_suffix' ? `${n}s` : String(n);
+      if (!allowed(s.duration).includes(sent)) errors.push(`${at}: ${m.provider_model} cannot make ${n} seconds`);
+    }
+  }
+  if (s.resolution && allowed(s.resolution)) for (const r of m.resolutions) if (!allowed(s.resolution).includes(r)) errors.push(`${at}: ${m.provider_model} has no resolution "${r}"`);
+  if (s.aspect_ratio && allowed(s.aspect_ratio) && s.aspect_ratio_format !== 'flux_size') {
+    for (const a of m.aspect_ratios) if (!allowed(s.aspect_ratio).includes(a)) errors.push(`${at}: ${m.provider_model} has no aspect ratio "${a}"`);
+  }
+  const motion = s.camera_motion && allowed(s.camera_motion);
+  for (const [move, value] of Object.entries(m.video?.camera_motion_map ?? {})) {
+    if (!motion || !motion.includes(value)) errors.push(`${at}: camera_motion_map.${move} "${value}" is not a camera_motion of ${m.provider_model}`);
+  }
+  const cap = s.reference_images && schema.fields[s.reference_images]?.max_items;
+  if (cap && m.max_reference_images > cap) errors.push(`${at}: ${m.provider_model} takes at most ${cap} reference pictures`);
+  const longest = schema.fields[s.prompt]?.max_length;
+  if (longest && m.max_prompt_length > longest) errors.push(`${at}: ${m.provider_model} takes prompts up to ${longest} characters`);
+}
+
 if (errors.length > 0) {
   console.error(`models.json failed validation (${errors.length} problem(s)):`);
   for (const e of errors) console.error(`  - ${e}`);

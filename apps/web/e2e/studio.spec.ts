@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { accounts, acceptNextConfirm, addScene, boardTitles, createCartoon, dragHandle, signIn, unique } from './helpers';
+import { accounts, acceptNextConfirm, addScene, boardTitles, createCartoon, dragHandle, openManageScenes, signIn, unique } from './helpers';
 
 test.describe('sign in', () => {
   test('the origin is insecure, like the NAS, and the page still loads', async ({ page }) => {
@@ -32,6 +32,7 @@ test.describe('cartoons and scenes', () => {
     await signIn(page, 'teen');
     const title = unique('E2E cartoon');
     await createCartoon(page, title);
+    await openManageScenes(page);
     await addScene(page, 'Morning');
     await addScene(page, 'Lunch');
     await addScene(page, 'Night');
@@ -51,6 +52,7 @@ test.describe('cartoons and scenes', () => {
   test('a scene is edited and saved with its version, and survives a reload', async ({ page }) => {
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E edit'));
+    await openManageScenes(page);
     await addScene(page, 'Beach');
     await page.getByRole('link', { name: 'Open scene 1: Beach' }).click();
     // Camera, time and mood live in a collapsed section in Simple mode.
@@ -69,6 +71,7 @@ test.describe('cartoons and scenes', () => {
   test('deleting a scene moves it to the bin and "Put back" returns it at the end', async ({ page }) => {
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E scene bin'));
+    await openManageScenes(page);
     await addScene(page, 'One');
     await addScene(page, 'Two');
     await addScene(page, 'Three');
@@ -85,6 +88,7 @@ test.describe('cartoons and scenes', () => {
     await signIn(page, 'teen');
     const title = unique('E2E cartoon bin');
     await createCartoon(page, title);
+    await openManageScenes(page);
     await addScene(page, 'Kept');
     acceptNextConfirm(page);
     await page.getByRole('button', { name: 'Delete this cartoon' }).click();
@@ -96,9 +100,7 @@ test.describe('cartoons and scenes', () => {
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
     await page.getByRole('heading', { name: title }).click();
     await expect(page).toHaveURL(/\/director$/);
-    await page.getByText('View', { exact: true }).click();
-    await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
-    await expect.poll(() => boardTitles(page)).toEqual(['Kept']);
+    await expect.poll(() => page.locator('.page-index .index-title').allInnerTexts()).toEqual(['Kept']);
   });
 
   test('cartoons are private to the account that made them', async ({ page }) => {
@@ -134,6 +136,7 @@ test.describe('AI', () => {
   test('when AI is not configured the scene page says so in plain words', async ({ page }) => {
     await signIn(page, 'teen');
     await createCartoon(page, unique('E2E ai'));
+    await openManageScenes(page);
     await addScene(page, 'Sketch me');
     await page.getByRole('link', { name: 'Open scene 1: Sketch me' }).click();
     const settings = await page.request.get('/api/v1/settings/ai', {

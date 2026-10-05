@@ -1,0 +1,2 @@
+CREATE TYPE "public"."camera_movement" AS ENUM('static', 'pan_left', 'pan_right', 'tilt_up', 'tilt_down', 'dolly_in', 'dolly_out', 'truck_left', 'truck_right', 'crane_up', 'crane_down', 'handheld', 'zoom_in', 'zoom_out');--> statement-breakpoint
+ALTER TABLE "scenes" ADD COLUMN "camera_movement" "camera_movement";

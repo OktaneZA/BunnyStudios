@@ -41,6 +41,7 @@ export const depthOfFieldEnum = pgEnum('depth_of_field', enumValues('depth_of_fi
 export const lightingPresetEnum = pgEnum('lighting_preset', enumValues('lighting_preset'));
 export const timeOfDayEnum = pgEnum('time_of_day', enumValues('time_of_day'));
 export const moodAtmosphereEnum = pgEnum('mood_atmosphere', enumValues('mood_atmosphere'));
+export const cameraMovementEnum = pgEnum('camera_movement', enumValues('camera_movement'));
 
 // ── Structural enums (§3) ───────────────────────────────────────────────────
 export const authProviderEnum = pgEnum('auth_provider', ['email_password', 'google', 'apple']);
@@ -145,10 +146,11 @@ export const accounts = pgTable('accounts', {
    * in two taps. Not a preference — a property of who is generating.
    */
   isMinor: boolean('is_minor').notNull().default(false),
-  aiCreditBalance: integer('ai_credit_balance').notNull().default(0),
-  /** Plan D31: caps in pence, set by the adult account; the teen sees them as "about N pictures". */
+  /**
+   * Plan D31: the daily cap in pence, set by the adult account; the teen sees it as "about N
+   * pictures". The long-run limit is the pre-paid pot (credit_top_ups), not a monthly cap.
+   */
   dailyBudgetPence: integer('daily_budget_pence').notNull().default(200),
-  monthlyBudgetPence: integer('monthly_budget_pence').notNull().default(2000),
   currency: varchar('currency', { length: 3 }).notNull().default('GBP'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
@@ -190,6 +192,8 @@ export const seriesBibles = pgTable('series_bibles', {
   projectId: uuid('project_id').notNull().unique()
     .references(() => projects.id, { onDelete: 'cascade' }),
   artStyle: text('art_style').notNull().default(''),
+  /** Where the cartoon happens, in the child's words ("a sunny beach by the sea"). Every scene without its own location uses it. */
+  defaultSetting: text('default_setting').notNull().default(''),
   styleReferenceAssetIds: uuid('style_reference_asset_ids').array().notNull().default([]),
   /** [{name, hex, role}] — role ∈ primary|secondary|accent|shadow|highlight */
   colourPalette: jsonb('colour_palette').notNull().default([]),
@@ -413,6 +417,8 @@ export const scenes = pgTable(
     /** Unified scene-writing field; null reads the legacy fields without losing their text. */
     description: text('description'),
     cameraAngle: cameraAngleEnum('camera_angle'),
+    /** §4.3, video template only (docs/video-optimisation-plan.md V5). Null: the clip maker decides. */
+    cameraMovement: cameraMovementEnum('camera_movement'),
     emotionalBeat: text('emotional_beat').notNull().default(''),
     synopsis: text('synopsis').notNull().default(''),
     actionDescription: text('action_description').notNull().default(''),
@@ -724,6 +730,25 @@ export const generationJobs = pgTable(
     index('generation_jobs_status_idx').on(t.status, t.createdAt),
     index('generation_jobs_target_idx').on(t.targetEntityType, t.targetEntityId),
   ],
+);
+
+/**
+ * Pre-paid picture money. An adult adds money to an account's pot; every generation reserves
+ * from it through the ledger. The pot is never stored as a running number: it is the sum of
+ * top-ups minus everything the ledger still counts, so it cannot drift.
+ */
+export const creditTopUps = pgTable(
+  'credit_top_ups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+    /** The adult who added it; null for the starting pot created by a migration. */
+    addedByAccountId: uuid('added_by_account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    pence: integer('pence').notNull(),
+    note: text('note').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('credit_top_ups_account_idx').on(t.accountId, t.createdAt)],
 );
 
 /** Plan D31: real money per generation, reserved before submit, settled or refunded after. */

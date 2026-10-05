@@ -53,7 +53,9 @@ before(async () => {
     testVideo = await readFile(out);
     await rm(dir, { recursive: true, force: true });
   }
-  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `director-test-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, defaultEditorMode: i ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 1000, monthlyBudgetPence: 10_000 })));
+  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `director-test-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, defaultEditorMode: i ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 1000 })));
+  // Pre-paid: every test account starts with a pot.
+  await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 10000, note: 'test' })));
 });
 beforeEach(async () => {
   rejectPromptsContaining = ''; rejectEveryImage = false; reviewCalls = []; provider.submitted.length = 0;
@@ -80,6 +82,10 @@ async function startJob(shotId: string, payload: Record<string, unknown>, accoun
   const r = await app.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/jobs`, headers: { ...token(account), 'idempotency-key': key }, payload });
   return r;
 }
+/** A clip, the way the Create screen makes one: through the production route. */
+async function startClip(shotId: string, payload: Record<string, unknown>, account = 0, key = randomUUID()) {
+  return app.inject({ method: 'POST', url: `/api/v1/shots/${shotId}/videos`, headers: { ...token(account), 'idempotency-key': key }, payload: { purpose: 'final', continuity: false, ...payload } });
+}
 async function job(id: string, account = 0) {
   const r = await app.inject({ method: 'GET', url: `/api/v1/jobs/${id}`, headers: token(account) });
   assert.equal(r.statusCode, 200, r.body);
@@ -101,7 +107,7 @@ test('a joined clip resumes after a transient second-part failure without buying
   provider.download = async (file) => (await makeTestClip((file.durationMs ?? 5000) / 1000))!;
   try {
     const shot = await shotFor(sceneIds[0]!);
-    const started = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 15 });
+    const started = await startClip(shot.id, { model_id: 'clip_low', duration_seconds: 15 });
     assert.equal(started.statusCode, 202, started.body);
     await runner.drain();
     const done = await job(started.json().id);
@@ -200,9 +206,11 @@ test('the hero pick is the accept; the media bin lists takes; the timeline picks
 
 test('a clip is made straight from the scene and drops into the story order by itself (DM-18, D35)', async () => {
   const shot = await shotFor(sceneIds[0]!);
-  const badDuration = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 7 });
+  const badDuration = await startClip(shot.id, { model_id: 'clip_low', duration_seconds: 7 });
   assert.equal(badDuration.statusCode, 422);
-  const clip = await startJob(shot.id, { kind: 'video', model_id: 'clip_high', duration_seconds: 6, audio: true });
+  const retired = await startJob(shot.id, { kind: 'video', model_id: 'clip_high', duration_seconds: 6 });
+  assert.equal(retired.statusCode, 422, 'clips are no longer made through the picture route');
+  const clip = await startClip(shot.id, { model_id: 'clip_high', duration_seconds: 6, audio: true });
   assert.equal(clip.statusCode, 202, clip.body);
   await runner.drain();
   const done = await job(clip.json().id);
@@ -227,7 +235,7 @@ test('a clip is made straight from the scene and drops into the story order by i
     assert.equal(timeline.items[0].source, 'video');
     assert.equal(timeline.items[0].asset.id, asset!.id);
     // A second clip does not replace the one already in the cartoon; the child picks.
-    const again = await startJob(shot.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 5 });
+    const again = await startClip(shot.id, { model_id: 'clip_low', duration_seconds: 5 });
     await runner.drain();
     const second = await job(again.json().id);
     assert.equal((await shotFor(sceneIds[0]!)).hero_video_asset_id, asset!.id);
@@ -242,19 +250,20 @@ test('a clip is made straight from the scene and drops into the story order by i
   assert.equal(rows[0]!.estimatedPence, 120);
 });
 
-test('an image-to-video model (Advanced) still needs a picked picture and starts from it', async () => {
+test('a clip from a starting picture needs one chosen first, then starts from it', async () => {
   const shot = await shotFor(sceneIds[1]!);
-  const noHero = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 });
-  assert.equal(noHero.statusCode, 422);
-  assert.match(noHero.json().detail, /needs a picture to start from/);
+  const noFrame = await startClip(shot.id, { model_id: 'move_maker', duration_seconds: 5, use_start_frame: true });
+  assert.equal(noFrame.statusCode, 422);
+  assert.match(noFrame.json().detail, /Choose a starting picture/);
   const picture = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture' });
   await runner.drain();
   const takes = await job(picture.json().id);
-  await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: takes.results[0].id } });
-  const clip = await startJob(shot.id, { kind: 'video', model_id: 'move_maker', duration_seconds: 5 });
+  const framed = await app.inject({ method: 'PUT', url: `/api/v1/shots/${shot.id}/frames`, headers: { ...token(), 'if-match': String((await shotFor(sceneIds[1]!)).version) }, payload: { start_asset_id: takes.results[0].id } });
+  assert.equal(framed.statusCode, 200, framed.body);
+  const clip = await startClip(shot.id, { model_id: 'move_maker', duration_seconds: 5, use_start_frame: true });
   assert.equal(clip.statusCode, 202, clip.body);
   await runner.drain();
-  assert.ok(provider.submitted.at(-1)!.startFrame, 'the clip starts from the picked picture');
+  assert.ok(provider.submitted.at(-1)!.startFrame, 'the clip starts from the chosen picture');
 });
 
 test('the daily cap is checked inside the reservation and says when it resets (DM-26)', async () => {
@@ -421,7 +430,7 @@ test('make my cartoon: the render job runs, or explains that ffmpeg is missing (
   await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/hero`, headers: token(), payload: { asset_id: done.results[0].id } });
   // A silent clip on scene 2 joins a still on scene 1: both item kinds and the silent-audio path.
   const second = await shotFor(sceneIds[1]!);
-  await startJob(second.id, { kind: 'video', model_id: 'clip_low', duration_seconds: 5 });
+  await startClip(second.id, { model_id: 'clip_low', duration_seconds: 5 });
   await runner.drain();
   const render = await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/timeline/render`, headers: { ...token(), 'idempotency-key': randomUUID() } });
   assert.equal(render.statusCode, 202, render.body);
@@ -438,14 +447,59 @@ test('make my cartoon: the render job runs, or explains that ffmpeg is missing (
   }
 });
 
-test('adults can set the teen budget; the teen cannot see the page', async () => {
+test('adults can set the teen budget and add to the pot; the teen cannot see the page', async () => {
   const list = await app.inject({ method: 'GET', url: '/api/v1/accounts', headers: token(1) });
   assert.equal(list.statusCode, 200);
   const set = await app.inject({ method: 'PATCH', url: `/api/v1/accounts/${ids[0]}/budget`, headers: token(1), payload: { daily_budget_pence: 250 } });
   assert.equal(set.json().allowance.daily_budget_pence, 250);
-  assert.equal((await app.inject({ method: 'GET', url: '/api/v1/accounts', headers: token() })).statusCode, 404);
+  assert.equal('monthly_budget_pence' in set.json().allowance, false, 'the monthly cap is gone; the pot is the long-run limit');
+  const before = set.json().allowance.pot_pence;
+  const added = await app.inject({ method: 'POST', url: `/api/v1/accounts/${ids[0]}/top-ups`, headers: token(1), payload: { pence: 500, note: 'Birthday' } });
+  assert.equal(added.statusCode, 201, added.body);
+  assert.equal(added.json().allowance.pot_pence, before + 500);
+  const history = await app.inject({ method: 'GET', url: `/api/v1/accounts/${ids[0]}/top-ups`, headers: token(1) });
+  assert.deepEqual(history.json().data[0], { ...history.json().data[0], pence: 500, note: 'Birthday', added_by: 'Adult' });
+  for (const [method, url, payload] of [['GET', '/api/v1/accounts'], ['POST', `/api/v1/accounts/${ids[0]}/top-ups`, { pence: 500 }], ['GET', `/api/v1/accounts/${ids[0]}/top-ups`]] as const) {
+    assert.equal((await app.inject({ method, url, headers: token(), ...(payload ? { payload } : {}) })).statusCode, 404, `${method} ${url} is hidden from the teen`);
+  }
+  assert.equal((await app.inject({ method: 'POST', url: `/api/v1/accounts/${ids[0]}/top-ups`, headers: token(1), payload: { pence: 0 } })).statusCode, 422);
   await db.update(schema.accounts).set({ dailyBudgetPence: 1000 }).where(eq(schema.accounts.id, ids[0]!));
   await db.delete(schema.generationLedger).where(and(eq(schema.generationLedger.accountId, ids[0]!)));
+});
+
+test('the pot is checked before the day: an empty pot says to ask a grown-up, a refund goes back into it', async () => {
+  const pot = async () => (await app.inject({ method: 'GET', url: '/api/v1/settings/generation', headers: token() })).json().allowance.pot_pence as number;
+  const shot = await shotFor(sceneIds[0]!);
+  const price = (await app.inject({ method: 'GET', url: '/api/v1/settings/estimate?model_id=quick_picture&count=1', headers: token() })).json().pence as number;
+  // Spend the pot down to less than one picture, with the day still wide open.
+  const start = await pot();
+  await db.insert(schema.generationLedger).values({ accountId: ids[0]!, projectId, jobId: (await db.select().from(schema.generationJobs).where(eq(schema.generationJobs.accountId, ids[0]!)).limit(1))[0]!.id, modelId: 'quick_picture', units: 1, unitCostPence: '1', estimatedPence: start - price + 1, status: 'settled', costState: 'estimated', createdAt: new Date(Date.now() - 3 * 86_400_000) });
+  try {
+    assert.equal(await pot(), price - 1);
+    const over = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });
+    assert.equal(over.statusCode, 402, over.body);
+    assert.match(over.json().detail, /left in the pot. Ask a grown-up/);
+    assert.equal(over.json().current_state.needs_top_up, true);
+    assert.equal(over.json().current_state.resets_at, null, 'waiting for tomorrow will not help');
+    // A pot exactly equal to the price is enough.
+    await db.insert(schema.creditTopUps).values({ accountId: ids[0]!, pence: 1, note: 'test' });
+    assert.equal(await pot(), price);
+    const exact = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });
+    assert.equal(exact.statusCode, 202, exact.body);
+    assert.equal(await pot(), 0);
+    await db.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0, costState: 'not_incurred' }).where(eq(schema.generationLedger.jobId, exact.json().id));
+    await db.delete(schema.creditTopUps).where(and(eq(schema.creditTopUps.accountId, ids[0]!), eq(schema.creditTopUps.pence, 1)));
+    // A top-up makes room; a job that never reaches the provider gives the money back.
+    await db.insert(schema.creditTopUps).values({ accountId: ids[0]!, pence: price, note: 'test' });
+    const ok = await startJob(shot.id, { kind: 'image', model_id: 'quick_picture', count: 1 });
+    assert.equal(ok.statusCode, 202, ok.body);
+    assert.equal(await pot(), price - 1, 'reserved from the pot straight away');
+    await db.update(schema.generationLedger).set({ status: 'refunded', actualPence: 0, costState: 'not_incurred' }).where(eq(schema.generationLedger.jobId, ok.json().id));
+    assert.equal(await pot(), 2 * price - 1, 'a refund is back in the pot');
+    await runner.drain();
+  } finally {
+    await db.delete(schema.generationLedger).where(eq(schema.generationLedger.accountId, ids[0]!));
+  }
 });
 
 test('every job keeps a step trail; the teen sees the current step, the adult sees everything', async () => {

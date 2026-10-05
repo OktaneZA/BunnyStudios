@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { signIn, unique } from './helpers';
+import { openPage, signIn, unique } from './helpers';
 
 /**
  * Screen walkthrough for visual review: every main screen, full page, at the tablet floor
@@ -45,21 +45,22 @@ test.describe('screen walkthrough', () => {
     await expect(page).toHaveURL(/\/director$/);
     await shot(page, '04-create-empty', errors);
 
-    await page.getByRole('button', { name: '+ Add scene', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add your first page', exact: true }).click();
     await expect(page.getByLabel('Scene name', { exact: true })).toHaveValue('Scene 1');
     await page.getByLabel('Scene name', { exact: true }).fill('Tiptoe past the farmer');
     await page.getByLabel('What happens?').fill('Bunny tiptoes past the sleeping farmer and grabs a carrot.');
-    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '+ Add scene', exact: true }).click();
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: '+ Add a page', exact: true }).click();
     await expect(page.getByLabel('Scene name', { exact: true })).toHaveValue('Scene 2');
     await page.getByLabel('Scene name', { exact: true }).fill('The getaway');
     await page.getByLabel('What happens?').fill('Bunny runs across the field with the carrot.');
-    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /^1 Tiptoe past the farmer/ }).click();
+    await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
+    await page.getByRole('navigation', { name: 'Story pages' }).getByRole('button', { name: /01\s+Tiptoe past the farmer$/ }).click();
     await shot(page, '05-create-scene', errors);
 
     // Characters: describe, choices, ready.
-    await page.getByRole('button', { name: /^Characters ·/ }).click();
+    await page.getByRole('button', { name: 'Cover', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add a character' }).click();
     const sheet = page.getByRole('dialog', { name: 'Your characters' });
     await shot(page, '06-characters-empty', errors);
     await sheet.getByRole('button', { name: '+ Make a character' }).click();
@@ -78,10 +79,11 @@ test.describe('screen walkthrough', () => {
     await page.keyboard.press('Escape');
 
     // Bunny in the scene, then a preview.
-    await page.getByRole('button', { name: 'Edit characters' }).click();
+    await openPage(page, 'Tiptoe past the farmer');
+    await page.getByRole('button', { name: 'Who’s in it' }).click();
     await page.getByLabel('Add a character to this scene').selectOption({ label: 'Bunny' });
     await page.getByRole('button', { name: 'Save characters' }).click();
-    await expect(page.locator('.portrait', { hasText: 'Bunny' })).toBeVisible();
+    await expect(page.locator('.scene-faces img')).toHaveCount(1);
     await expect(page.getByRole('button', { name: /^Make preview · about/ })).toBeEnabled();
     await shot(page, '10-composer-ready', errors);
     await page.getByRole('button', { name: /^Make preview · about/ }).click();
@@ -98,32 +100,36 @@ test.describe('screen walkthrough', () => {
     await expect(page.getByRole('button', { name: 'Use this clip' })).toBeVisible();
     await shot(page, '13-after-final', errors);
 
-    // Other widths and the white theme on Create.
-    for (const width of [390, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await shot(page, '14-create-with-clip', errors);
+    // The storybook at every required size (SB §11), in both colour modes.
+    for (const [width, height] of [[768, 1024], [1440, 900], [1920, 1080], [2560, 1440]] as const) {
+      await page.setViewportSize({ width, height });
+      await shot(page, '14-storybook', errors);
     }
     await page.setViewportSize({ width: 1024, height: 768 });
-    await page.getByText('View', { exact: true }).click();
+    await page.getByRole('button', { name: 'More' }).click();
     await page.getByRole('button', { name: /White/ }).click();
-    await shot(page, '15-create-white', errors);
+    await shot(page, '15-storybook-white', errors);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await shot(page, '15-storybook-white', errors);
+    await page.setViewportSize({ width: 1024, height: 768 });
+    if (!(await page.getByRole('button', { name: /Black/ }).isVisible())) await page.getByRole('button', { name: 'More' }).click();
     await page.getByRole('button', { name: /Black/ }).click();
 
-    // Put it together.
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: /Put it together/ }).click();
+    // Watch.
+    await page.getByRole('link', { name: '▶ Watch cartoon' }).click();
     await expect(page.getByRole('heading', { name: 'Watch your cartoon' })).toBeVisible();
-    await shot(page, '16-together', errors);
+    await shot(page, '16-watch', errors);
     await page.getByRole('button', { name: 'Make my cartoon' }).click();
-    await expect(page.getByRole('link', { name: 'Save video' })).toBeVisible({ timeout: 90_000 });
-    await shot(page, '17-together-made', errors);
-    await page.setViewportSize({ width: 390, height: 900 });
-    await shot(page, '17-together-made', errors);
+    await expect(page.getByRole('link', { name: 'Download video' })).toBeVisible({ timeout: 90_000 });
+    await shot(page, '17-watch-made', errors);
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await shot(page, '17-watch-made', errors);
     await page.setViewportSize({ width: 1024, height: 768 });
 
-    // The scene manager and a scene's own page, now outside the numbered steps.
-    await page.getByRole('navigation', { name: 'Cartoon steps' }).getByRole('link', { name: 'Create', exact: true }).click();
-    await page.getByText('View', { exact: true }).click();
-    await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
+    // The scene manager (the bin) and a scene's own page, both outside the storybook.
+    await page.getByRole('link', { name: '← Back to your story' }).click();
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('link', { name: 'Manage scenes and the bin' }).click();
     await shot(page, '18-manage-scenes', errors);
     await page.getByRole('link', { name: 'Tiptoe past the farmer', exact: true }).click();
     await shot(page, '19-scene-page', errors);

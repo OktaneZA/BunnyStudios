@@ -10,9 +10,11 @@ function request(id: string): GenerationRequest {
 }
 const url = () => 'data:image/png;base64,aQ==';
 
-test('six distinct families are categorised with a recommended Seedance entry', () => {
+test('six distinct families are categorised; the live-checked Wan 3.0 family is the recommended one (V3)', () => {
   assert.equal(new Set(ALL_MODELS.filter((m) => m.video).map((m) => m.video!.family)).size, 6);
-  assert.ok(modelById('seedance_25')!.video!.categories.includes('recommended'));
+  assert.ok(modelById('wan_30_refs')!.video!.categories.includes('recommended'));
+  assert.equal(modelById('wan_30_refs')!.video!.verified_live, true);
+  assert.ok(!modelById('seedance_25')!.video!.categories.includes('recommended'), 'Seedance is four times the price and not yet live-checked');
   assert.deepEqual(modelById('hailuo_23')!.video!.categories, ['more']);
 });
 

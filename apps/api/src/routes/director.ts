@@ -9,11 +9,12 @@ import { estimatePence, clipPlan, CLIP_LENGTHS, type GenerationModel } from '@st
 import { promptBudget } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
-import { allowance, allowanceInWords, keepAsUnknown, pence, reachedProvider, refund, reserve } from '../generation/budget.ts';
+import { allowance, allowanceInWords, keepAsUnknown, pence, reachedProvider, refund, topUp } from '../generation/budget.ts';
 import { presentModel, type Catalogue } from '../generation/catalogue.ts';
 import type { ReviewProvider } from '../generation/review.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
 import type { JobRequest, Runner } from '../jobs/runner.ts';
+import { createJob } from '../jobs/create.ts';
 import { ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
 import { buildManifest, shotCast } from '../shots/cast.ts';
 import { projectIsLive } from './scenes.ts';
@@ -69,6 +70,10 @@ const STEPS: Record<Job['status'], string> = {
   queued: 'Waiting', submitted: 'Making', running: 'Making', reviewing: 'Checking', ready: 'Ready', failed: 'Failed', cancelled: 'Cancelled',
 };
 
+function wordsOnly(creative: JobRequest['creative']): boolean {
+  return Boolean(creative && creative.task !== 'image-to-video' && creative.characters.length > 0 && creative.references.length === 0);
+}
+
 export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
   const visible = assets.filter((a) => j.resultAssetIds.includes(a.id) && (!hideRejected || a.reviewStatus !== 'rejected'));
   const heldBack = assets.filter((a) => j.resultAssetIds.includes(a.id) && a.reviewStatus === 'rejected').length;
@@ -84,6 +89,8 @@ export function presentJob(j: Job, assets: Asset[], hideRejected: boolean) {
     intent: j.intent,
     parent_job_id: j.parentJobId,
     source_scene_version: (j.request as JobRequest).creative?.sceneVersion ?? null,
+    // Characters were in the scene but no pictures of them reached the clip maker (§1 finding 1).
+    words_only: wordsOnly((j.request as JobRequest).creative),
     attempt: j.attempt,
     error: j.status === 'failed' ? j.errorDetail : null,
     results: visible.map(presentAsset),
@@ -156,7 +163,7 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       models: enabled.map((m) => presentModel(m, advanced)),
       allowance: a,
       allowance_words: allowanceInWords(a, cheapestImage ? estimatePence(cheapestImage, { count: 1 }) : null, cheapestClip ? estimatePence(cheapestClip, { durationSeconds: cheapestClip.duration_seconds?.min ?? 1 }) : null),
-      message: enabled.length ? null : 'Generation isn’t connected yet. Ask the account owner to set it up.',
+      message: enabled.length ? null : 'Picture making isn’t switched on yet. Ask a grown-up.',
     };
   });
 
@@ -198,14 +205,13 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     const { id } = idParam.parse(request.params);
     const body = jobBody.parse(request.body);
     const requestKey = z.string().uuid().parse(request.headers['idempotency-key']);
-    const created = await db.transaction(async (tx) => {
-      await tx.select({ id: schema.accounts.id }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId)).for('update');
-      const [previous] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.accountId, request.accountId), eq(schema.generationJobs.requestKey, requestKey)));
-      if (previous) return { job: previous, fresh: false };
+    // Clips are planned by the production route (one recipe, one prompt per maker); this one makes pictures.
+    if (body.kind === 'video') throw ApiError.validation('Clips are made from the scene, with POST /shots/:id/videos.');
+    const created = await createJob({ accountId: request.accountId, requestKey, runner, log: request.log }, async (tx) => {
       const { shot, scene } = await ownShot(tx, request.accountId, id, true);
       const { account, aspectRatio, constrained } = await isConstrained(tx as unknown as typeof db, request.accountId, scene.projectId);
       const model = catalogue.available(account.defaultEditorMode === 'advanced').find((m) => m.id === body.model_id);
-      if (!model) throw ApiError.validation('That picture maker is not available. Pick another one.');
+      if (!model) throw ApiError.validation(`That ${body.kind === 'video' ? 'clip' : 'picture'} maker is not available. Pick another one.`);
       if (constrained && !review.enabled) throw ApiError.validation('The safety checker is not set up, so pictures cannot be made on this account yet. Ask a grown-up.');
       const options = resolveOptions(model, body, aspectRatio);
       const [synced] = await syncSceneShots(tx, request.accountId, scene);
@@ -215,36 +221,25 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
       if (!prompt.trim()) throw ApiError.validation('Write what happens in this scene first, in Story.');
       const budget = promptBudget(prompt, model.max_prompt_length);
       if (budget.over) throw ApiError.validation(`The scene description is too long for ${model.friendlyLabel}. Shorten it in Story by about ${budget.length - budget.max} letters.`);
-      let startFrameAssetId: string | null = null;
-      if (model.kind === 'video' && model.capabilities.image_to_video && !model.capabilities.text_to_video) {
-        // An image-to-video model (Advanced only) needs a picked picture to start from.
-        if (current.heroAssetId) startFrameAssetId = current.heroAssetId;
-        else throw ApiError.validation('This clip maker needs a picture to start from. Pick one that makes clips straight from the scene instead.');
-      }
       // Character pictures come only from approved looks, one main picture each, pinned by hash (CS-10).
       const manifest = model.capabilities.reference_images ? buildManifest(await shotCast(tx, request.accountId, current, scene), 1) : null;
       const refs = manifest?.references ?? [];
       if (refs.length > model.max_reference_images) throw ApiError.validation('There are too many characters for this maker. Choose fewer characters in this scene, or another maker.');
-      if (model.kind === 'video' && model.capabilities.requires_reference_images && manifest?.missingLooks.length) {
-        throw ApiError.validation(`Choose how ${manifest.missingLooks.map((m) => m.name).join(' and ')} ${manifest.missingLooks.length === 1 ? 'looks' : 'look'} in Cast first.`);
-      }
       if (model.capabilities.requires_reference_images && !refs.length) {
         throw ApiError.validation(`${model.friendlyLabel} works from your approved character pictures, and nobody in this scene has one yet. Choose a look in Cast, or pick a different picture maker.`);
       }
       const jobRequest: JobRequest = {
         prompt, negativePrompt: current.compiledNegativePrompt, referenceAssetIds: refs.map((r) => r.assetId), referenceHashes: refs.map((r) => r.contentHash),
-        referenceNames: refs.map((r) => r.characterName), startFrameAssetId,
+        referenceNames: refs.map((r) => r.characterName), startFrameAssetId: null,
         aspectRatio: options.aspect, count: options.count, durationSeconds: options.durationSeconds, audio: options.audio, resolution: options.resolution,
         constrained, assetKind: 'generated_output',
       };
-      const [job] = await tx.insert(schema.generationJobs).values({
-        accountId: request.accountId, projectId: scene.projectId, requestKey, kind: model.kind, targetEntityType: 'shot', targetEntityId: shot.id,
-        modelId: model.id, provider: model.provider, request: jobRequest,
-      }).returning();
-      await reserve(tx, { accountId: account.id, projectId: scene.projectId, jobId: job!.id, model, count: options.count, resolution: options.resolution, ...(options.durationSeconds ? { durationSeconds: options.durationSeconds } : {}) });
-      return { job: job!, fresh: true };
+      return {
+        values: { projectId: scene.projectId, kind: model.kind, targetEntityType: 'shot', targetEntityId: shot.id, modelId: model.id, provider: model.provider, request: jobRequest },
+        reserve: { model, count: options.count, resolution: options.resolution },
+        extra: null,
+      };
     });
-    if (created.fresh) void runner.tick().catch(() => {});
     reply.header('Cache-Control', 'no-store');
     return reply.code(created.fresh ? 202 : 200).send(presentJob(created.job, [], true));
   });
@@ -272,8 +267,10 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.post('/jobs/:id/cancel', async (request) => {
     const { id } = idParam.parse(request.params);
+    // An adult may stop anyone's job from the clip log; everyone else only their own.
+    const [me] = await db.select({ isMinor: schema.accounts.isMinor }).from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     const job = await db.transaction(async (tx) => {
-      const [job] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, id), eq(schema.generationJobs.accountId, request.accountId))).for('update');
+      const [job] = await tx.select().from(schema.generationJobs).where(and(eq(schema.generationJobs.id, id), ...(me && !me.isMinor ? [] : [eq(schema.generationJobs.accountId, request.accountId)]))).for('update');
       if (!job) throw ApiError.notFound('Request');
       if (!['queued', 'submitted', 'running', 'reviewing'].includes(job.status)) return job;
       const [updated] = await tx.update(schema.generationJobs).set({ status: 'cancelled', claimedBy: null, finishedAt: new Date(), updatedAt: new Date() }).where(eq(schema.generationJobs.id, id)).returning();
@@ -349,8 +346,9 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.get('/assets/:id/file', async (request, reply) => {
     const { id } = idParam.parse(request.params);
-    const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, request.accountId)));
+    const [asset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, request.accountId), isNull(schema.assets.deletedAt)));
     if (!asset) throw ApiError.notFound('File');
+    reply.header('X-Content-Type-Options', 'nosniff').header('Content-Disposition', 'inline');
     const [account] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     if (account?.isMinor && asset.reviewStatus === 'rejected') throw ApiError.notFound('File');
     if (asset.thumbnailSvg) return reply.type('image/svg+xml').header('Cache-Control', 'private, max-age=3600').send(asset.thumbnailSvg);
@@ -417,15 +415,37 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
 
   app.patch('/accounts/:id/budget', async (request) => {
     const { id } = idParam.parse(request.params);
-    const body = z.object({ daily_budget_pence: z.number().int().min(0).max(100_000).optional(), monthly_budget_pence: z.number().int().min(0).max(1_000_000).optional() }).parse(request.body);
+    const body = z.object({ daily_budget_pence: z.number().int().min(0).max(100_000).optional() }).parse(request.body);
     const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
     if (!me || me.isMinor) throw ApiError.notFound('Page');
     const [updated] = await db.update(schema.accounts).set({
       ...(body.daily_budget_pence !== undefined ? { dailyBudgetPence: body.daily_budget_pence } : {}),
-      ...(body.monthly_budget_pence !== undefined ? { monthlyBudgetPence: body.monthly_budget_pence } : {}),
-    }).where(eq(schema.accounts.id, id)).returning();
+    }).where(and(eq(schema.accounts.id, id), isNull(schema.accounts.deletedAt))).returning();
     if (!updated) throw ApiError.notFound('Account');
     return { id: updated.id, display_name: updated.displayName, is_minor: updated.isMinor, allowance: await allowance(updated.id) };
+  });
+
+  /** Pre-paid picture money: an adult adds to an account's pot, and sees what was added before. */
+  app.post('/accounts/:id/top-ups', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const body = z.object({ pence: z.number().int().min(1).max(50_000), note: z.string().trim().max(120).default('') }).parse(request.body);
+    const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    if (!me || me.isMinor) throw ApiError.notFound('Page');
+    const [target] = await db.select({ id: schema.accounts.id }).from(schema.accounts).where(and(eq(schema.accounts.id, id), isNull(schema.accounts.deletedAt)));
+    if (!target) throw ApiError.notFound('Account');
+    const row = await topUp({ accountId: id, addedBy: me.id, pence: body.pence, note: body.note });
+    return reply.code(201).send({ id: row.id, pence: row.pence, note: row.note, created_at: row.createdAt.toISOString(), allowance: await allowance(id) });
+  });
+
+  app.get('/accounts/:id/top-ups', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const [me] = await db.select().from(schema.accounts).where(eq(schema.accounts.id, request.accountId));
+    if (!me || me.isMinor) throw ApiError.notFound('Page');
+    const rows = await db.select({ t: schema.creditTopUps, by: schema.accounts.displayName }).from(schema.creditTopUps)
+      .leftJoin(schema.accounts, eq(schema.accounts.id, schema.creditTopUps.addedByAccountId))
+      .where(eq(schema.creditTopUps.accountId, id)).orderBy(desc(schema.creditTopUps.createdAt)).limit(20);
+    reply.header('Cache-Control', 'no-store');
+    return { data: rows.map(({ t, by }) => ({ id: t.id, pence: t.pence, note: t.note, added_by: by, created_at: t.createdAt.toISOString() })) };
   });
 
   app.get('/settings/estimate', async (request) => {

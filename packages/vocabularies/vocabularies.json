@@ -1,7 +1,7 @@
 {
   "$schema": "./vocabularies.schema.json",
   "schemaVersion": "1.0.0",
-  "note": "NORMATIVE. `value` and `prompt_phrase` are transcribed verbatim from requirements §4 and must not be edited without a spec change (CV-1). `label`, `friendlyLabel`, `help` and `icon` are the presentation layer (plan D12) and may be reworded freely. camera_movement is omitted in v1 per plan D6.",
+  "note": "NORMATIVE. `value` and `prompt_phrase` are transcribed verbatim from requirements §4 and must not be edited without a spec change (CV-1). `label`, `friendlyLabel`, `help` and `icon` are the presentation layer (plan D12) and may be reworded freely. camera_movement (§4.3) was left out of v1 by plan D6 and is reinstated for the video template only (docs/video-optimisation-plan.md V5).",
   "vocabularies": {
     "shot_type": {
       "specSection": "4.1",
@@ -141,6 +141,35 @@
         { "value": "back", "prompt_phrase": "the same character seen from behind, full body, plain white background", "label": "Back", "friendlyLabel": "From behind", "help": "What they look like walking away.", "icon": "view-back" },
         { "value": "full_body", "prompt_phrase": "the same character, full body from head to feet, standing naturally, plain white background", "label": "Full body", "friendlyLabel": "Head to toe", "help": "All of them, so shoes and tails are clear.", "icon": "view-full-body" },
         { "value": "expression", "prompt_phrase": "the same character, head and shoulders, showing a clear facial expression, plain white background", "label": "Expression", "friendlyLabel": "A face", "help": "A close-up of a feeling. Say which one.", "icon": "view-expression" }
+      ]
+    },
+    "camera_movement": {
+      "specSection": "4.3",
+      "note": "Transcribed verbatim from requirements §4.3. Emitted only by the video template (compileVideoShot), never in a still prompt (PC-2c). Reinstated by docs/video-optimisation-plan.md V5.",
+      "options": [
+        { "value": "static", "prompt_phrase": "locked-off static camera", "label": "Static", "friendlyLabel": "Camera stays still", "help": "The camera does not move. Good when the action is busy.", "icon": "move-static" },
+        { "value": "pan_left", "prompt_phrase": "camera pans left", "label": "Pan left", "friendlyLabel": "Camera turns left", "help": "The camera turns to look along to the left.", "icon": "move-pan-left" },
+        { "value": "pan_right", "prompt_phrase": "camera pans right", "label": "Pan right", "friendlyLabel": "Camera turns right", "help": "The camera turns to look along to the right.", "icon": "move-pan-right" },
+        { "value": "tilt_up", "prompt_phrase": "camera tilts upward", "label": "Tilt up", "friendlyLabel": "Camera looks up", "help": "Starts low and looks up. Good for something tall.", "icon": "move-tilt-up" },
+        { "value": "tilt_down", "prompt_phrase": "camera tilts downward", "label": "Tilt down", "friendlyLabel": "Camera looks down", "help": "Starts high and looks down.", "icon": "move-tilt-down" },
+        { "value": "dolly_in", "prompt_phrase": "slow dolly in toward the subject", "label": "Dolly in", "friendlyLabel": "Camera moves closer", "help": "Slowly moves in. Makes a moment feel important.", "icon": "move-dolly-in" },
+        { "value": "dolly_out", "prompt_phrase": "slow dolly out away from the subject", "label": "Dolly out", "friendlyLabel": "Camera moves back", "help": "Slowly moves away to show more of the place.", "icon": "move-dolly-out" },
+        { "value": "truck_left", "prompt_phrase": "camera trucks left, moving laterally", "label": "Truck left", "friendlyLabel": "Camera slides left", "help": "The camera glides sideways to the left.", "icon": "move-truck-left" },
+        { "value": "truck_right", "prompt_phrase": "camera trucks right, moving laterally", "label": "Truck right", "friendlyLabel": "Camera slides right", "help": "The camera glides sideways to the right.", "icon": "move-truck-right" },
+        { "value": "crane_up", "prompt_phrase": "crane shot rising upward", "label": "Crane up", "friendlyLabel": "Camera rises up", "help": "The camera floats up high. Good for an ending.", "icon": "move-crane-up" },
+        { "value": "crane_down", "prompt_phrase": "crane shot descending", "label": "Crane down", "friendlyLabel": "Camera comes down", "help": "The camera floats down from above.", "icon": "move-crane-down" },
+        { "value": "handheld", "prompt_phrase": "handheld camera, subtle natural shake", "label": "Handheld", "friendlyLabel": "Wobbly, like a phone", "help": "A little shaky, like someone is holding it.", "icon": "move-handheld" },
+        { "value": "zoom_in", "prompt_phrase": "zoom in, tightening on the subject", "label": "Zoom in", "friendlyLabel": "Zoom in", "help": "Gets closer without moving the camera.", "icon": "move-zoom-in" },
+        { "value": "zoom_out", "prompt_phrase": "zoom out, widening from the subject", "label": "Zoom out", "friendlyLabel": "Zoom out", "help": "Shows more without moving the camera.", "icon": "move-zoom-out" }
+      ]
+    },
+    "video_direction": {
+      "specSection": "VO-2",
+      "note": "Fixed sentences used only by the video template (docs/video-optimisation-plan.md §5.1). Not a picker. keep_out replaces the negative prompt on models that have no negative field; ambient_sound is added when sound is on; style_reference introduces the cartoon's style picture.",
+      "options": [
+        { "value": "keep_out", "prompt_phrase": "clean frame with no on-screen text, captions, logos or watermarks, not photorealistic", "label": "Keep-outs", "friendlyLabel": "Keep the picture clean", "help": "Asks for no writing or logos on the clip.", "icon": "direction-keep-out" },
+        { "value": "ambient_sound", "prompt_phrase": "with sound: natural sound effects and background sounds such as waves, footsteps and wind, without any voices, singing or music", "label": "Ambient sound", "friendlyLabel": "Sounds, no voices", "help": "Footsteps, wind and splashes, but nobody talks or sings.", "icon": "direction-sound" },
+        { "value": "style_reference", "prompt_phrase": "match the art style, colours and line work shown in", "label": "Style picture", "friendlyLabel": "Match the cartoon look", "help": "Uses the cartoon's style picture as a guide.", "icon": "direction-style" }
       ]
     }
   },

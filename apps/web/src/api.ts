@@ -109,6 +109,8 @@ export interface Scene {
   title: string;
   description: string;
   camera_angle: string | null;
+  /** §4.3: how the camera moves in the clip. Null lets the clip maker decide. */
+  camera_movement?: string | null;
   location_id: string | null;
   time_of_day: string;
   mood_atmosphere: string | null;
@@ -168,7 +170,7 @@ export const api = {
     return { data, total };
   },
   reorderProjects: (project_ids: string[]) => request('/projects/reorder', { method: 'POST', body: JSON.stringify({ project_ids }) }),
-  updateProject: (id: string, patch: { series_number?: number | null; status?: string }) => request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  updateProject: (id: string, patch: { series_number?: number | null; status?: string; title?: string; logline?: string }) => request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
   createProject: (body: { title: string; logline: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(body) }),

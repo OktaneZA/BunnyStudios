@@ -36,7 +36,9 @@ export async function shotCast(database: Database, accountId: string, shot: { id
     .orderBy(asc(schema.shotCharacterBindings.position));
   if (shot.castSaved) {
     const looks = await loadLooks(database, accountId, bindings.map((r) => r.c.id));
-    return bindings.map(({ b, c }) => ({ character: c, binding: b, look: looks.find((l) => l.id === b.visualVersionId) ?? null, proposed: false }));
+    // A binding pinned to a look keeps it (CS-10). One saved before the character had any look
+    // ("no look yet") follows the character's current look, so choosing a look later reaches the scene.
+    return bindings.map(({ b, c }) => ({ character: c, binding: b, look: looks.find((l) => l.id === (b.visualVersionId ?? c.currentVisualVersionId)) ?? null, proposed: false }));
   }
   const cast = await sceneCharacters(database, accountId, scene);
   const looks = await loadLooks(database, accountId, cast.map((c) => c.id));
@@ -44,13 +46,13 @@ export async function shotCast(database: Database, accountId: string, shot: { id
 }
 
 /** Words for the compiler: the pinned look's traits when there is one, else the live character. */
-export function compileCharacter(entry: ShotCastEntry): { name: string; description: string; costume: string } {
+export function compileCharacter(entry: ShotCastEntry): { id: string; name: string; description: string; costume: string } {
   const traits = entry.look?.traits as VisualTraits | undefined;
   const outfits = Array.isArray(entry.character.costumeVariants) ? entry.character.costumeVariants as { label: string; description: string }[] : [];
   const outfit = entry.binding?.outfitLabel ? outfits.find((o) => o.label === entry.binding!.outfitLabel) : undefined;
   const base = traits ?? { name: entry.character.name, description: entry.character.promptToken, costume: entry.character.defaultCostume, species: entry.character.species, build: entry.character.physicalBuild, colours: entry.character.colours, features: entry.character.distinguishingFeatures };
   const description = [base.description, base.species, base.build, base.colours, base.features].map((s) => (s ?? '').trim()).filter(Boolean).join(', ');
-  return { name: entry.character.name, description, costume: outfit?.description ?? base.costume ?? '' };
+  return { id: entry.character.id, name: entry.character.name, description, costume: outfit?.description ?? base.costume ?? '' };
 }
 
 export interface Manifest {

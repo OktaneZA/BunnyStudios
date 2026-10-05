@@ -17,21 +17,44 @@ export async function signIn(page: Page, who: keyof typeof accounts) {
 /** A title unique to this run so tests never collide with real data or each other. */
 export const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
 
+/** A new cartoon opens as its storybook: the cover, and an obvious first-page action (SB-02). */
 export async function createCartoon(page: Page, title: string) {
   await page.getByRole('link', { name: '+ New cartoon' }).click();
   await page.getByLabel("What's it called?").fill(title);
   await page.getByRole('button', { name: 'Create cartoon' }).click();
-  await expect(page.getByRole('heading', { name: title })).toBeVisible();
   await expect(page).toHaveURL(/\/director$/);
-  const steps = page.getByRole('navigation', { name: 'Cartoon steps' });
-  await expect(steps.getByRole('link')).toHaveCount(2);
-  await expect(steps.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'step');
-  await expect(steps.getByRole('link', { name: 'Write', exact: true })).toHaveCount(0);
-  // Older editing/ordering tests still exercise the optional scene manager.
-  await page.getByText('View', { exact: true }).click();
-  await page.getByRole('link', { name: 'Manage scenes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: title })).toBeVisible();
+  await expect(page.getByRole('button', { name: '+ Add your first page' })).toBeVisible();
 }
 
+/** Add a page at the end and give it a name; it opens for editing. */
+export async function addPage(page: Page, title: string) {
+  const before = await page.locator('.story-page').count();
+  await page.getByRole('button', { name: before === 0 ? '+ Add your first page' : '+ Add a page', exact: true }).click();
+  await expect(page.locator('.story-page')).toHaveCount(before + 1);
+  // The new page opens for editing: wait for its own editor, not the one it replaces.
+  const name = page.getByLabel('Scene name');
+  await expect(name).toHaveValue(`Scene ${before + 1}`);
+  await name.fill(title);
+  await name.blur();
+  await expect(page.getByRole('status').filter({ hasText: /^Saved$/ }).first()).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Story pages' }).getByRole('button', { name: new RegExp(`\\d\\d\\s+${escape(title)}$`) })).toBeVisible();
+}
+
+/** Open a page from the index. */
+export async function openPage(page: Page, title: string) {
+  await page.getByRole('navigation', { name: 'Story pages' }).getByRole('button', { name: new RegExp(`\\d\\d\\s+${escape(title)}$`) }).click();
+  await expect(page.getByRole('heading', { name: new RegExp(`^Scene \\d+ · ${escape(title)}$`) })).toBeVisible();
+}
+
+/** The older scene manager (order by drag, the bin), reached from the toolbar menu. */
+export async function openManageScenes(page: Page) {
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('link', { name: 'Manage scenes and the bin' }).click();
+  await expect(page).toHaveURL(/\/scenes$/);
+}
+
+/** Add a scene on the scene manager page. */
 export async function addScene(page: Page, title: string) {
   await page.getByPlaceholder('Scene name').fill(title);
   await page.getByRole('button', { name: 'Add scene' }).click();
@@ -42,6 +65,13 @@ export async function addScene(page: Page, title: string) {
 export async function boardTitles(page: Page): Promise<string[]> {
   return page.locator('.scene-list h4').allInnerTexts().then((t) => t.map((s) => s.trim()));
 }
+
+/** Page titles in the storybook index, in order. */
+export async function pageTitles(page: Page): Promise<string[]> {
+  return page.locator('.page-index .index-title').allInnerTexts().then((t) => t.map((s) => s.trim()));
+}
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Drag with real pointer events. Playwright's dragTo issues one move, which dnd-kit ignores by

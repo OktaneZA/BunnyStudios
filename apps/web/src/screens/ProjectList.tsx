@@ -6,6 +6,18 @@ import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, us
 import { SortableContext, useSortable, rectSortingStrategy, sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+/** "Edited 2 hours ago", in plain words (SB-01). */
+function editedWords(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (mins < 2) return 'Edited just now';
+  if (mins < 60) return `Edited ${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `Edited ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 14) return `Edited ${days} ${days === 1 ? 'day' : 'days'} ago`;
+  return `Edited ${new Date(iso).toLocaleDateString()}`;
+}
+
 function CartoonCard({ p, busy }: { p: Project; busy: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: p.id, disabled: busy });
   return <article ref={setNodeRef} className="card project-card" style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 2 : undefined, opacity: isDragging ? .8 : 1 }}>
@@ -19,13 +31,14 @@ function CartoonCard({ p, busy }: { p: Project; busy: boolean }) {
         </svg>
       </button>
     </div>
+    <Link to={`/projects/${p.id}/director`} className="cartoon-cover-link" aria-label={`Continue ${p.title}`}>
+      {/* No cartoon has a cover picture yet; an honest placeholder, never a stand-in picture (SB-01). */}
+      <span className="cartoon-cover none" aria-hidden="true">{p.scene_count ? `${p.scene_count} ${p.scene_count === 1 ? 'page' : 'pages'}` : 'No pages yet'}</span>
+    </Link>
     <Link to={`/projects/${p.id}/director`}><h3>{p.title}</h3></Link>
-    <p>{p.logline || 'No description yet.'}</p>
-    <div className="meta"><span>{p.scene_count ?? 0} scenes</span></div>
-    <div className="project-dates">
-      <span>Created <time dateTime={p.created_at}>{new Date(p.created_at).toLocaleString()}</time></span>
-      <span>Updated <time dateTime={p.updated_at}>{new Date(p.updated_at).toLocaleString()}</time></span>
-    </div>
+    <p>{p.logline || 'No summary yet.'}</p>
+    <div className="project-dates"><span><time dateTime={p.updated_at}>{editedWords(p.updated_at)}</time></span></div>
+    <Link className="btn" to={`/projects/${p.id}/director`}>Continue</Link>
   </article>;
 }
 

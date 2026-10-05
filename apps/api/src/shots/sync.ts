@@ -9,23 +9,16 @@
 import { and, asc, eq, isNull, or, sql as raw } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { compileShot, TEMPLATE_VERSION, type CompileInput } from '@storyboard/compiler';
-import { values } from '@storyboard/vocabularies';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import { sceneDescription } from '../scenes/description.ts';
 import type { Tx } from '../generation/budget.ts';
 import { compileCharacter, shotCast } from './cast.ts';
+import { cartoonStyle } from '../cartoon/style.ts';
 
 type Scene = typeof schema.scenes.$inferSelect;
 type Shot = typeof schema.shots.$inferSelect;
 type Database = typeof db | Tx;
-
-/**
- * A default *value* from the art_style vocabulary, used when a cartoon's bible has none.
- * The phrase itself still comes from vocabularies.json; naming a value is not naming a phrase.
- */
-const DEFAULT_ART_STYLE = '2d_flat_vector';
-if (!values('art_style').includes(DEFAULT_ART_STYLE)) throw new Error('DEFAULT_ART_STYLE is not in the vocabulary');
 
 /** Characters that appear in a scene: found there by the cast proposal, or attached by id. */
 export async function sceneCharacters(database: Database, accountId: string, scene: Scene) {
@@ -41,15 +34,17 @@ export async function compileInput(database: Database, accountId: string, scene:
   const [location] = scene.locationId
     ? await database.select().from(schema.locations).where(and(eq(schema.locations.id, scene.locationId), eq(schema.locations.accountId, accountId)))
     : [];
-  // CR-01: a saved "Characters in this shot" list drives the words, each described from its pinned look.
-  const saved = shot?.castSaved ? (await shotCast(database, accountId, shot, scene)).map(compileCharacter) : null;
-  const cast = saved ? [] : await sceneCharacters(database, accountId, scene);
-  const subjects = saved ?? (shot?.subjectCharacterIds.length ? cast.filter((c) => shot.subjectCharacterIds.includes(c.id)) : cast)
-    .map((c) => ({ name: c.name, description: c.promptToken, costume: c.defaultCostume }));
+  // CR-01: a saved "Characters in this shot" list drives the words. Each character is described
+  // from a look: the pinned one when saved, else the character's current look (§6.2), so two scenes
+  // never describe the same character differently because one of them was not saved yet.
+  const entries = shot ? await shotCast(database, accountId, shot, scene)
+    : (await sceneCharacters(database, accountId, scene)).map((character) => ({ character, binding: null, look: null, proposed: true }));
+  const subjects = (!shot?.castSaved && shot?.subjectCharacterIds.length ? entries.filter((e) => shot.subjectCharacterIds.includes(e.character.id)) : entries).map(compileCharacter);
+  const style = await cartoonStyle(database, accountId, scene.projectId);
   return {
     bible: {
-      artStyle: bible?.artStyle || DEFAULT_ART_STYLE,
-      lineTreatment: bible?.lineTreatment ?? '',
+      artStyle: style.artStyle,
+      lineTreatment: style.lineTreatment,
       defaultLighting: bible?.defaultLighting ?? '',
       renderQualityTokens: bible?.renderQualityTokens ?? '',
       negativePrompt: bible?.negativePrompt ?? '',
@@ -66,7 +61,9 @@ export async function compileInput(database: Database, accountId: string, scene:
       lighting: scene.lighting,
       styleOverride: scene.styleOverride,
       locationName: location?.name ?? '',
-      locationDescription: location?.promptToken ?? '',
+      // The cartoon's setting stands in when a scene has no location of its own, so scene 3 does
+      // not wander off the beach because its words never mentioned it.
+      locationDescription: location?.promptToken ?? bible?.defaultSetting ?? '',
       locationDefaultLighting: location?.defaultLighting ?? '',
     },
     shot: {

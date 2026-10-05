@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CartoonHeader } from '../components/ProjectTabs';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiProblem, type Project } from '../api';
-import { director, isActiveJob, laneSpan, seconds, type Timeline, type Transition } from '../director-api';
+import { director, isActiveJob, laneSpan, seconds, type Continuity, type Timeline, type Transition } from '../director-api';
 import { useAssetUrl } from '../assetUrl';
 import { uuid } from '../uuid';
 import { ProblemBox } from '../components/ProblemBox';
@@ -19,6 +19,8 @@ export function Together() {
   const { projectId } = useParams<{ projectId: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
+  /** Does every scene match? Only shown when something does not (docs/video-optimisation-plan.md §6.3). */
+  const [continuity, setContinuity] = useState<Continuity | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [join, setJoin] = useState<number | null>(null);
@@ -37,6 +39,8 @@ export function Together() {
     if (!projectId) return;
     api.getProject(projectId).then(setProject).catch(setError);
     refresh().catch(setError);
+    // A helpful check, not a gate: if it cannot load, the cartoon can still be made.
+    director.continuity(projectId).then(setContinuity).catch(() => {});
   }, [projectId, refresh]);
 
   const rendering = Boolean(timeline?.render_job && isActiveJob(timeline.render_job));
@@ -136,6 +140,17 @@ export function Together() {
         </section>
       )}
 
+      {continuity && continuity.warnings.length > 0 && (
+        <section className="notice continuity" aria-label="Things that may not match">
+          <b>Some scenes may not match</b>
+          <ul>{continuity.warnings.map((w) => <li key={w.kind + w.scene_ids.join()}>{w.detail}</li>)}</ul>
+          <div className="row">{[...new Set(continuity.warnings.flatMap((w) => w.scene_ids))].slice(0, 6).map((id) => {
+            const scene = continuity.scenes.find((s) => s.scene_id === id);
+            return scene ? <Link className="btn secondary" key={id} to={`/projects/${projectId}/director?scene=${id}`}>Open scene {scene.scene_number}</Link> : null;
+          })}</div>
+        </section>
+      )}
+
       <div className="together together-simple">
         <div className="together-main stack">
           {/* Watch and save first (docs/teen-ui-review.md P2); music and timing are optional, below. */}
@@ -155,11 +170,19 @@ export function Together() {
               {skipped.length > 0 && <> Left out: {skipped.map((i) => `scene ${i.scene_number}`).join(', ')}.</>}
               {' '}Putting it together is free and takes about a minute.
             </p>
+            {/* SB-34: a current file leads with Download; a changed cartoon leads with Update and says the file is older. */}
+            {timeline.render && timeline.render_current === false && !rendering && (
+              <p className="notice" role="status">You changed your cartoon since this video was made (a different clip, order, timing or sound). <b>Update cartoon</b> makes a new one; the video below is the older version.</p>
+            )}
+            {timeline.render && timeline.render_current === null && !rendering && (
+              <p className="hint" role="status">This video was made before the app kept track of changes, so it may not match your pages. Make it again to be sure.</p>
+            )}
             <div className="row player-actions">
-              <button type="button" onClick={() => void makeCartoon()} disabled={busy || rendering || playing.length === 0}>
-                {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? 'Make my cartoon again' : 'Make my cartoon'}
+              {timeline.render && timeline.render_current !== false && <a className="btn" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Download video</a>}
+              <button type="button" className={timeline.render && timeline.render_current !== false ? 'secondary' : ''} onClick={() => void makeCartoon()} disabled={busy || rendering || playing.length === 0}>
+                {rendering && <span className="ai-spinner" aria-hidden="true" />}{rendering ? 'Making your cartoon…' : timeline.render ? (timeline.render_current === false ? 'Update cartoon' : 'Make it again') : 'Make my cartoon'}
               </button>
-              {timeline.render && <a className="btn secondary" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Save video</a>}
+              {timeline.render && timeline.render_current === false && <a className="btn secondary" href={renderUrl ?? undefined} download={`${project.title}.mp4`} aria-disabled={!renderUrl}>Download the older version</a>}
               {timeline.render && <span className="hint">Made {new Date(timeline.render.created_at).toLocaleString()} · {seconds(timeline.render.duration_ms ?? timeline.total_ms)}</span>}
             </div>
           </section>

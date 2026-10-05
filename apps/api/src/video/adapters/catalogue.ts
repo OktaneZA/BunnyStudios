@@ -2,11 +2,12 @@ import type { GenerationModel } from '@storyboard/models';
 import type { CreativeVideoRequest } from '../creativeVideoRequest.ts';
 
 /** Recorded on every production snapshot (MG-05): which payload mapping built the request. */
-export const ADAPTER_VERSION = 'catalogue-flat-2';
+export const ADAPTER_VERSION = 'catalogue-flat-3';
 
 /**
  * CR-03: the prompt a reference endpoint receives, with one line per picture in manifest order
  * ("@Image1: Bunny"). Shared with routing so the length check and review see the same text (MB-06).
+ * Only recipes compiled before the video template use this; the template puts tokens inline.
  */
 export function promptWithReferenceTokens(model: GenerationModel, prompt: string, names: readonly string[]): string {
   const prefix = model.request_shape.reference_token_prefix;
@@ -28,7 +29,7 @@ export function buildVideoPayload<Image>(model: GenerationModel, creative: Creat
   if (s.negative_prompt && creative.negativePrompt) body[s.negative_prompt] = creative.negativePrompt;
   if (s.reference_images && creative.referenceImages.length) {
     body[s.reference_images] = creative.referenceImages.map(toUrl);
-    if (s.reference_token_prefix && creative.referenceNames?.length) {
+    if (s.reference_token_prefix && creative.referenceNames?.length && !creative.tokensInline) {
       if (creative.referenceNames.length !== creative.referenceImages.length) throw new Error('Character picture names do not match');
       body[s.prompt] = promptWithReferenceTokens(model, creative.prompt, creative.referenceNames);
     }
@@ -43,5 +44,8 @@ export function buildVideoPayload<Image>(model: GenerationModel, creative: Creat
   if (s.resolution) body[s.resolution] = creative.resolution;
   if (s.audio) body[s.audio] = creative.audio;
   if (s.safety) body[s.safety] = true;
+  if (s.seed && typeof creative.seed === 'number') body[s.seed] = creative.seed;
+  const motion = creative.cameraMovement ? model.video?.camera_motion_map?.[creative.cameraMovement] : undefined;
+  if (s.camera_motion && motion) body[s.camera_motion] = motion;
   return body;
 }

@@ -28,7 +28,12 @@ const FAKE_REF_VIDEO: GenerationModel = {
   result_shape: { files: 'video' }, enabled: true, video: { family: 'fake_refs', categories: ['references'], documentation: 'test' },
 };
 /** A pricier reference endpoint marked recommended: what "Make final video" picks. */
-const FAKE_REF_FINAL: GenerationModel = { ...FAKE_REF_VIDEO, id: 'wan_30_refs', provider_model: 'fake/refs-final', unit_cost_pence: 9, video: { family: 'fake_final', categories: ['recommended', 'references'], documentation: 'test' } };
+const FAKE_REF_FINAL: GenerationModel = {
+  ...FAKE_REF_VIDEO, id: 'wan_30_refs', provider_model: 'fake/refs-final', unit_cost_pence: 9, resolutions: ['720p', '480p'],
+  request_shape: { ...FAKE_REF_VIDEO.request_shape, seed: 'seed' },
+  pricing: { strategy: 'per_second', rates: { '720p': 0.09, '480p': 0.04 }, pence_per_usd: 100, verified_on: 'test', source: 'test' },
+  video: { family: 'fake_final', categories: ['recommended', 'references'], documentation: 'test' },
+};
 /** Start and end pictures, like Seedance image-to-video. */
 const FAKE_FRAMES: GenerationModel = {
   ...FAKE_REF_VIDEO, id: 'seedance_25_i2v', provider_model: 'fake/i2v', max_reference_images: 0,
@@ -57,7 +62,9 @@ let projectId = '';
 let sceneIds: string[] = [];
 
 before(async () => {
-  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `studio-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, defaultEditorMode: i ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 5000, monthlyBudgetPence: 50_000 })));
+  await db.insert(schema.accounts).values(ids.map((id, i) => ({ id, email: `studio-${id}@example.com`, displayName: i ? 'Adult' : 'Teen', isMinor: i === 0, defaultEditorMode: i ? 'advanced' as const : 'simple' as const, dailyBudgetPence: 5000 })));
+  // Pre-paid: every test account starts with a pot.
+  await db.insert(schema.creditTopUps).values(ids.map((id) => ({ accountId: id, pence: 50000, note: 'test' })));
 });
 beforeEach(async () => {
   rejectEveryImage = false; provider.submitted.length = 0;
@@ -254,8 +261,11 @@ test('two shots receive the chosen looks with stable, ordered references; a late
   const [sentA, sentB] = provider.submitted.slice(-2);
   assert.deepEqual(sentA!.referenceNames, ['Bunny', 'Bunny', 'Fox']);
   assert.deepEqual(sentB!.referenceNames, ['Fox', 'Bunny', 'Bunny'], 'the shot order, never a sort');
+  // §5.1: each character's picture tokens sit inline where the character is named; nothing is appended.
   const payload = shapeRequest(sentA!, () => 'u');
-  assert.match(String(payload.prompt), /@Image1: Bunny\n@Image2: Bunny\n@Image3: Fox$/);
+  assert.match(String(payload.prompt), /^Bunny \(@Image1, @Image2\): .*; Fox \(@Image3\): /);
+  assert.doesNotMatch(String(payload.prompt), /@Image1: Bunny/);
+  assert.match(String(shapeRequest(sentB!, () => 'u').prompt), /^Fox \(@Image1\): .*; Bunny \(@Image2, @Image3\): /);
 
   const jobA = await jobRow(a.json().id);
   const creative = (jobA.request as JobRequest).creative!;
@@ -289,11 +299,27 @@ test('missing looks are named before quoting; a quick draft from the words stays
   const draft = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(0)).id}/videos/quote`, headers: token(), payload: { purpose: 'preview', continuity: false, duration_seconds: 5 } });
   assert.equal(draft.statusCode, 200, draft.body);
   assert.equal(draft.json().task, 'text-to-video');
+  assert.equal(draft.json().words_only, true, 'a clip from the words only says so when characters are in the scene');
 
-  // An unsaved story proposal is shown, but production waits for the user to confirm it (CR-01).
-  const unsaved = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(1)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5 } });
-  assert.equal(unsaved.statusCode, 422);
-  assert.equal(unsaved.json().current_state.missing, 'cast');
+  // An empty scene has nobody to picture.
+  const empty = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(1)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5 } });
+  assert.equal(empty.statusCode, 422);
+  assert.equal(empty.json().current_state.missing, 'cast');
+
+  // An unsaved story proposal is quoted with each character's current look, and making the clip
+  // saves exactly that list (§6.2), so the child is not stopped to confirm it first.
+  await db.update(schema.characters).set({ foundInSceneIds: [sceneIds[1]!] }).where(eq(schema.characters.id, bunny.id));
+  const proposed = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(1)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5 } });
+  assert.equal(proposed.statusCode, 200, proposed.body);
+  assert.deepEqual(proposed.json().characters.map((c: { name: string }) => c.name), ['Bunny']);
+  assert.equal(proposed.json().words_only, false);
+  assert.equal((await get(`/shots/${(await shotOf(1)).id}/cast`)).saved, false, 'a quote saves nothing');
+  const made = await video(1, { purpose: 'final', duration_seconds: 5, expected_quote_key: proposed.json().quote_key });
+  assert.equal(made.statusCode, 202, made.body);
+  const saved = await get(`/shots/${(await shotOf(1)).id}/cast`);
+  assert.equal(saved.saved, true);
+  assert.deepEqual(saved.characters.map((c: { name: string; look_version: number }) => [c.name, c.look_version]), [['Bunny', 1]]);
+  await runner.drain();
 });
 
 test('too many pictures shrink to one per character, and never drop a character (CR-04)', async () => {
@@ -369,7 +395,9 @@ test('a draft and a separately accepted final keep lineage, sound, their own quo
   const draftRow = await jobRow(draft.json().id);
   assert.equal(typeof draft.json().source_scene_version, 'number', 'new clips record the scene revision for the editor');
   assert.equal(draftRow.intent, 'draft');
-  assert.equal(draftRow.modelId, 'seedance_25_refs', 'the preview went to the cheapest compatible maker');
+  assert.equal(draftRow.modelId, 'wan_30_refs', 'the preview is the cheapest try of the family the final will use (§7.3)');
+  assert.equal((draftRow.request as JobRequest).resolution, '480p', 'a preview is made at the cheaper size');
+  await db.update(schema.generationJobs).set({ providerResult: { seed: 4242 } }).where(eq(schema.generationJobs.id, draftRow.id));
 
   // The story changes after the preview; the final still uses the preview's recipe (DF-02).
   const scene = await get(`/scenes/${sceneIds[0]}`);
@@ -378,7 +406,8 @@ test('a draft and a separately accepted final keep lineage, sound, their own quo
   const shot = await shotOf(0);
   const final = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot.id}/videos`, headers: { ...token(), 'idempotency-key': key }, payload: { purpose: 'final', duration_seconds: 5, from_job_id: draftRow.id } });
   assert.equal(final.statusCode, 202, final.body);
-  assert.equal(final.json().plan.new_render, true, 'another maker is a new render, not an upscale (DF-03)');
+  assert.equal(final.json().plan.new_render, true, 'a final is a new render, not an upscale (DF-03)');
+  assert.equal(final.json().plan.output.resolution, '720p', 'the final is made at the standard size');
   assert.equal(final.json().plan.native_completion, 'unavailable');
   assert.equal(final.json().source_scene_version, draft.json().source_scene_version, 'a final from a preview keeps the original scene revision');
   assert.equal(final.json().plan.output.audio, true, 'the UI summary reports the saved sound setting');
@@ -391,6 +420,12 @@ test('a draft and a separately accepted final keep lineage, sound, their own quo
   assert.equal(finalRow.generationGroupId, draftRow.generationGroupId);
   assert.equal(finalRow.intent, 'final');
   assert.equal((finalRow.request as JobRequest).audio, true, 'omitted audio preserves the preview soundtrack setting');
+  assert.equal(finalRow.modelId, draftRow.modelId, 'the final stays on the preview’s maker (V4)');
+  assert.equal((finalRow.request as JobRequest).creative!.seed, 4242, 'and reuses its seed');
+  await runner.drain();
+  const sentFinal = provider.submitted.find((r) => r.seed === 4242);
+  assert.ok(sentFinal, 'the seed reached the request');
+  assert.equal(shapeRequest(sentFinal!, () => 'u').seed, 4242);
   assert.equal((finalRow.request as JobRequest).creative!.prompt, (draftRow.request as JobRequest).creative!.prompt);
   assert.doesNotMatch((finalRow.request as JobRequest).prompt, /every carrot/);
   const ledgers = await db.select().from(schema.generationLedger).where(inArray(schema.generationLedger.jobId, [draftRow.id, finalRow.id]));
@@ -481,5 +516,6 @@ test('"Make another version" keeps the clip’s characters, looks and length, an
   assert.ok(b.creative!.prompt.startsWith(a.creative!.prompt));
   assert.ok(b.creative!.prompt.endsWith('Make it snow.'));
   assert.equal(b.creative!.intent, 'draft');
+  assert.equal(b.creative!.seed, null, 'another version gets a new seed');
   await runner.drain();
 });

@@ -57,6 +57,10 @@ export interface CreativeVideoSnapshot {
   references: ReferenceBinding[];
   characters: CastBinding[];
   output: { durationSeconds: number; resolution: string; aspectRatio: '16:9' | '9:16' | '1:1'; audio: boolean };
+  /** §4.3 camera_movement value the prompt was compiled with; absent on older recipes. */
+  cameraMovement?: string | null;
+  /** V4: the preview's seed, reused by its final on the same endpoint. Null: the provider picks. */
+  seed?: number | null;
   /** Endpoint and adapter the snapshot was routed to, and the quote it was reserved at (MG-05). */
   modelId: string;
   adapterVersion: string;
@@ -76,4 +80,10 @@ export interface CreativeVideoRequest<Image> {
   audio: boolean;
   resolution: string;
   strictSafety: boolean;
+  /** Sent only where the endpoint has a seed field. */
+  seed?: number | null;
+  /** The scene's camera_movement value; sent only where the endpoint maps it to its own control. */
+  cameraMovement?: string | null;
+  /** The video template placed the picture tokens inline, so none are appended (§5.2). */
+  tokensInline?: boolean;
 }
