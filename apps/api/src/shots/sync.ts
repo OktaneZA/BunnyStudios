@@ -6,14 +6,14 @@
  * changes. The server is the sole compilation authority; the web app compiles only for
  * live preview and never sends a prompt back.
  */
-import { and, asc, eq, isNull, or, sql as raw } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql as raw } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { compileShot, TEMPLATE_VERSION, type CompileInput } from '@storyboard/compiler';
 import { db, schema } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import { sceneDescription } from '../scenes/description.ts';
 import type { Tx } from '../generation/budget.ts';
-import { compileCharacter, shotCast } from './cast.ts';
+import { compileCharacter, shotCast, shotCastForScenes, type ShotCastEntry } from './cast.ts';
 import { cartoonStyle } from '../cartoon/style.ts';
 
 type Scene = typeof schema.scenes.$inferSelect;
@@ -29,18 +29,36 @@ export async function sceneCharacters(database: Database, accountId: string, sce
   return rows;
 }
 
-export async function compileInput(database: Database, accountId: string, scene: Scene, shot: Shot | null): Promise<CompileInput> {
-  const [bible] = await database.select().from(schema.seriesBibles).where(and(eq(schema.seriesBibles.projectId, scene.projectId), eq(schema.seriesBibles.accountId, accountId)));
-  const [location] = scene.locationId
-    ? await database.select().from(schema.locations).where(and(eq(schema.locations.id, scene.locationId), eq(schema.locations.accountId, accountId)))
-    : [];
+/** What every scene of a cartoon shares; loaded once when many scenes compile together. */
+export interface CompileContext {
+  bible: typeof schema.seriesBibles.$inferSelect | undefined;
+  style: Awaited<ReturnType<typeof cartoonStyle>>;
+  locations: Map<string, typeof schema.locations.$inferSelect>;
+  /** Cast entries by shot id, for the shots this context was built for. */
+  casts: Map<string, ShotCastEntry[]>;
+}
+
+export async function loadCompileContext(database: Database, accountId: string, projectId: string, pairs: { shot: Shot; scene: Scene }[]): Promise<CompileContext> {
+  const [bible] = await database.select().from(schema.seriesBibles).where(and(eq(schema.seriesBibles.projectId, projectId), eq(schema.seriesBibles.accountId, accountId)));
+  const style = await cartoonStyle(database, accountId, projectId);
+  const locationIds = [...new Set(pairs.map((p) => p.scene.locationId).filter((id): id is string => Boolean(id)))];
+  const locationRows = locationIds.length ? await database.select().from(schema.locations).where(and(inArray(schema.locations.id, locationIds), eq(schema.locations.accountId, accountId))) : [];
+  const casts = await shotCastForScenes(database, accountId, pairs);
+  return { bible, style, locations: new Map(locationRows.map((l) => [l.id, l])), casts };
+}
+
+export async function compileInput(database: Database, accountId: string, scene: Scene, shot: Shot | null, ctx?: CompileContext): Promise<CompileInput> {
+  const bible = ctx ? ctx.bible : (await database.select().from(schema.seriesBibles).where(and(eq(schema.seriesBibles.projectId, scene.projectId), eq(schema.seriesBibles.accountId, accountId))))[0];
+  const location = scene.locationId
+    ? ctx ? ctx.locations.get(scene.locationId) : (await database.select().from(schema.locations).where(and(eq(schema.locations.id, scene.locationId), eq(schema.locations.accountId, accountId))))[0]
+    : undefined;
   // CR-01: a saved "Characters in this shot" list drives the words. Each character is described
   // from a look: the pinned one when saved, else the character's current look (§6.2), so two scenes
   // never describe the same character differently because one of them was not saved yet.
-  const entries = shot ? await shotCast(database, accountId, shot, scene)
+  const entries = shot ? (ctx?.casts.get(shot.id) ?? await shotCast(database, accountId, shot, scene))
     : (await sceneCharacters(database, accountId, scene)).map((character) => ({ character, binding: null, look: null, proposed: true }));
   const subjects = (!shot?.castSaved && shot?.subjectCharacterIds.length ? entries.filter((e) => shot.subjectCharacterIds.includes(e.character.id)) : entries).map(compileCharacter);
-  const style = await cartoonStyle(database, accountId, scene.projectId);
+  const style = ctx ? ctx.style : await cartoonStyle(database, accountId, scene.projectId);
   return {
     bible: {
       artStyle: style.artStyle,
@@ -91,7 +109,7 @@ async function uniqueExportKey(database: Database, projectId: string): Promise<s
 }
 
 /** Ensure the scene has at least one shot and every unlocked shot's prompt is current. */
-export async function syncSceneShots(database: Database, accountId: string, scene: Scene): Promise<Shot[]> {
+export async function syncSceneShots(database: Database, accountId: string, scene: Scene, ctx?: CompileContext): Promise<Shot[]> {
   let shots = await database.select().from(schema.shots).where(and(eq(schema.shots.sceneId, scene.id), eq(schema.shots.accountId, accountId))).orderBy(asc(schema.shots.sortOrder), asc(schema.shots.id));
   if (!shots.length) {
     const [created] = await database.insert(schema.shots).values({
@@ -105,7 +123,7 @@ export async function syncSceneShots(database: Database, accountId: string, scen
   const out: Shot[] = [];
   for (const shot of shots) {
     if (shot.promptLocked) { out.push(shot); continue; }
-    const input = await compileInput(database, accountId, scene, shot);
+    const input = await compileInput(database, accountId, scene, shot, ctx?.casts.has(shot.id) ? ctx : undefined);
     const compiled = compileShot(input);
     if (compiled.prompt !== shot.compiledPrompt || compiled.negativePrompt !== shot.compiledNegativePrompt || shot.promptTemplateVersion !== TEMPLATE_VERSION) {
       const [updated] = await database.update(schema.shots).set({
@@ -113,6 +131,25 @@ export async function syncSceneShots(database: Database, accountId: string, scen
       }).where(eq(schema.shots.id, shot.id)).returning();
       out.push(updated!);
     } else out.push(shot);
+  }
+  return out;
+}
+
+/**
+ * Sync every scene of a cartoon: the cartoon's bible, style, locations and casts are read once,
+ * then each scene compiles from them. Returns the first shot of each scene, by scene id.
+ */
+export async function syncProjectShots(database: Database, accountId: string, projectId: string, scenes: Scene[]): Promise<Map<string, Shot>> {
+  const out = new Map<string, Shot>();
+  if (!scenes.length) return out;
+  const existing = await database.select().from(schema.shots)
+    .where(and(eq(schema.shots.accountId, accountId), inArray(schema.shots.sceneId, scenes.map((s) => s.id))))
+    .orderBy(asc(schema.shots.sortOrder), asc(schema.shots.id));
+  const pairs = scenes.flatMap((scene) => { const shot = existing.find((s) => s.sceneId === scene.id); return shot ? [{ shot, scene }] : []; });
+  const ctx = await loadCompileContext(database, accountId, projectId, pairs);
+  for (const scene of scenes) {
+    const [first] = await syncSceneShots(database, accountId, scene, ctx);
+    if (first) out.set(scene.id, first);
   }
   return out;
 }

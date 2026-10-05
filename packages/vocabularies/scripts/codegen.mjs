@@ -112,7 +112,8 @@ if (process.argv.includes('--check')) {
     console.error('generated.ts is missing. Run: npm run codegen -w @storyboard/vocabularies');
     process.exit(1);
   }
-  if (current !== generated) {
+  // Line endings are git's business (autocrlf on Windows), not a drift in the vocabulary.
+  if (current.replace(/\r\n/g, '\n') !== generated.replace(/\r\n/g, '\n')) {
     console.error('generated.ts is out of date with vocabularies.json.');
     console.error('Run: npm run codegen -w @storyboard/vocabularies');
     process.exit(1);

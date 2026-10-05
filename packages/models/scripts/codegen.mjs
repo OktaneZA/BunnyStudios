@@ -141,7 +141,8 @@ export type ProviderName = (typeof MODELS)[number]['provider'];
 if (process.argv.includes('--check')) {
   let current = '';
   try { current = readFileSync(outPath, 'utf8'); } catch { /* missing counts as drift */ }
-  if (current !== body) {
+  // Line endings are git's business (autocrlf on Windows), not a drift in the catalogue.
+  if (current.replace(/\r\n/g, '\n') !== body.replace(/\r\n/g, '\n')) {
     console.error('src/generated.ts is out of date with models.json — run: npm run codegen -w @storyboard/models');
     process.exit(1);
   }

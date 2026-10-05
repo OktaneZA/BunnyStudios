@@ -15,8 +15,8 @@ import type { ReviewProvider } from '../generation/review.ts';
 import type { ObjectStore } from '../storage/objectStore.ts';
 import type { JobRequest, Runner } from '../jobs/runner.ts';
 import { createJob } from '../jobs/create.ts';
-import { ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
-import { buildManifest, shotCast } from '../shots/cast.ts';
+import { ownShot, presentShot, syncProjectShots, syncSceneShots } from '../shots/sync.ts';
+import { buildManifest, shotCast, shotCastForScenes } from '../shots/cast.ts';
 import { projectIsLive } from './scenes.ts';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -180,6 +180,43 @@ export async function directorRoutes(app: FastifyInstance, deps: DirectorDeps) {
     if (!scene) throw ApiError.notFound('Scene');
     const shots = await syncSceneShots(db, request.accountId, scene);
     return { data: shots.map(presentShot) };
+  });
+
+  /**
+   * Every page of the storybook in one request: each scene's first shot (synced) and who is in it
+   * with their look status and main picture. Replaces one shots call plus one cast call per scene.
+   */
+  app.get('/projects/:id/shots', async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const { account } = await isConstrained(db, request.accountId, id);
+    const scenes = await db.select().from(schema.scenes)
+      .where(and(eq(schema.scenes.projectId, id), eq(schema.scenes.accountId, request.accountId), isNull(schema.scenes.deletedAt)))
+      .orderBy(asc(schema.scenes.sortOrder), asc(schema.scenes.id));
+    const shots = await syncProjectShots(db, request.accountId, id, scenes);
+    const casts = await shotCastForScenes(db, request.accountId, scenes.flatMap((scene) => { const shot = shots.get(scene.id); return shot ? [{ shot, scene }] : []; }));
+    reply.header('Cache-Control', 'no-store');
+    return {
+      data: scenes.flatMap((scene) => {
+        const shot = shots.get(scene.id);
+        if (!shot) return [];
+        const entries = casts.get(shot.id) ?? [];
+        return [{
+          scene_id: scene.id, shot: presentShot(shot),
+          cast: {
+            shot_id: shot.id, version: shot.version, saved: shot.castSaved,
+            characters: entries.map((e) => ({
+              character_id: e.character.id, name: e.character.name, proposed: e.proposed,
+              look_id: e.look?.id ?? null, look_version: e.look?.visualVersion ?? null, current_look_id: e.character.currentVisualVersionId,
+              newer_look_available: Boolean(e.look && e.character.currentVisualVersionId && e.character.currentVisualVersionId !== e.look.id),
+              look_status: e.look ? 'approved' : 'none',
+              main_picture: e.look?.references[0] && (!account.isMinor || e.look.references[0].asset.reviewStatus !== 'rejected') ? presentAsset(e.look.references[0].asset) : null,
+              outfit_label: e.binding?.outfitLabel ?? null,
+              outfits: Array.isArray(e.character.costumeVariants) ? (e.character.costumeVariants as { label: string }[]).map((o) => o.label) : [],
+            })),
+          },
+        }];
+      }),
+    };
   });
 
   app.patch('/shots/:id', async (request) => {

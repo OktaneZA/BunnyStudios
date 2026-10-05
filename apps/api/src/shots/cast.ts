@@ -29,20 +29,39 @@ export interface ShotCastEntry {
 
 /** Saved bindings when there are any; otherwise the story's proposal, marked as such. */
 export async function shotCast(database: Database, accountId: string, shot: { id: string; castSaved: boolean }, scene: Scene): Promise<ShotCastEntry[]> {
-  const shotId = shot.id;
+  return (await shotCastForScenes(database, accountId, [{ shot, scene }])).get(shot.id) ?? [];
+}
+
+/**
+ * The same, for many scenes in four queries instead of three per scene: every binding, every
+ * character of the cartoon, every look. A storybook of 30 pages loads in one go (review 2 Oct, P2).
+ */
+export async function shotCastForScenes(database: Database, accountId: string, pairs: { shot: { id: string; castSaved: boolean }; scene: Scene }[]): Promise<Map<string, ShotCastEntry[]>> {
+  const out = new Map<string, ShotCastEntry[]>();
+  if (!pairs.length) return out;
+  const projectId = pairs[0]!.scene.projectId;
   const bindings = await database.select({ b: schema.shotCharacterBindings, c: schema.characters }).from(schema.shotCharacterBindings)
     .innerJoin(schema.characters, eq(schema.characters.id, schema.shotCharacterBindings.characterId))
-    .where(and(eq(schema.shotCharacterBindings.shotId, shotId), eq(schema.shotCharacterBindings.accountId, accountId), isNull(schema.characters.deletedAt)))
+    .where(and(inArray(schema.shotCharacterBindings.shotId, pairs.map((p) => p.shot.id)), eq(schema.shotCharacterBindings.accountId, accountId), isNull(schema.characters.deletedAt)))
     .orderBy(asc(schema.shotCharacterBindings.position));
-  if (shot.castSaved) {
-    const looks = await loadLooks(database, accountId, bindings.map((r) => r.c.id));
-    // A binding pinned to a look keeps it (CS-10). One saved before the character had any look
-    // ("no look yet") follows the character's current look, so choosing a look later reaches the scene.
-    return bindings.map(({ b, c }) => ({ character: c, binding: b, look: looks.find((l) => l.id === (b.visualVersionId ?? c.currentVisualVersionId)) ?? null, proposed: false }));
+  const characters = await database.select().from(schema.characters)
+    .where(and(eq(schema.characters.accountId, accountId), eq(schema.characters.projectId, projectId), isNull(schema.characters.deletedAt)))
+    .orderBy(asc(schema.characters.name), asc(schema.characters.id));
+  const looks = await loadLooks(database, accountId, characters.map((c) => c.id));
+  for (const { shot, scene } of pairs) {
+    if (shot.castSaved) {
+      // A binding pinned to a look keeps it (CS-10). One saved before the character had any look
+      // ("no look yet") follows the character's current look, so choosing a look later reaches the scene.
+      out.set(shot.id, bindings.filter((r) => r.b.shotId === shot.id).map(({ b, c }) => ({
+        character: c, binding: b, look: looks.find((l) => l.id === (b.visualVersionId ?? c.currentVisualVersionId)) ?? null, proposed: false,
+      })));
+    } else {
+      // The story's proposal: found in this scene by the cast finder, or attached by id (sceneCharacters, in memory).
+      const proposed = characters.filter((c) => c.foundInSceneIds.includes(scene.id) || scene.characterIds.includes(c.id));
+      out.set(shot.id, proposed.map((c) => ({ character: c, binding: null, look: looks.find((l) => l.id === c.currentVisualVersionId) ?? null, proposed: true })));
+    }
   }
-  const cast = await sceneCharacters(database, accountId, scene);
-  const looks = await loadLooks(database, accountId, cast.map((c) => c.id));
-  return cast.map((c) => ({ character: c, binding: null, look: looks.find((l) => l.id === c.currentVisualVersionId) ?? null, proposed: true }));
+  return out;
 }
 
 /** Words for the compiler: the pinned look's traits when there is one, else the live character. */

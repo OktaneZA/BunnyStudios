@@ -48,7 +48,7 @@ stays as the composer's two columns.
 ## Not done, honestly
 
 - **Physical tablet and teen sessions**: not run.
-- **A 30-scene fixture**: not checked. Shots and casts load one scene at a time, and only the open page mounts a video, but the per-scene cast calls (two per scene) are the first thing to batch.
+- **A 30-scene fixture**: checked on 5 Oct against the dev API. The storybook now loads every shot and cast in one call (`GET /projects/:id/shots`, ~60 ms for 30 pages, against ~670 ms for the sixty per-scene calls it replaced); `scenes`, `continuity` and `timeline` all answer under 50 ms. Only the open page mounts a video. Not measured on a tablet over the LAN.
 - **`render_current` test**: add an API test that changes a selected take and asserts `false`.
 - **SB-18 surfacing of extra shots** for advanced users: data preserved, no UI.
 - **Legacy "References unknown" wording** (SB-10): not shown; old clips are simply not described.

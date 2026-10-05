@@ -54,10 +54,13 @@ export function Storybook({ account }: { account: Account }) {
     const c = await director.shotCast(shot.id).catch(() => null);
     if (c) setCasts((prev) => new Map(prev).set(sceneId, c));
   }, []);
-  /** Pages load their shots one after another, so a long cartoon is usable before the end has loaded. */
-  const loadShots = useCallback(async (list: Scene[]) => {
-    for (const scene of list) await refreshShot(scene.id).catch(() => {});
-  }, [refreshShot]);
+  /** Every page's shot and cast in one request (review 2 Oct, P2); a 30-page cartoon costs one round trip. */
+  const loadShots = useCallback(async (_list: Scene[]) => {
+    if (!projectId) return;
+    const rows = (await director.projectShots(projectId)).data;
+    setShots(new Map(rows.map((r) => [r.scene_id, r.shot])));
+    setCasts(new Map(rows.map((r) => [r.scene_id, r.cast])));
+  }, [projectId]);
   const reloadScenes = useCallback(async () => {
     if (!projectId) return [] as Scene[];
     const s = (await api.listScenes(projectId)).data;
