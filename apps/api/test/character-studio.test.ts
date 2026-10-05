@@ -542,3 +542,54 @@ test('a picture pinned in an approved look cannot be binned; a loose candidate c
     assert.match(both.json().detail, /Bunny and Fox’s looks/);
   }
 });
+
+// ── §7.2: the cartoon's style picture ─────────────────────────────────────
+test('the style picture rides last, counts against the limit, is named in the prompt and is never dropped quietly (§7.2)', async () => {
+  const a = await characterWithLook('Bunny', true);
+  const b = await characterWithLook('Fox', true);
+  // Any finished picture of the cartoon can be the style picture; a sketch cannot.
+  const spare = await draw(a.id, { intent: 'portrait', count: 1 });
+  const chosen = await app.inject({ method: 'PUT', url: `/api/v1/projects/${projectId}/style`, headers: token(), payload: { style_picture_asset_id: spare.results[0].id } });
+  assert.equal(chosen.statusCode, 200, chosen.body);
+  assert.equal(chosen.json().style_picture.id, spare.results[0].id);
+  assert.equal((await get(`/projects/${projectId}/style`)).style_picture.id, spare.results[0].id, 'the choice is kept');
+
+  // Two characters with two views each would be 4 pictures; with the style picture that is 5, so one view each + style = 3.
+  await saveCast(0, [{ character_id: a.id }, { character_id: b.id }]);
+  const quote = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(0)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5 } });
+  assert.equal(quote.statusCode, 200, quote.body);
+  assert.equal(quote.json().reference_count, 3, 'one picture each plus the style picture');
+
+  const made = await video(0, { purpose: 'final', duration_seconds: 5 });
+  assert.equal(made.statusCode, 202, made.body);
+  await runner.drain();
+  const row = await jobRow(made.json().id);
+  const r = row.request as JobRequest;
+  assert.equal(r.creative!.references.at(-1)!.role, 'style', 'the style picture is the last reference');
+  assert.equal(r.referenceAssetIds.at(-1), spare.results[0].id);
+  assert.match(r.prompt, /match the art style, colours and line work shown in @Image3/, 'the prompt points at the style picture');
+  assert.equal(provider.submitted.at(-1)!.referenceImages.length, 3, 'the provider received all three');
+  const [clip] = await db.update(schema.assets).set({ reviewStatus: 'allowed' }).where(eq(schema.assets.generationJobId, row.id)).returning();
+  const shot0 = await shotOf(0);
+  const picked = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot0.id}/hero`, headers: { ...token(), 'if-match': String(shot0.version) }, payload: { asset_id: clip!.id } });
+  assert.equal(picked.statusCode, 200, picked.body);
+  const report = await get(`/projects/${projectId}/continuity`);
+  assert.equal(report.scenes[0].clip.style_picture, true, 'the report says the style picture reached the clip');
+
+  // Four characters fill the 4-picture limit on their own: the quote says the style picture has no room rather than dropping it.
+  const more = [await characterWithLook('Owl', false), await characterWithLook('Mole', false)];
+  await saveCast(1, [a, b, ...more].map((x) => ({ character_id: x.id })));
+  const noRoom = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(1)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5 } });
+  assert.equal(noRoom.statusCode, 422, noRoom.body);
+  assert.equal(noRoom.json().current_state.missing, 'style_picture_room');
+  assert.match(noRoom.json().detail, /Remove the style picture/);
+
+  // The style picture cannot be binned while it is in use; removing it from the cover frees it.
+  const binned = await app.inject({ method: 'DELETE', url: `/api/v1/assets/${spare.results[0].id}`, headers: token() });
+  assert.equal(binned.statusCode, 422, binned.body);
+  assert.match(binned.json().detail, /style picture/);
+  const cleared = await app.inject({ method: 'PUT', url: `/api/v1/projects/${projectId}/style`, headers: token(), payload: { style_picture_asset_id: null } });
+  assert.equal(cleared.json().style_picture, null);
+  const sketch = await app.inject({ method: 'PUT', url: `/api/v1/projects/${projectId}/style`, headers: token(), payload: { style_picture_asset_id: randomUUID() } });
+  assert.equal(sketch.statusCode, 404, 'a picture that is not the cartoon\'s is not found');
+});

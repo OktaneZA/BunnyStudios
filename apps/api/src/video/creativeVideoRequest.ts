@@ -14,11 +14,15 @@ export type VideoTaskName = 'text-to-video' | 'image-to-video' | 'reference-to-v
 export type GenerationIntent = 'draft' | 'final';
 
 /** CR-03: one picture of one character's approved look, in the order the provider will see it. */
+/** The placeholder a style reference carries in a manifest's character fields; the name reads well in a token list. */
+export const STYLE_REFERENCE = { id: 'style', name: 'the cartoon’s style picture' } as const;
+
 export interface ReferenceBinding {
   assetId: string;
   contentHash: string;
   modality: 'image';
-  role: 'character';
+  /** `style` is the cartoon's style picture (§7.2), always last; its character fields hold the placeholder STYLE_REFERENCE. */
+  role: 'character' | 'style';
   characterId: string;
   characterName: string;
   characterVisualVersionId: string;

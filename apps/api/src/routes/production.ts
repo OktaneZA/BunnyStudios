@@ -29,7 +29,8 @@ import { validateUpload } from '../storage/uploads.ts';
 import { assetHash, usableForLook } from '../cast/looks.ts';
 import { compileInput, ownShot, presentShot, syncSceneShots } from '../shots/sync.ts';
 import { buildManifest, saveShotCast, shotCast, type ShotCastEntry } from '../shots/cast.ts';
-import { CREATIVE_SNAPSHOT_VERSION, type CreativeVideoSnapshot } from '../video/creativeVideoRequest.ts';
+import { CREATIVE_SNAPSHOT_VERSION, STYLE_REFERENCE, type CreativeVideoSnapshot, type ReferenceBinding } from '../video/creativeVideoRequest.ts';
+import { stylePicture } from '../cartoon/style.ts';
 import { ADAPTER_VERSION, promptWithReferenceTokens } from '../video/adapters/catalogue.ts';
 import { isConstrained, presentAsset, presentJob, type DirectorDeps } from './director.ts';
 import type { JobRequest } from '../jobs/runner.ts';
@@ -256,10 +257,23 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
         });
       }
       if (!full.references.length) throw needs('Nobody is in this scene yet. Add who is in it, or make a quick draft from the words.', { missing: 'cast', quick_draft_available: true });
+      // §7.2: the cartoon's style picture rides last, counted against the limit, never dropped on the quiet.
+      const styleAsset = await stylePicture(database, accountId, scene.projectId, constrained);
+      const styleRef: ReferenceBinding | null = styleAsset ? {
+        assetId: styleAsset.id, contentHash: await assetHash(database, store, styleAsset), modality: 'image', role: 'style',
+        characterId: STYLE_REFERENCE.id, characterName: STYLE_REFERENCE.name, characterVisualVersionId: '', view: 'style', position: 0,
+      } : null;
       for (const views of [8, 1]) {
         manifest = buildManifest(cast, views);
+        if (styleRef) manifest.references.push({ ...styleRef, position: manifest.references.length });
         candidates = catalogue.videoModels({ ...requirements, referenceImageCount: manifest.references.length }, advanced);
         if (candidates.length) break;
+      }
+      if (!candidates.length && styleRef) {
+        const without = buildManifest(cast, 1);
+        if (catalogue.videoModels({ ...requirements, referenceImageCount: without.references.length }, advanced).length) {
+          throw needs('The style picture does not fit alongside everyone’s pictures for any clip maker. Remove the style picture on the cover, or take someone out of this scene.', { missing: 'style_picture_room' });
+        }
       }
     } else if (!base) {
       // A starting picture carries the look, and words only sends none; the cast is still recorded for lineage.
@@ -339,14 +353,16 @@ export async function productionRoutes(app: FastifyInstance, deps: DirectorDeps)
     else {
       const prefix = model.request_shape.reference_token_prefix;
       const characterTokens: { id: string; name: string; tokens: string[] }[] = [];
+      let styleToken = '';
       for (const r of prefix ? references : []) {
+        if (r.role === 'style') { styleToken = `${prefix}${r.position + 1}`; continue; }
         let entry = characterTokens.find((c) => c.id === r.characterId);
         if (!entry) characterTokens.push(entry = { id: r.characterId, name: r.characterName, tokens: [] });
         entry.tokens.push(`${prefix}${r.position + 1}`);
       }
       const video = compileVideoShot({
         ...await compileInput(database, accountId, scene, shot),
-        video: { cameraMovement: scene.cameraMovement, characterTokens, styleToken: '', negative: model.request_shape.negative_prompt ? 'field' : 'fold', audio },
+        video: { cameraMovement: scene.cameraMovement, characterTokens, styleToken, negative: model.request_shape.negative_prompt ? 'field' : 'fold', audio },
       });
       compiled = { prompt: video.prompt, negativePrompt: video.negativePrompt, compilerVersion: VIDEO_TEMPLATE_VERSION };
     }

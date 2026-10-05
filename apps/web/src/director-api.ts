@@ -275,6 +275,9 @@ export interface CartoonStyle {
   chosen: boolean;
   /** Where the cartoon happens, in the child's words; '' until chosen. */
   setting: string;
+  /** The cartoon's style picture (§7.2): sent last to clip makers that take pictures. Null when none, or when the chosen one can no longer be used. */
+  style_picture: Asset | null;
+  style_picture_unusable: boolean;
   scenes_with_own_style: { scene_id: string; scene_number: number; art_style: string | null }[];
 }
 
@@ -451,6 +454,8 @@ export const director = {
     request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ art_style: artStyle, keep_scene_styles: keepSceneStyles }) }),
   setCartoonSetting: (projectId: string, setting: string) =>
     request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ setting }) }),
+  setStylePicture: (projectId: string, assetId: string | null) =>
+    request<CartoonStyle>(`/projects/${projectId}/style`, { method: 'PUT', body: JSON.stringify({ style_picture_asset_id: assetId }) }),
   continuity: (projectId: string) => request<Continuity>(`/projects/${projectId}/continuity`),
   lookElsewhere: (characterId: string, lookId: string) => request<{ scenes_to_update: number; scenes_with_clips: number }>(`/characters/${characterId}/looks/${lookId}/use-everywhere`),
   useLookEverywhere: (characterId: string, lookId: string) =>

@@ -11,6 +11,7 @@
  * the default. This is resolved on read; nothing is backfilled.
  */
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { usableForLook } from '../cast/looks.ts';
 import { ART_STYLE, values } from '@storyboard/vocabularies';
 import { db, schema } from '../db/client.ts';
 import type { Tx } from '../generation/budget.ts';
@@ -33,6 +34,24 @@ export interface CartoonStyle {
 export function sceneStyleValue(styleOverride: string | null): string | null {
   if (!styleOverride) return null;
   return ART_STYLE.find((s) => s.prompt_phrase === styleOverride)?.value ?? null;
+}
+
+type Asset = typeof schema.assets.$inferSelect;
+
+/**
+ * The cartoon's style picture (§7.2): one approved picture of the setting in the cartoon's look,
+ * kept in the bible's style_reference_asset_ids. Reference-capable clip makers receive it last,
+ * and the prompt asks them to match it. Null when none is chosen or the picture is no longer
+ * usable (binned, or not allowed for this account) — never a quiet substitute.
+ */
+export async function stylePicture(database: Database, accountId: string, projectId: string, constrained: boolean): Promise<Asset | null> {
+  const [bible] = await database.select({ ids: schema.seriesBibles.styleReferenceAssetIds }).from(schema.seriesBibles)
+    .where(and(eq(schema.seriesBibles.projectId, projectId), eq(schema.seriesBibles.accountId, accountId)));
+  const id = bible?.ids[0];
+  if (!id) return null;
+  const [asset] = await database.select().from(schema.assets).where(and(eq(schema.assets.id, id), eq(schema.assets.accountId, accountId)));
+  if (!asset || asset.projectId !== projectId || !usableForLook(asset, constrained)) return null;
+  return asset;
 }
 
 export async function cartoonStyle(database: Database, accountId: string, projectId: string): Promise<CartoonStyle> {
