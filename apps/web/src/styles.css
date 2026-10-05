@@ -21,6 +21,8 @@
   --ink-soft: #aaa8b5;
   --line: #34333d;
   --accent: #b5a0ff;
+  /* The accent as text on the page background. Lilac passes on black; on white it is 2.2:1, so the white theme darkens it. */
+  --accent-text: #b5a0ff;
   --radius: 16px;
   --tap: 44px;
   --gap: 20px;
@@ -32,7 +34,7 @@
   color-scheme: light;
   --bg: #fafafa; --cream: #fafafa; --surface: #ffffff;
   --ink: #202027; --ink-soft: #60606c; --line: #d6d6df;
-  --accent: #b5a0ff; --pale: #6047a8; --navy: #20172e;
+  --accent: #b5a0ff; --accent-text: #5a3fb0; --pale: #6047a8; --navy: #20172e;
   --selected-surface: #f0ebfc; --control-surface: #f3f3f6; --success: #28763e;
   --red: #b52645;
 }
@@ -371,7 +373,7 @@ textarea { line-height: 1.75; }
 .project-controls input, .project-controls select { margin-top: 6px; padding: 10px; }
 .project-dates { display: grid; gap: 4px; margin-top: 16px; font-size: .75rem; color: var(--ink-soft); }
 .project-card > a { color: var(--ink); text-decoration: none; }
-.project-card > a:hover { color: var(--accent); }
+.project-card > a:hover { color: var(--accent-text); }
 @media (max-width: 1000px) {
   .scene-row { flex-wrap: wrap; }
   .scene-actions { width: 100%; max-width: none; }
@@ -958,7 +960,7 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .video-model-picker button[aria-pressed="true"] { outline: 2px solid #b9a2ff; outline-offset: 2px; }
 
 /* ── Character Studio and clips with characters (docs/character-studio-requirements.md) ── */
-.link-button { background: none; border: none; padding: 4px 2px; min-height: var(--tap); color: var(--accent); font-weight: 650; text-decoration: underline; cursor: pointer; }
+.link-button { background: none; border: none; padding: 4px 2px; min-height: var(--tap); color: var(--accent-text); font-weight: 650; text-decoration: underline; cursor: pointer; }
 .link-button:disabled { color: var(--ink-soft); cursor: default; }
 .studio h4 { margin: 0; }
 .look-status { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--control-surface); font-weight: 650; }
@@ -1127,6 +1129,11 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .clip-make .price-details { padding: 0; border: 0; background: transparent; }
 /* Scene and clip side by side from tablet width. */
 @media (min-width: 1000px) { .director-page .director-work { grid-template-columns: minmax(0, 1.45fr) minmax(260px, 1fr); } }
+/* Stacked editor: a compact make action beside the words; side by side, the make panel is already in view. */
+.make-compact { display: grid; gap: 6px; margin: 4px 0 8px; }
+.make-compact .main-action { width: 100%; }
+.make-compact .hint { margin: 0; }
+@media (min-width: 1000px) { .make-compact { display: none; } }
 @media (max-width: 600px) {
   .composer-rows { grid-template-columns: minmax(0, 1fr); }
   .composer > .composer-field { flex-direction: row; flex-wrap: wrap; }
@@ -1203,7 +1210,7 @@ summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .page-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--control-surface); color: var(--ink-soft); border: 1px solid var(--line); }
 .pill.media-set { color: var(--success, #4caf7a); }
-.pill.making { color: var(--accent); }
+.pill.making { color: var(--accent-text); }
 .pill.failed, .pill.needs { color: #f2c66d; }
 .page-action { color: var(--ink-soft); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .page-faces { display: inline-flex; align-items: center; gap: 6px; }

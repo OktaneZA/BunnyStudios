@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, type Project } from '../api';
 import { director, type Asset, type CartoonStyle, type CastProposal, type Character } from '../director-api';
 import { ART_STYLE } from '@storyboard/vocabularies';
@@ -37,17 +37,63 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
   const [pictures, setPictures] = useState<Asset[] | null>(null);
   const [note, setNote] = useState('');
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => { setTitle(project.title); setSummary(project.logline); }, [project.title, project.logline]);
+  const [unsaved, setUnsaved] = useState(false);
+  // Cover saves run one at a time, and a reply never overwrites words typed after its request
+  // left (UI review 5 Oct, P2). `server` is what the server last told us; a field follows the
+  // server only while the creator has not changed it since.
+  const server = useRef({ title: project.title, summary: project.logline });
+  const latest = useRef({ title, summary });
+  latest.current = { title, summary };
+  const saving = useRef(false);
+  const draftKey = `cover-draft:${project.id}`;
+  useEffect(() => {
+    const known = server.current;
+    if (project.title === known.title && project.logline === known.summary) return; // our own save, already accounted for
+    if (latest.current.title === known.title) setTitle(project.title);
+    if (latest.current.summary === known.summary) setSummary(project.logline);
+    server.current = { title: project.title, summary: project.logline };
+  }, [project.title, project.logline]);
+  // Words that never reached the server (a failed save, then a reload) come back as a draft.
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(draftKey) ?? 'null') as { title?: string; summary?: string } | null;
+      if (!draft) return;
+      if (typeof draft.title === 'string' && draft.title.trim() && draft.title !== server.current.title) { setTitle(draft.title); setUnsaved(true); }
+      if (typeof draft.summary === 'string' && draft.summary !== server.current.summary) { setSummary(draft.summary); setUnsaved(true); }
+    } catch { /* no storage, or not ours: nothing to restore */ }
+  }, [draftKey]);
   useEffect(() => { setSetting(style?.setting ?? ''); }, [style?.setting]);
 
+  const keepDraft = (draft: { title: string; summary: string } | null) => {
+    try { if (draft) sessionStorage.setItem(draftKey, JSON.stringify(draft)); else sessionStorage.removeItem(draftKey); } catch { /* private window: the words stay in the fields */ }
+  };
+
   async function saveWords() {
-    const patch: { title?: string; logline?: string } = {};
-    if (title.trim() && title.trim() !== project.title) patch.title = title.trim();
-    if (summary.trim() !== project.logline) patch.logline = summary.trim();
-    if (!Object.keys(patch).length) { setTitle(project.title); return; }
-    setNote('Saving…'); setError(null);
-    try { onProject(await api.updateProject(project.id, patch)); setNote('Saved'); }
-    catch (err) { setError(err); setNote(''); }
+    if (saving.current) return; // the save in flight looks again when it lands
+    saving.current = true;
+    try {
+      for (let first = true; ; first = false) {
+        const now = latest.current;
+        const patch: { title?: string; logline?: string } = {};
+        if (now.title.trim() && now.title.trim() !== server.current.title) patch.title = now.title.trim();
+        if (now.summary.trim() !== server.current.summary) patch.logline = now.summary.trim();
+        if (!Object.keys(patch).length) {
+          // An emptied name goes back to the saved one; anything typed meanwhile is left alone.
+          if (first && !latest.current.title.trim()) setTitle(server.current.title);
+          keepDraft(null); setUnsaved(false);
+          return;
+        }
+        setNote('Saving…'); setError(null);
+        const saved = await api.updateProject(project.id, patch);
+        server.current = { title: saved.title, summary: saved.logline };
+        onProject(saved);
+        setNote('Saved');
+        // Words typed while that request was away are saved by the next turn of the loop.
+      }
+    } catch (err) {
+      setError(err); setNote('Not saved yet. Your words are still here.'); setUnsaved(true);
+      keepDraft(latest.current);
+    } finally { saving.current = false; }
   }
   async function saveSetting() {
     if (!style || setting.trim() === style.setting) return;
@@ -110,6 +156,7 @@ export function StoryCover({ project, characters, style, open, onToggle, onProje
         <input id="cover-title" className="cover-title" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} onBlur={() => void saveWords()} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
         <button type="button" className="link-button" onClick={() => onToggle(false)} aria-expanded="true">Fold the cover</button>
       </div>
+      {unsaved && <p className="notice" role="status">The cover’s words are not saved yet. <button type="button" className="link-button" onClick={() => void saveWords()}>Try again</button></p>}
       <label className="sr-only" htmlFor="cover-summary">What is your cartoon about?</label>
       <textarea id="cover-summary" className="cover-summary" rows={2} maxLength={500} placeholder="What is your cartoon about? (optional)" value={summary} onChange={(e) => setSummary(e.target.value)} onBlur={() => void saveWords()} />
 
