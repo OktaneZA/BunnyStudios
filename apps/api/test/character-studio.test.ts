@@ -13,6 +13,7 @@ import type { GenerationModel } from '@storyboard/models';
 import { buildApp } from '../src/app.ts';
 import { db, sql, schema } from '../src/db/client.ts';
 import { createFakeProvider, FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, TINY_PNG } from '../src/generation/fake.ts';
+import { ffmpegAvailable, makeTestClip } from '../src/generation/media.ts';
 import { createMemoryStore } from '../src/storage/objectStore.ts';
 import { shapeRequest } from '../src/generation/provider.ts';
 import type { ReviewProvider } from '../src/generation/review.ts';
@@ -40,6 +41,13 @@ const FAKE_FRAMES: GenerationModel = {
   capabilities: { reference_images: false, start_frame: true, end_frame: true, audio: true, multi_shot: false, image_to_video: true, text_to_video: false },
   request_shape: { prompt: 'prompt', start_frame: 'image_url', end_frame: 'end_image_url', duration: 'duration', duration_format: 'string_seconds' },
 };
+/** Character pictures and a starting picture together, like MiniMax H3 Max refs (§7.4). */
+const FAKE_REF_FRAMES: GenerationModel = {
+  ...FAKE_REF_VIDEO, id: 'h3_max_refs', provider_model: 'fake/refs-frames', unit_cost_pence: 8, duration_seconds: { min: 5, max: 15, step: 1 },
+  capabilities: { reference_images: true, requires_reference_images: true, start_frame: true, end_frame: true, audio: true, multi_shot: false, image_to_video: true, text_to_video: false },
+  request_shape: { ...FAKE_REF_VIDEO.request_shape, reference_token_prefix: 'Image ', start_frame: 'image_url', end_frame: 'end_image_url' },
+  video: { family: 'fake_frames', categories: ['references'], documentation: 'test' },
+};
 /** Not yet checked live: Advanced accounts only. */
 const FAKE_GATED: GenerationModel = { ...FAKE_REF_VIDEO, id: 'ltx_25_fast', provider_model: 'fake/gated', unit_cost_pence: 1, video: { family: 'gated', categories: ['fast'], documentation: 'test', rollout: 'advanced', verified_live: false } };
 
@@ -54,7 +62,7 @@ const review: ReviewProvider = {
 };
 let found = [{ name: 'Bunny', description: 'a small white rabbit', scene_numbers: [1, 2] }];
 const finder: CastFinder = { enabled: true, model: 'fake', async find() { return { characters: found, inputTokens: 1, outputTokens: 1 }; } };
-const app = await buildApp({ director: { providers: [provider], models: [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_REF_VIDEO, FAKE_REF_FINAL, FAKE_FRAMES, FAKE_GATED], store, review, finder, pollMs: 5 } });
+const app = await buildApp({ director: { providers: [provider], models: [FAKE_IMAGE_MODEL, FAKE_VIDEO_MODEL, FAKE_REF_VIDEO, FAKE_REF_FINAL, FAKE_FRAMES, FAKE_REF_FRAMES, FAKE_GATED], store, review, finder, pollMs: 5 } });
 const runner = app.director.runner;
 const token = (n = 0) => ({ authorization: `Bearer ${app.jwt.sign({ sub: ids[n] })}` });
 const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
@@ -592,4 +600,61 @@ test('the style picture rides last, counts against the limit, is named in the pr
   assert.equal(cleared.json().style_picture, null);
   const sketch = await app.inject({ method: 'PUT', url: `/api/v1/projects/${projectId}/style`, headers: token(), payload: { style_picture_asset_id: randomUUID() } });
   assert.equal(sketch.statusCode, 404, 'a picture that is not the cartoon\'s is not found');
+});
+
+// ── §7.4: start where the last page ended ─────────────────────────────────
+test('the previous page’s last frame starts this one, with the character pictures kept; the first page has nothing to continue (§7.4)', async () => {
+  const bunny = await characterWithLook('Bunny', false);
+  const first = await shotOf(0);
+  const nothingBefore = await app.inject({ method: 'POST', url: `/api/v1/shots/${first.id}/start-from-previous`, headers: { ...token(), 'if-match': String(first.version) } });
+  assert.equal(nothingBefore.statusCode, 422);
+  assert.equal(nothingBefore.json().current_state.missing, 'previous_page');
+
+  const second = await shotOf(1);
+  const noClip = await app.inject({ method: 'POST', url: `/api/v1/shots/${second.id}/start-from-previous`, headers: { ...token(), 'if-match': String(second.version) } });
+  assert.equal(noClip.statusCode, 422, noClip.body);
+  assert.equal(noClip.json().current_state.missing, 'previous_clip');
+  assert.match(noClip.json().detail, /Page 1 has no clip chosen yet/);
+
+  // Page 1 gets a chosen clip (a real tiny mp4, so there is a last frame to read).
+  await saveCast(0, [{ character_id: bunny.id }]);
+  const made = await video(0, { purpose: 'final', duration_seconds: 5 });
+  assert.equal(made.statusCode, 202, made.body);
+  await runner.drain();
+  const [clip] = await db.update(schema.assets).set({ reviewStatus: 'allowed' }).where(eq(schema.assets.generationJobId, made.json().id)).returning();
+  const shot0 = await shotOf(0);
+  const picked = await app.inject({ method: 'POST', url: `/api/v1/shots/${shot0.id}/hero`, headers: { ...token(), 'if-match': String(shot0.version) }, payload: { asset_id: clip!.id } });
+  assert.equal(picked.statusCode, 200, picked.body);
+  if (!(await ffmpegAvailable())) { console.log('ffmpeg not available: the last-frame part of this test is skipped'); return; }
+  store.objects.set(clip!.storageKey, (await makeTestClip(2))!);
+
+  await saveCast(1, [{ character_id: bunny.id }]);
+  const fresh = await shotOf(1);
+  const continued = await app.inject({ method: 'POST', url: `/api/v1/shots/${fresh.id}/start-from-previous`, headers: { ...token(), 'if-match': String(fresh.version) } });
+  assert.equal(continued.statusCode, 201, continued.body);
+  assert.equal(continued.json().from_scene.scene_number, 1);
+  assert.equal(continued.json().asset.kind, 'frame_ref');
+  assert.equal(continued.json().asset.review_status, 'allowed', 'the frame inherits the clip’s verdict');
+  assert.equal(continued.json().shot.start_frame_asset_id, continued.json().asset.id);
+
+  // With the character pictures kept, only a maker that takes both is used, and both are sent.
+  const quote = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(1)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 5, use_start_frame: true, keep_cast_pictures: true } });
+  assert.equal(quote.statusCode, 200, quote.body);
+  assert.equal(quote.json().task, 'reference-to-video');
+  assert.equal(quote.json().reference_count, 1);
+  const run = await video(1, { purpose: 'final', duration_seconds: 5, use_start_frame: true, keep_cast_pictures: true });
+  assert.equal(run.statusCode, 202, run.body);
+  await runner.drain();
+  const sent = provider.submitted.at(-1)!;
+  assert.equal(sent.model.id, 'h3_max_refs');
+  const payload = shapeRequest(sent, () => 'url');
+  assert.equal(payload.image_url, 'url', 'the last frame starts the clip');
+  assert.deepEqual(payload.image_urls, ['url'], 'Bunny’s picture rides along');
+  assert.equal((await jobRow(run.json().id)).task, 'reference-to-video');
+
+  // Without keeping the pictures it is an ordinary start-from-a-picture clip, as before.
+  const plain = await app.inject({ method: 'POST', url: `/api/v1/shots/${(await shotOf(1)).id}/videos/quote`, headers: token(), payload: { purpose: 'final', duration_seconds: 6, use_start_frame: true } });
+  assert.equal(plain.statusCode, 200, plain.body);
+  assert.equal(plain.json().task, 'image-to-video');
+  assert.equal(plain.json().reference_count, 0);
 });
